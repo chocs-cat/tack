@@ -1,6 +1,6 @@
 # tack — design
 
-Status: **approved** (2026-09-27); phase 2 (`doctor`) is next. This document
+Status: **approved** (2026-09-27); phase 2 (`doctor`) is in progress. This document
 is the spec. Decisions below were settled with the maintainer in an
 interview; where one is still open it says so, in
 [Open questions](#open-questions).
@@ -119,6 +119,7 @@ after_save = "chezmoi re-add {path}"
 [projects]
 roots = ["~/Code"]
 exclude = ["~/Code/Archive", "~/Code/cruzainet"]
+owners = ["johnfoland", "cruzainet"]   # repos cloned from anyone else aren't audited
 
 # Built-in harnesses need no table; one appears only to change a setting.
 [harness.claude-code]
@@ -155,12 +156,22 @@ ref = "master"
 skills = ["corral"]
 ```
 
+### Projects fields
+
+| Field | Default | Meaning |
+|---|---|---|
+| `roots` | none | Directories searched for projects (see [`doctor` checks](#doctor-checks)). |
+| `exclude` | none | Paths not searched. |
+| `owners` | none (every repo is yours) | Who your repositories belong to. A repository whose `origin` remote belongs to another owner is a *clone* of someone else's project, and `doctor` skips it. |
+
+Paths expand `~`, and a relative path is relative to the manifest's directory.
+
 ### Source fields
 
 | Field | Applies to | Default | Meaning |
 |---|---|---|---|
 | `name` | all | required | Identifier used in the lockfile, the checkout path, and commands. Unique. |
-| `path` | path | — | A local directory, linked in place. Exactly one of `path`/`git`. |
+| `path` | path | — | A local directory, linked in place. Exactly one of `path`/`git`. `~` expands; a relative path is relative to the manifest's directory. |
 | `git` | git | — | A clone URL. |
 | `ref` | git | the remote's default branch | The branch or tag `update` follows. |
 | `subdir` | all | `skills` | Where the skill directories are, relative to the source root. |
@@ -180,12 +191,19 @@ table with all of them defines another agent.
 | `project_skills_dir` | `.claude/skills` | `.agents/skills` |
 | `instructions` | `~/.claude/CLAUDE.md` | `~/.codex/AGENTS.md` |
 | `project_instructions` | `CLAUDE.md` | `AGENTS.md` |
-| `hooks` | `~/.claude/settings.json` | `~/.codex/hooks.json` |
-| `project_hooks` | `.claude/settings.json` | `.codex/hooks.json` |
+| `hooks` | `["~/.claude/settings.json"]` | `["~/.codex/hooks.json", "~/.codex/config.toml"]` |
+| `project_hooks` | `[".claude/settings.json"]` | `[".codex/hooks.json", ".codex/config.toml"]` |
+| `imports` | `true` | `false` |
 | `ignore` | `["synced"]` + any dot-entry | any dot-entry |
 
+`hooks` and `project_hooks` list every file the harness reads hooks from (a
+single string is accepted); a `.json` file keeps them under a top-level
+`hooks` key, a `.toml` file in `[[hooks.<Event>]]` tables. `imports` says
+whether the harness follows `@path` imports in its instruction files.
+
 `ignore` names entries in `skills_dir` that belong to someone else: tack never
-touches them and `doctor` does not report them as unmanaged.
+touches them and `doctor` does not report them as unmanaged. For a built-in
+harness it adds to the built-in list rather than replacing it.
 
 ### Writing the manifest
 
@@ -287,12 +305,13 @@ read wrong), **warn** (will drift or break later), **info**.
 |---|---|---|
 | `unmanaged-skill` | warn | An entry in a harness skills directory that tack doesn't own and isn't in `ignore` — e.g. installed by hand or by another manager. |
 | `dangling-link` | error | A skill link whose target is gone. |
-| `not-synced` | warn | A selected skill missing from a harness it targets, or a link pointing somewhere other than the manifest says. |
-| `name-collision` | error | Two sources offer the same skill name. |
+| `not-synced` | warn | A selected skill missing from a harness it targets, or a link pointing somewhere other than the manifest says — including a tack link to a skill no longer selected, a listed skill its source doesn't have, and a source that isn't there (a missing `path`, a git source not yet checked out). |
+| `name-collision` | error | Two sources select the same skill name for the same harness. |
 | `bad-skill` | warn | `SKILL.md` missing, without frontmatter, without a `description`, or with a `name` that differs from its directory. |
 | `dirty-source` | info | A `path` source has uncommitted or unpushed skill edits. |
 | `instructions-split` | warn | The harnesses' user instruction files don't resolve to the same content: neither is an import of or symlink to the other, and their text differs. |
 | `hook-one-harness` | info | A user-level hook registered for one harness only. Installer-owned hooks are common here, so this is informational. |
+| `unreadable-file` | error | A hook file (user or project) that isn't valid JSON or TOML: the harness can't read it either. |
 
 ### Per project
 
@@ -301,16 +320,42 @@ read wrong), **warn** (will drift or break later), **info**.
 | `agents-md-missing` | error | `CLAUDE.md` has content but there is no `AGENTS.md`: Codex gets no instructions. | `agents-md` |
 | `claude-md-no-import` | warn | Both files exist but `CLAUDE.md` doesn't import `AGENTS.md`: two copies that will drift. | `agents-md` |
 | `instructions-untracked` | warn | One instruction file is committed and the other isn't. | — |
-| `local-md-suppresses-agents` | error | A `CLAUDE.local.md` exists and neither it nor a committed `CLAUDE.md` imports `AGENTS.md`, so Claude Code reads the personal file but not the repo's `AGENTS.md`. | `agents-md` |
+| `local-md-suppresses-agents` | error | A `CLAUDE.local.md` exists beside an `AGENTS.md`, and neither it nor `CLAUDE.md` imports `AGENTS.md`, so Claude Code reads the personal file but not the repo's `AGENTS.md`. | `agents-md` |
 | `codex-skills-dir` | error | Skills under `.codex/skills`, which Codex doesn't read. | `skills-dir` |
-| `claude-only-skills` | error | Real skill directories in `.claude/skills` with no `.agents/skills`: Codex can't see them. | `skills-dir` |
+| `claude-only-skills` | error | Skills in `.claude/skills` that aren't in `.agents/skills` (or there is no `.agents/skills`): Codex can't see them. | `skills-dir` |
 | `duplicate-skill-copies` | warn | Both `.claude/skills` and `.agents/skills` are real directories. | `skills-dir` |
 | `hook-one-harness` | warn | A hook in one harness's project hook file with no counterpart in the other's. | `hooks` |
 | `hook-mismatch` | warn | Counterpart hooks exist but differ (event, matcher, or command). | `hooks` |
 | `hook-hardcoded-home` | info | A hook command contains an absolute home path; it breaks on another machine or clone. | — |
 
 A project is any git repository found under `projects.roots` (not descending
-into another repository's working tree, `node_modules`, or excluded paths).
+into another repository's working tree, `node_modules`, hidden directories, or
+excluded paths). With no `[projects]` table there are no roots, and only the
+global checks run. `tack doctor PATH…` audits the given paths instead of the
+roots: a path that is a repository is one project, any other directory is
+searched like a root.
+
+**Clones.** When `projects.owners` is set, a repository whose `origin` URL
+names another owner (`github.com/<owner>/…`, `git@host:<owner>/…`, and so on;
+case-insensitive, any host) is someone else's project cloned for reference:
+`doctor` skips it rather than report conventions its authors never chose. A
+repository without an `origin`, or with a local one, is yours; so is your
+fork of someone else's. The summary says how many clones were skipped and
+`--json` lists them. Naming a clone on the command line audits it anyway.
+
+**Imports and hooks.** "Imports" follows Claude Code's rules: an `@path`
+token at the start of a line or after whitespace, outside code, relative to
+the importing file, followed transitively; a symlink to the other file counts
+too. Two hooks in different harnesses are *counterparts* when their commands
+are the same once every path in them is reduced to its file name (so
+`~/.claude/hooks/gate` and `~/.codex/hooks/gate` match) and, for the global
+check, their event is the same. Matchers compare as sets of `|`-separated
+alternatives, merged across entries, so four `SessionStart` entries matching
+`startup`, `resume`, `clear` and `compact` equal one matching
+`startup|resume|clear|compact`.
+
+**Exit code.** `1` when there is an error or warn finding; info findings alone
+exit `0`.
 
 ## Scaffolding
 
