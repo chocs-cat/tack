@@ -67,7 +67,7 @@ def test_design_example_manifest_parses(home: Path) -> None:
     assert cfg.after_save == "chezmoi re-add {path}"
     assert cfg.roots == (home / "Code",)
     assert cfg.exclude == (home / "Code" / "Archive", home / "Code" / "cruzainet")
-    assert cfg.owners == ("johnfoland", "cruzainet")
+    assert cfg.owners == ("johnfoland", "cruzainet", "chocs-cat")
     assert [s.name for s in cfg.sources] == ["mine", "cloudflare", "vercel", "corral"]
     mine, cloudflare, vercel, _ = cfg.sources
     assert mine.path == home / "Code" / "skills"

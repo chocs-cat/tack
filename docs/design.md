@@ -123,7 +123,7 @@ after_save = "chezmoi re-add {path}"
 [projects]
 roots = ["~/Code"]
 exclude = ["~/Code/Archive", "~/Code/cruzainet"]
-owners = ["johnfoland", "cruzainet"]   # repos cloned from anyone else aren't audited
+owners = ["johnfoland", "cruzainet", "chocs-cat"]   # repos cloned from anyone else aren't audited
 
 # Built-in harnesses need no table; one appears only to change a setting.
 [harness.claude-code]
@@ -640,7 +640,8 @@ Each phase ends usable and reviewed before the next begins.
 7. **TUI** (Textual) over the same operations: deployed skills per harness,
    sources with outdated counts and diffs, `doctor` findings with their fixes;
    see [The TUI](#the-tui).
-8. **Release** — PyPI `tack-agents`, Homebrew formula in `johnfoland/tap`.
+8. **Release** — PyPI `tack-agents`, Homebrew formula in a tap of tack's own
+   org, `chocs-cat/homebrew-tap` (`brew tap chocs-cat/tap`).
 
 ## Migrating the maintainer's setup
 
@@ -662,7 +663,8 @@ entries under `private_dot_claude/skills/` and `dot_agents/skills/`, and
 6. New machines. chezmoi doesn't install software itself; the dotfiles'
    Brewfile does, through the existing `run_once_after_install-homebrew.sh`
    script that runs `brew bundle install`. Once tack has a Homebrew formula
-   (phase 8), `brew "johnfoland/tap/tack"` goes in the Brewfile. Until then,
+   (phase 8), `brew "chocs-cat/tap/tack"` goes in the Brewfile, with the tap
+   beside `johnfoland/tap` and trusted the same way. Until then,
    tack is installed by hand: `uv tool install -e ~/Code/tack`, as corral is.
    chezmoi also places the manifest and lockfile, and a `run_onchange_after_`
    script keyed on `tack.lock` runs `tack sync` whenever the pins change.

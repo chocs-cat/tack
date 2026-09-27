@@ -22,8 +22,8 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/johnfoland/tack"
-Issues = "https://github.com/johnfoland/tack/issues"
+Homepage = "https://github.com/chocs-cat/tack"
+Issues = "https://github.com/chocs-cat/tack/issues"
 
 [project.scripts]
 tack = "tack.cli:main"
