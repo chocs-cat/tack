@@ -1,0 +1,371 @@
+"""The manifest (tack.toml), the harnesses tack knows, and where its files live.
+
+Locations follow the XDG base directory spec: the manifest in
+$TACK_CONFIG, else $XDG_CONFIG_HOME/tack, else ~/.config/tack; git checkouts
+under $TACK_DATA or $XDG_DATA_HOME/tack; the ownership record under
+$TACK_STATE or $XDG_STATE_HOME/tack. The XDG paths are used on macOS too.
+
+A missing manifest is valid: no sources, no project roots, and the built-in
+harnesses. Anything present is checked strictly -- unknown keys, wrong types
+and dangling harness names are errors -- so a typo can't silently deploy
+nothing.
+"""
+
+from __future__ import annotations
+
+import os
+import re
+import tomllib
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+MANIFEST = "tack.toml"
+
+BUILTIN_HARNESSES: dict[str, dict[str, Any]] = {
+    "claude-code": {
+        "skills_dir": "~/.claude/skills",
+        "project_skills_dir": ".claude/skills",
+        "instructions": "~/.claude/CLAUDE.md",
+        "project_instructions": "CLAUDE.md",
+        "hooks": ["~/.claude/settings.json"],
+        "project_hooks": [".claude/settings.json"],
+        "imports": True,
+        "ignore": ["synced"],
+    },
+    "codex": {
+        "skills_dir": "~/.agents/skills",
+        "project_skills_dir": ".agents/skills",
+        "instructions": "~/.codex/AGENTS.md",
+        "project_instructions": "AGENTS.md",
+        "hooks": ["~/.codex/hooks.json", "~/.codex/config.toml"],
+        "project_hooks": [".codex/hooks.json", ".codex/config.toml"],
+        "imports": False,
+        "ignore": [],
+    },
+}
+
+_HARNESS_REQUIRED = (
+    "skills_dir",
+    "project_skills_dir",
+    "instructions",
+    "project_instructions",
+    "hooks",
+    "project_hooks",
+)
+_HARNESS_KEYS = {*_HARNESS_REQUIRED, "imports", "ignore"}
+_SOURCE_KEYS = {
+    "name",
+    "path",
+    "git",
+    "ref",
+    "subdir",
+    "skills",
+    "harnesses",
+    "autocommit",
+    "autopush",
+}
+_TOP_KEYS = {"after_save", "projects", "harness", "source"}
+_NAME = re.compile(r"[A-Za-z0-9_][A-Za-z0-9._-]*")
+
+
+class ConfigError(Exception):
+    """The manifest can't be read or doesn't make sense (exit code 2)."""
+
+
+@dataclass(frozen=True)
+class Paths:
+    config_dir: Path
+    data_dir: Path
+    state_dir: Path
+
+    @property
+    def manifest(self) -> Path:
+        return self.config_dir / MANIFEST
+
+    @property
+    def sources_dir(self) -> Path:
+        return self.data_dir / "sources"
+
+    @classmethod
+    def from_env(cls, config_dir: Path | None = None) -> Paths:
+        return cls(
+            config_dir=config_dir or _env_dir("TACK_CONFIG", "XDG_CONFIG_HOME", "~/.config"),
+            data_dir=_env_dir("TACK_DATA", "XDG_DATA_HOME", "~/.local/share"),
+            state_dir=_env_dir("TACK_STATE", "XDG_STATE_HOME", "~/.local/state"),
+        )
+
+
+def _env_dir(own: str, xdg: str, fallback: str) -> Path:
+    if value := os.environ.get(own):
+        return Path(value).expanduser()
+    base = os.environ.get(xdg, "")
+    # The spec: a relative XDG path is invalid and should be ignored.
+    root = Path(base) if base and Path(base).is_absolute() else Path(fallback).expanduser()
+    return root / "tack"
+
+
+@dataclass(frozen=True)
+class Harness:
+    name: str
+    skills_dir: Path
+    project_skills_dir: str
+    instructions: Path
+    project_instructions: str
+    hooks: tuple[Path, ...]
+    project_hooks: tuple[str, ...]
+    imports: bool
+    ignore: frozenset[str]
+
+    def ignores(self, entry: str) -> bool:
+        """Whether an entry in `skills_dir` belongs to someone else."""
+        return entry.startswith(".") or entry in self.ignore
+
+
+@dataclass(frozen=True)
+class SkillSpec:
+    name: str
+    harnesses: tuple[str, ...] | None = None
+
+
+@dataclass(frozen=True)
+class Source:
+    name: str
+    path: Path | None = None
+    git: str | None = None
+    ref: str | None = None
+    subdir: str = "skills"
+    skills: tuple[SkillSpec, ...] | None = None  # None: every skill ("*")
+    harnesses: tuple[str, ...] | None = None  # None: every harness
+    autocommit: bool = False
+    autopush: bool = False
+
+
+@dataclass(frozen=True)
+class Config:
+    paths: Paths
+    manifest: Path | None  # None when there is no manifest file
+    harnesses: dict[str, Harness]
+    sources: tuple[Source, ...] = ()
+    roots: tuple[Path, ...] = ()
+    exclude: tuple[Path, ...] = ()
+    owners: tuple[str, ...] = ()  # empty: every repository is yours
+    after_save: str | None = None
+
+
+def load(config_dir: Path | None = None) -> Config:
+    """Read the manifest from `config_dir` (or the environment's default)."""
+    paths = Paths.from_env(config_dir)
+    file = paths.manifest
+    if not file.is_file():
+        return Config(paths=paths, manifest=None, harnesses=_harnesses({}, file))
+    try:
+        data = tomllib.loads(file.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as e:
+        raise ConfigError(f"{file}: {e}") from e
+    return parse(data, file, paths)
+
+
+def parse(data: dict[str, Any], file: Path, paths: Paths) -> Config:
+    """Build a Config from the manifest's parsed TOML."""
+    _no_unknown(data, _TOP_KEYS, file, "the top level")
+    harnesses = _harnesses(_table(data, "harness", file, "the top level"), file)
+    base = file.parent
+    projects = _table(data, "projects", file, "the top level")
+    _no_unknown(projects, {"roots", "exclude", "owners"}, file, "[projects]")
+    roots = _str_list(projects.get("roots", []), file, "[projects] roots")
+    exclude = _str_list(projects.get("exclude", []), file, "[projects] exclude")
+    owners = _str_list(projects.get("owners", []), file, "[projects] owners")
+    after_save = data.get("after_save")
+    if after_save is not None and not isinstance(after_save, str):
+        raise ConfigError(f"{file}: after_save must be a string")
+
+    raw_sources = data.get("source", [])
+    if not isinstance(raw_sources, list):
+        raise ConfigError(f"{file}: sources are [[source]] tables")
+    sources: list[Source] = []
+    for i, raw in enumerate(raw_sources, 1):
+        source = _source(raw, i, file, base, harnesses)
+        if any(s.name == source.name for s in sources):
+            raise ConfigError(f"{file}: two sources are named {source.name!r}")
+        sources.append(source)
+
+    return Config(
+        paths=paths,
+        manifest=file,
+        harnesses=harnesses,
+        sources=tuple(sources),
+        roots=tuple(_path(r, base) for r in roots),
+        exclude=tuple(_path(e, base) for e in exclude),
+        owners=tuple(owners),
+        after_save=after_save,
+    )
+
+
+def _harnesses(tables: dict[str, Any], file: Path) -> dict[str, Harness]:
+    out: dict[str, Harness] = {}
+    for name in [*BUILTIN_HARNESSES, *(n for n in tables if n not in BUILTIN_HARNESSES)]:
+        where = f"[harness.{name}]"
+        table = tables.get(name, {})
+        if not isinstance(table, dict):
+            raise ConfigError(f"{file}: {where} must be a table")
+        _no_unknown(table, _HARNESS_KEYS, file, where)
+        builtin = BUILTIN_HARNESSES.get(name)
+        if builtin is None:
+            if not _NAME.fullmatch(name):
+                raise ConfigError(f"{file}: {name!r} isn't a valid harness name")
+            missing = [k for k in _HARNESS_REQUIRED if k not in table]
+            if missing:
+                raise ConfigError(
+                    f"{file}: {where} is a new harness and needs {', '.join(missing)}"
+                )
+            fields = {"imports": False, "ignore": [], **table}
+        else:
+            # A built-in's `ignore` adds to its own list rather than replacing it.
+            extra = _str_list(table.get("ignore", []), file, f"{where} ignore")
+            fields = {**builtin, **table, "ignore": [*builtin["ignore"], *extra]}
+        out[name] = _harness(name, fields, file, where)
+    return out
+
+
+def _harness(name: str, f: dict[str, Any], file: Path, where: str) -> Harness:
+    def string(key: str) -> str:
+        v = f[key]
+        if not isinstance(v, str) or not v:
+            raise ConfigError(f"{file}: {where} {key} must be a non-empty string")
+        return v
+
+    def strings(key: str) -> list[str]:
+        v = f[key]
+        return [v] if isinstance(v, str) else _str_list(v, file, f"{where} {key}")
+
+    def relative(key: str, value: str) -> str:
+        if Path(value).expanduser().is_absolute():
+            raise ConfigError(f"{file}: {where} {key} is relative to a project: {value!r}")
+        return value
+
+    if not isinstance(f["imports"], bool):
+        raise ConfigError(f"{file}: {where} imports must be true or false")
+    return Harness(
+        name=name,
+        skills_dir=Path(string("skills_dir")).expanduser(),
+        project_skills_dir=relative("project_skills_dir", string("project_skills_dir")),
+        instructions=Path(string("instructions")).expanduser(),
+        project_instructions=relative("project_instructions", string("project_instructions")),
+        hooks=tuple(Path(h).expanduser() for h in strings("hooks")),
+        project_hooks=tuple(relative("project_hooks", h) for h in strings("project_hooks")),
+        imports=f["imports"],
+        ignore=frozenset(_str_list(f["ignore"], file, f"{where} ignore")),
+    )
+
+
+def _source(raw: Any, i: int, file: Path, base: Path, harnesses: dict[str, Harness]) -> Source:
+    if not isinstance(raw, dict):
+        raise ConfigError(f"{file}: source #{i} must be a table")
+    name = raw.get("name")
+    if not isinstance(name, str) or not _NAME.fullmatch(name):
+        raise ConfigError(f"{file}: source #{i} needs a `name` of letters, digits, '.', '_' or '-'")
+    where = f"source {name!r}"
+    _no_unknown(raw, _SOURCE_KEYS, file, where)
+
+    path, git = raw.get("path"), raw.get("git")
+    if (path is None) == (git is None):
+        raise ConfigError(f"{file}: {where} needs exactly one of `path` or `git`")
+    for key in ("path", "git", "ref", "subdir"):
+        if key in raw and (not isinstance(raw[key], str) or not raw[key]):
+            raise ConfigError(f"{file}: {where} {key} must be a non-empty string")
+    for key in ("autocommit", "autopush"):
+        if key in raw and not isinstance(raw[key], bool):
+            raise ConfigError(f"{file}: {where} {key} must be true or false")
+    if path is not None and "ref" in raw:
+        raise ConfigError(f"{file}: {where} is a path source; `ref` applies to git sources")
+    if git is not None and (raw.get("autocommit") or raw.get("autopush")):
+        raise ConfigError(f"{file}: {where} is a git source; auto-commit applies to path sources")
+
+    subdir = raw.get("subdir", "skills")
+    if Path(subdir).is_absolute() or ".." in Path(subdir).parts:
+        raise ConfigError(f"{file}: {where} subdir must be inside the source: {subdir!r}")
+
+    source_harnesses = _harness_names(raw.get("harnesses"), harnesses, file, f"{where} harnesses")
+    return Source(
+        name=name,
+        path=_path(path, base) if path is not None else None,
+        git=git,
+        ref=raw.get("ref"),
+        subdir=subdir,
+        skills=_skills(raw.get("skills", "*"), source_harnesses, harnesses, file, where),
+        harnesses=source_harnesses,
+        autocommit=raw.get("autocommit", False),
+        autopush=raw.get("autopush", False),
+    )
+
+
+def _skills(
+    value: Any,
+    source_harnesses: tuple[str, ...] | None,
+    harnesses: dict[str, Harness],
+    file: Path,
+    where: str,
+) -> tuple[SkillSpec, ...] | None:
+    if value == "*":
+        return None
+    if not isinstance(value, list):
+        raise ConfigError(f'{file}: {where} skills must be "*" or a list')
+    specs: list[SkillSpec] = []
+    for item in value:
+        if isinstance(item, str):
+            spec = SkillSpec(item)
+        elif isinstance(item, dict):
+            _no_unknown(item, {"name", "harnesses"}, file, f"{where} skills")
+            if not isinstance(item.get("name"), str):
+                raise ConfigError(f"{file}: {where} skills: a table entry needs a `name`")
+            label = f"{where} skill {item['name']!r} harnesses"
+            names = _harness_names(item.get("harnesses"), harnesses, file, label)
+            outside = [h for h in names or () if source_harnesses and h not in source_harnesses]
+            if outside:
+                raise ConfigError(
+                    f"{file}: {label}: {', '.join(outside)} isn't among the source's harnesses"
+                )
+            spec = SkillSpec(item["name"], names)
+        else:
+            raise ConfigError(f"{file}: {where} skills entries are names or tables")
+        if not _NAME.fullmatch(spec.name):
+            raise ConfigError(f"{file}: {where} skills: {spec.name!r} isn't a skill name")
+        if any(s.name == spec.name for s in specs):
+            raise ConfigError(f"{file}: {where} lists skill {spec.name!r} twice")
+        specs.append(spec)
+    return tuple(specs)
+
+
+def _harness_names(
+    value: Any, harnesses: dict[str, Harness], file: Path, where: str
+) -> tuple[str, ...] | None:
+    if value is None:
+        return None
+    names = _str_list(value, file, where)
+    if unknown := [n for n in names if n not in harnesses]:
+        raise ConfigError(f"{file}: {where}: no harness named {', '.join(map(repr, unknown))}")
+    return tuple(names)
+
+
+def _table(data: dict[str, Any], key: str, file: Path, where: str) -> dict[str, Any]:
+    value = data.get(key, {})
+    if not isinstance(value, dict):
+        raise ConfigError(f"{file}: {key} in {where} must be a table")
+    return value
+
+
+def _str_list(value: Any, file: Path, where: str) -> list[str]:
+    if not isinstance(value, list) or not all(isinstance(v, str) and v for v in value):
+        raise ConfigError(f"{file}: {where} must be a list of strings")
+    return value
+
+
+def _no_unknown(table: dict[str, Any], allowed: set[str], file: Path, where: str) -> None:
+    if unknown := sorted(set(table) - allowed):
+        raise ConfigError(f"{file}: unknown key {', '.join(map(repr, unknown))} in {where}")
+
+
+def _path(value: str, base: Path) -> Path:
+    p = Path(value).expanduser()
+    return p if p.is_absolute() else base / p

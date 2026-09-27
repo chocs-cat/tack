@@ -1,0 +1,170 @@
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+from tack import __version__
+from tack.cli import main
+from tests.helpers import git, link, repo, skill, write
+
+
+def run(capsys: pytest.CaptureFixture[str], *argv: str) -> tuple[int, str, str]:
+    code = main(list(argv))
+    out, err = capsys.readouterr()
+    return code, out, err
+
+
+def manifest(home: Path, text: str) -> None:
+    write(home / ".config" / "tack" / "tack.toml", text)
+
+
+@pytest.fixture
+def machine(home: Path) -> Path:
+    """One source deployed to both harnesses, and a project root with one clean
+    project and one whose CLAUDE.md has no AGENTS.md."""
+    a = skill(home / "mine" / "skills", "a")
+    link(home / ".claude" / "skills" / "a", a)
+    link(home / ".agents" / "skills" / "a", a)
+    repo(home / "Code" / "good", {"AGENTS.md": "x\n", "CLAUDE.md": "@AGENTS.md\n"})
+    repo(home / "Code" / "bad", {"CLAUDE.md": "x\n"})
+    manifest(
+        home,
+        '[projects]\nroots = ["~/Code"]\n[[source]]\nname = "mine"\npath = "~/mine"\n',
+    )
+    return home
+
+
+def test_doctor_json(machine: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    code, out, _ = run(capsys, "doctor", "--json")
+    data = json.loads(out)
+    assert code == 1
+    assert data["manifest"] == str(machine / ".config" / "tack" / "tack.toml")
+    assert data["projects"] == [str(machine / "Code" / "bad"), str(machine / "Code" / "good")]
+    assert data["counts"] == {"error": 1, "warn": 0, "info": 0}
+    assert data["findings"] == [
+        {
+            "id": "agents-md-missing",
+            "severity": "error",
+            "message": "CLAUDE.md has instructions but there is no AGENTS.md: "
+            "Codex gets none of them",
+            "path": str(machine / "Code" / "bad" / "CLAUDE.md"),
+            "harness": None,
+            "project": str(machine / "Code" / "bad"),
+            "fix": "agents-md",
+        }
+    ]
+
+
+def test_doctor_text(machine: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    code, out, _ = run(capsys, "doctor")
+    assert code == 1
+    assert out.splitlines() == [
+        "manifest: ~/.config/tack/tack.toml",
+        "",
+        "~/Code/bad",
+        "  error  agents-md-missing  CLAUDE.md  (fix: agents-md)",
+        "         "
+        + " " * len("agents-md-missing")
+        + "  CLAUDE.md has instructions but there is no AGENTS.md: Codex gets none of them",
+        "",
+        "1 error -- checked 2 harnesses, 2 projects",
+    ]
+
+
+def test_doctor_scopes_and_paths(machine: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    code, out, _ = run(capsys, "doctor", "--global-only")
+    assert (code, out.splitlines()[-1]) == (0, "no findings -- checked 2 harnesses, 0 projects")
+
+    link(machine / ".claude" / "skills" / "stray", machine / "nowhere")
+    code, out, _ = run(capsys, "doctor", "--projects-only", "--json")
+    assert code == 1
+    assert [f["id"] for f in json.loads(out)["findings"]] == ["agents-md-missing"]
+
+    code, out, _ = run(capsys, "doctor", "--projects-only", str(machine / "Code" / "good"))
+    assert (code, out.splitlines()[-1]) == (0, "no findings -- checked 1 project")
+
+
+def test_clones_are_skipped_unless_named(machine: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    clone = repo(machine / "Code" / "vendor" / "tool", {"CLAUDE.md": "theirs\n"})
+    git(clone, "remote", "add", "origin", "https://github.com/someone/tool.git")
+    mine = machine / "Code" / "good"
+    git(mine, "remote", "add", "origin", "https://github.com/me/good.git")
+    text = (machine / ".config" / "tack" / "tack.toml").read_text()
+    manifest(machine, text.replace("[projects]\n", '[projects]\nowners = ["me"]\n'))
+
+    code, out, _ = run(capsys, "doctor", "--projects-only", "--json")
+    data = json.loads(out)
+    assert data["clones"] == [str(clone)]
+    assert str(clone) not in data["projects"]
+    assert [f["project"] for f in data["findings"]] == [str(machine / "Code" / "bad")]
+
+    code, out, _ = run(capsys, "doctor", "--projects-only")
+    assert out.splitlines()[-1] == (
+        "1 error -- checked 2 projects (1 clone of others' projects skipped)"
+    )
+
+    code, out, _ = run(capsys, "doctor", "--projects-only", "--json", str(clone))
+    data = json.loads(out)
+    assert code == 1
+    assert (data["projects"], data["clones"]) == ([str(clone)], [])
+    assert [f["id"] for f in data["findings"]] == ["agents-md-missing"]
+
+
+def test_info_findings_alone_exit_zero(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    write(
+        home / ".claude" / "settings.json", '{"hooks": {"Stop": [{"hooks": [{"command": "x"}]}]}}'
+    )
+    code, out, _ = run(capsys, "doctor", "--json")
+    assert code == 0
+    assert json.loads(out)["counts"] == {"error": 0, "warn": 0, "info": 1}
+
+
+def test_no_manifest(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    code, out, _ = run(capsys, "doctor")
+    assert code == 0
+    assert out.splitlines()[0] == (
+        "no manifest at ~/.config/tack/tack.toml: built-in harnesses, no sources, no project roots"
+    )
+    code, out, _ = run(capsys, "doctor", "--json")
+    assert json.loads(out)["manifest"] is None
+
+
+def test_config_errors_exit_two(
+    home: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    manifest(home, "bogus = true\n")
+    code, _, err = run(capsys, "doctor")
+    assert code == 2
+    assert "unknown key 'bogus'" in err
+    code, out, _ = run(capsys, "doctor", "--json")
+    assert code == 2
+    assert json.loads(out)["error"] == "config"
+
+    write(tmp_path / "other" / "tack.toml", "")
+    code, out, _ = run(capsys, "doctor", "--config", str(tmp_path / "other"), "--json")
+    assert (code, json.loads(out)["manifest"]) == (0, str(tmp_path / "other" / "tack.toml"))
+
+
+def test_usage(capsys: pytest.CaptureFixture[str]) -> None:
+    code, _, err = run(capsys)
+    assert code == 2
+    assert "doctor" in err
+    with pytest.raises(SystemExit) as e:
+        main(["doctor", "--global-only", "--projects-only"])
+    assert e.value.code == 2
+    with pytest.raises(SystemExit) as e:
+        main(["--version"])
+    assert e.value.code == 0
+    assert capsys.readouterr().out.strip() == f"tack {__version__}"
+
+
+def test_module_entry_point(home: Path) -> None:
+    r = subprocess.run(
+        [sys.executable, "-m", "tack", "doctor", "--json"], capture_output=True, text=True
+    )
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout)["findings"] == []
