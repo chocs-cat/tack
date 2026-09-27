@@ -154,7 +154,7 @@ skills = ["find-skills"]
 
 [[source]]
 name = "corral"
-git = "https://github.com/johnfoland/corral.git"
+git = "https://github.com/chocs-cat/corral.git"
 ref = "master"
 skills = ["corral"]
 ```
