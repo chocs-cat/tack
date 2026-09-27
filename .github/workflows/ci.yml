@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  lint:
+    name: lint (ruff, ty)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run ty check
+
+  test:
+    name: test (${{ matrix.os }}, py${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - run: uv sync --locked
+      - run: uv run pytest -q
+
+  package:
+    # Build the sdist and wheel, then install each into a fresh environment
+    # and run the installed command: catches packaging mistakes (a module
+    # left out of the wheel, a dependency missing from the metadata) that
+    # the tests, which run from the source tree, can't see.
+    name: package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+      - run: uv build
+      - run: uvx twine check --strict dist/*
+      - name: Smoke-test the wheel and the sdist
+        run: |
+          set -euo pipefail
+          export HOME="$RUNNER_TEMP/home" TACK_CONFIG="$RUNNER_TEMP/no-config"
+          mkdir -p "$HOME"
+          git init -q "$RUNNER_TEMP/demo"
+          for dist in dist/*.whl dist/*.tar.gz; do
+            env="$RUNNER_TEMP/venv-$(basename "$dist")"
+            uv venv -q "$env"
+            uv pip install -q --python "$env" "$dist"
+            "$env/bin/tack" --version
+            "$env/bin/tack" doctor --json "$RUNNER_TEMP/demo" | "$env/bin/python" -c \
+              'import json, sys; assert json.load(sys.stdin)["projects"] == [sys.argv[1]]' \
+              "$RUNNER_TEMP/demo"
+          done
+
+  ok:
+    # The one check branch protection requires, so the matrix can change
+    # without editing the protection rule.
+    name: CI passed
+    if: always()
+    needs: [lint, test, package]
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          test "${{ needs.lint.result }}" = success
+          test "${{ needs.test.result }}" = success
+          test "${{ needs.package.result }}" = success
