@@ -22,11 +22,12 @@ interview; where one is still open it says so, in
 10. [`doctor` checks](#doctor-checks)
 11. [Scaffolding](#scaffolding)
 12. [The TUI](#the-tui)
-13. [Harness facts tack relies on](#harness-facts-tack-relies-on)
-14. [Implementation](#implementation)
-15. [Phases](#phases)
-16. [Migrating the maintainer's setup](#migrating-the-maintainers-setup)
-17. [Open questions](#open-questions)
+13. [Releasing](#releasing)
+14. [Harness facts tack relies on](#harness-facts-tack-relies-on)
+15. [Implementation](#implementation)
+16. [Phases](#phases)
+17. [Migrating the maintainer's setup](#migrating-the-maintainers-setup)
+18. [Open questions](#open-questions)
 
 ## What tack is
 
@@ -567,6 +568,40 @@ a running fetch to finish, so the two never work in one checkout at once.
 Diffs show colored in the detail pane and in an action's preview; `p`
 suspends the app and opens the diff in git's pager (`git var GIT_PAGER`).
 
+## Releasing
+
+tack is published to PyPI as `tack-agents` and to Homebrew as `tack`, from the
+`chocs-cat/homebrew-tap` tap (`brew install chocs-cat/tap/tack`). The
+repository and the tap are public.
+
+- **Versions and the changelog** come from Conventional Commits, through
+  release-please. `feat` bumps the minor version, and so does a breaking
+  change while tack is below 1.0; `fix` and `perf` bump the patch; the other
+  types release nothing on their own. release-please keeps a release pull
+  request open with the bump and a `CHANGELOG.md` section, and merging it
+  tags `vX.Y.Z` and creates the GitHub release. The version is in
+  `pyproject.toml`, `src/tack/__init__.py` and `uv.lock`; release-please
+  updates all three. The first release is `0.1.0`.
+- **PyPI.** The release workflow then builds the sdist and wheel, uploads
+  them by trusted publishing (no token) from a `pypi` environment, and
+  attaches them to the GitHub release.
+- **Homebrew.** Then it writes the formula and pushes it to the tap as one
+  commit, `tack X.Y.Z`. The formula builds from the PyPI sdist, with a
+  `resource` for each dependency: `scripts/formula.py` resolves
+  `tack-agents==X.Y.Z` for every platform (`uv pip compile --universal`) and
+  takes each sdist's URL and hash from PyPI; it runs the same way by hand.
+  A job on macOS then installs the formula from the tap and runs
+  `tack --version`. Pushing needs a `TAP_TOKEN` secret, a fine-grained token
+  with Contents read/write on the tap alone.
+- The formula uses Homebrew's newest Python (`python@3.14`), so CI tests 3.11
+  through 3.14.
+
+Setup no file can do is listed in `CONTRIBUTING.md`: the PyPI pending
+publisher (project `tack-agents`, owner `chocs-cat`, repository `tack`,
+workflow `release.yml`, environment `pypi`), the `pypi` environment, letting
+Actions create pull requests, the `TAP_TOKEN` secret, and optionally a
+`RELEASE_PLEASE_TOKEN` so release pull requests run CI without approval.
+
 ## Harness facts tack relies on
 
 Verified 2026-09-27 against Claude Code 2.1.283 and codex-cli 0.155.1 and
@@ -617,7 +652,8 @@ changes one means a check changes.
   `edit.py` (`add`, `remove` and the manifest's text edits),
   `commit.py` (auto-commit), `doctor/` (one module per check group),
   `scaffold/` (one module per fix), `cli.py`, and `tui/` (the app, its
-  views and its dialogs, over the same functions the CLI calls).
+  views and its dialogs, over the same functions the CLI calls). Outside
+  the package, `scripts/formula.py` writes the Homebrew formula.
 - Tests build throwaway harness directories, projects and git remotes in a
   temporary directory; nothing in the test suite touches the real home
   directory. The TUI is driven through Textual's test pilot.
@@ -640,8 +676,8 @@ Each phase ends usable and reviewed before the next begins.
 7. **TUI** (Textual) over the same operations: deployed skills per harness,
    sources with outdated counts and diffs, `doctor` findings with their fixes;
    see [The TUI](#the-tui).
-8. **Release** — PyPI `tack-agents`, Homebrew formula in a tap of tack's own
-   org, `chocs-cat/homebrew-tap` (`brew tap chocs-cat/tap`).
+8. **Release** — PyPI `tack-agents`, Homebrew formula in
+   `chocs-cat/homebrew-tap`; see [Releasing](#releasing).
 
 ## Migrating the maintainer's setup
 
@@ -662,10 +698,11 @@ entries under `private_dot_claude/skills/` and `dot_agents/skills/`, and
 5. Update the global instructions' "Global skills" section to describe tack.
 6. New machines. chezmoi doesn't install software itself; the dotfiles'
    Brewfile does, through the existing `run_once_after_install-homebrew.sh`
-   script that runs `brew bundle install`. Once tack has a Homebrew formula
-   (phase 8), `brew "chocs-cat/tap/tack"` goes in the Brewfile, with the tap
-   beside `johnfoland/tap` and trusted the same way. Until then,
-   tack is installed by hand: `uv tool install -e ~/Code/tack`, as corral is.
+   script that runs `brew bundle install`. Since phase 8 the Brewfile has
+   `brew "chocs-cat/tap/tack"`, with the tap beside `johnfoland/tap` and
+   trusted the same way, on every machine including the maintainer's, which
+   runs unreleased changes with `uv run tack` in the checkout. Until then,
+   tack was installed by hand: `uv tool install -e ~/Code/tack`, as corral is.
    chezmoi also places the manifest and lockfile, and a `run_onchange_after_`
    script keyed on `tack.lock` runs `tack sync` whenever the pins change.
    Both scripts belong to the dotfiles, not to tack.
