@@ -1,6 +1,8 @@
 # tack — design
 
-Status: **approved** (2026-09-27); phase 2 (`doctor`) is in progress. This document
+Status: **approved** (2026-09-27); phases 2 (`doctor`) and 3 (sources and
+`sync`, with the maintainer's setup migrated) are done; phase 4 (tracking) is
+next. This document
 is the spec. Decisions below were settled with the maintainer in an
 interview; where one is still open it says so, in
 [Open questions](#open-questions).
@@ -210,8 +212,9 @@ harness it adds to the built-in list rather than replacing it.
 tack edits `tack.toml` only through `add`/`remove` (and the TUI), with
 [tomlkit](https://github.com/python-poetry/tomlkit) so comments and layout
 survive. After writing either file it runs `after_save` once per file changed,
-with `{path}` replaced by the absolute path, and reports a failure without
-undoing the write.
+with `{path}` replaced by the absolute path (shell-quoted; the command runs
+under `sh -c`), and reports a failure without undoing the write. A
+`--dry-run` writes nothing and runs nothing.
 
 ## The lockfile: `tack.lock`
 
@@ -229,10 +232,17 @@ locked = 2026-09-27T12:00:00Z
 ```
 
 - A git source with no lock entry is pinned on first `sync` to the current tip
-  of its `ref`, and the lock is written.
+  of its `ref`, and the lock is written. An entry has no `ref` when the source
+  follows the remote's default branch.
 - If the manifest's `git` or `ref` for a source no longer matches its lock
   entry, `sync` refuses that source until `tack update <source>` re-pins it.
+- `sync` never drops an entry, so a source commented out and later restored
+  comes back at the same pin; `tack remove` drops it.
 - `path` sources are not locked: they are whatever is checked out.
+
+A checkout is tack's, but `sync` still refuses to move one with local
+changes (it reports them instead of discarding them). A checkout that has
+gone missing is cloned again at its pin.
 
 ## Commands
 
@@ -243,7 +253,7 @@ partial failure, `2` usage or configuration error.
 | Command | What it does |
 |---|---|
 | `tack sync [--dry-run] [--adopt]` | Make every harness match the manifest and lock: fetch/check out git sources at their pinned commits, create missing links, remove links to skills no longer selected. Reports conflicts instead of overwriting (see [Ownership](#ownership-and-conflicts)); `--adopt` takes them over. |
-| `tack status` | What is deployed where, each source's pin or checkout state, and pending auto-commits. Read-only. |
+| `tack status` | What is deployed where, each source's pin or checkout state, and pending auto-commits (uncommitted and unpushed skill edits in `path` sources). Read-only; exits `0`. |
 | `tack outdated [SOURCE…] [--diff]` | Fetch each git source's `ref` and show how far its pin is behind: commits, and which *selected* skills changed. `--diff` prints the diff limited to those skills. |
 | `tack update [SOURCE…]` | Move pins to the current tip of `ref`, write the lock, then `sync`. |
 | `tack add GIT_URL\|PATH [--name N] [--skill S…] [--ref R]` | Add a source to the manifest (then `sync`). |
@@ -263,14 +273,26 @@ either the ownership record lists it, or its target is inside tack's data
 directory or inside a configured source. Only tack's paths are ever replaced
 or removed.
 
+The ownership record, `state.json`, maps each link tack made (or found
+already pointing where the manifest says) to its target. A listed link counts
+as tack's only while it still points there, so repointing one by hand takes
+it back. The record is what lets `sync` remove the links of a `path` source
+that has been dropped from the manifest.
+
 Anything else at a path tack wants — a real directory, a symlink elsewhere, a
 link into another manager's library — is a **conflict**: `sync` skips that
 skill, reports it, and exits `1`. `sync --adopt` replaces conflicting entries
-after moving any real directory to `$XDG_STATE_HOME/tack/adopted/<timestamp>/`
-(never deleting it).
+after moving any real directory to
+`$XDG_STATE_HOME/tack/adopted/<timestamp>/<harness>/<skill>` (never deleting
+it); a foreign symlink is simply replaced.
 
 Two sources offering the same skill name is a manifest error: tack deploys
-neither and says which sources collide. Deselect one.
+neither, leaves whatever is at that name alone, and says which sources
+collide. Deselect one.
+
+A source `sync` can't bring up to date (a missing `path`, a failed fetch, a
+refused checkout) is reported, and its skills' links are left as they are
+rather than removed.
 
 ## Auto-commit
 
@@ -440,13 +462,15 @@ Each phase ends usable and reviewed before the next begins.
 
 ## Migrating the maintainer's setup
 
-Today (the interim from 2026-09-27), chezmoi deploys skills: `symlink_*.tmpl`
+**Done 2026-09-27.** Until then chezmoi deployed skills: `symlink_*.tmpl`
 entries under `private_dot_claude/skills/` and `dot_agents/skills/`, and
 `git-repo` externals cloning third-party sources into
-`~/.local/share/agent-skills/`. At the end of phase 3:
+`~/.local/share/agent-skills/`. The migration, at the end of phase 3:
 
 1. Write `~/.config/tack/tack.toml` matching the current deployment (the
-   example above), and `chezmoi add` it with the lockfile.
+   example above), and `chezmoi add` it. The lockfile is added after step 3:
+   the first `sync` writes it, and its `after_save` (`chezmoi re-add`) fails
+   that once because chezmoi doesn't manage the file yet.
 2. `chezmoi forget` the 32 skill symlinks and delete the three skill externals
    from `.chezmoiexternal.toml.tmpl` — *before* `sync`, so a later `chezmoi
    apply` doesn't recreate them.
