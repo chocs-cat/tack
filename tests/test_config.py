@@ -145,6 +145,7 @@ def test_builtin_harness_override(home: Path) -> None:
         ("[[source]]\nname = 'x'\npath = '/x'\nref = 'main'", "`ref` applies to git"),
         ("[[source]]\nname = 'x'\ngit = 'u'\nautocommit = true", "auto-commit applies to path"),
         ("[[source]]\nname = 'x'\npath = '/x'\nautopush = 'yes'", "autopush must be true"),
+        ("[[source]]\nname = 'x'\npath = '/x'\nautopush = true", "it needs autocommit"),
         ("[[source]]\nname = 'x'\npath = '/x'\nsubdir = '../up'", "subdir must be inside"),
         ("[[source]]\nname = 'x'\npath = '/x'\nskills = 'all'", 'skills must be "\\*" or a list'),
         ("[[source]]\nname = 'x'\npath = '/x'\nskills = ['a', 'a']", "lists skill 'a' twice"),

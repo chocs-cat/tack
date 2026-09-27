@@ -24,9 +24,13 @@ def run(cwd: Path | None, *args: str) -> subprocess.CompletedProcess[str]:
 
 
 def error(r: subprocess.CompletedProcess[str]) -> str:
-    """The last thing git said on stderr, for a message."""
-    lines = [line for line in r.stderr.strip().splitlines() if line.strip()]
-    return lines[-1].removeprefix("fatal: ") if lines else f"git exited {r.returncode}"
+    """The last thing git said on stderr (hints aside), for a message."""
+    lines = [
+        line for line in r.stderr.splitlines() if line.strip() and not line.startswith("hint:")
+    ]
+    if not lines:
+        return f"git exited {r.returncode}"
+    return lines[-1].strip().removeprefix("fatal: ").removeprefix("error: ")
 
 
 def toplevel(path: Path) -> Path | None:

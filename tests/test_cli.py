@@ -9,7 +9,7 @@ import pytest
 
 from tack import __version__
 from tack.cli import main
-from tests.helpers import commit, git, link, repo, skill, upstream, write
+from tests.helpers import commit, git, link, repo, skill, skill_md, upstream, write
 
 
 def run(capsys: pytest.CaptureFixture[str], *argv: str) -> tuple[int, str, str]:
@@ -272,6 +272,71 @@ def test_config_errors_exit_two(
     write(tmp_path / "other" / "tack.toml", "")
     code, out, _ = run(capsys, "doctor", "--config", str(tmp_path / "other"), "--json")
     assert (code, json.loads(out)["manifest"]) == (0, str(tmp_path / "other" / "tack.toml"))
+
+
+def test_changing_commands_auto_commit(
+    home: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    remote = tmp_path / "remote.git"
+    git(tmp_path, "init", "-q", "--bare", "-b", "master", str(remote))
+    mine = repo(home / "mine", {"skills/a/SKILL.md": skill_md("a")})
+    git(mine, "remote", "add", "origin", str(remote))
+    git(mine, "push", "-q", "-u", "origin", "master")
+    manifest(
+        home, '[[source]]\nname = "mine"\npath = "~/mine"\nautocommit = true\nautopush = true\n'
+    )
+    assert run(capsys, "sync")[0] == 0
+    write(mine / "skills" / "a" / "SKILL.md", "edited\n")
+    before = git(mine, "rev-parse", "HEAD")
+
+    # Read-only commands, a usage error, and runs told not to commit leave the edit alone.
+    for argv in (
+        ["status"], ["doctor"], ["outdated"], ["remove", "nosuch"], ["sync", "--no-commit"],
+    ):  # fmt: skip
+        run(capsys, *argv)
+    monkeypatch.setenv("TACK_NO_COMMIT", "1")
+    run(capsys, "sync")
+    monkeypatch.delenv("TACK_NO_COMMIT")
+    code, out, _ = run(capsys, "sync", "--dry-run")
+    assert (code, out.splitlines()) == (
+        0,
+        [
+            'mine  would commit "Update a"',
+            "mine  would push master to origin/master",
+            "",
+            "would make 2 changes",
+        ],
+    )
+    assert git(mine, "rev-parse", "HEAD") == before
+
+    code, out, _ = run(capsys, "sync")
+    commit = git(mine, "rev-parse", "HEAD").strip()
+    assert (code, out.splitlines()) == (
+        0,
+        [
+            f'mine  committed "Update a" ({commit[:12]})',
+            "mine  pushed master to origin/master",
+            "",
+            "2 changes",
+        ],
+    )
+    assert git(remote, "rev-parse", "master").strip() == commit
+
+    git(mine, "checkout", "-q", "--detach")
+    write(mine / "skills" / "a" / "SKILL.md", "again\n")
+    code, out, _ = run(capsys, "sync")
+    assert (code, out.splitlines()) == (
+        0,
+        ["note: mine: not auto-committed: ~/mine is on a detached HEAD", "", "already in sync"],
+    )
+    code, out, _ = run(capsys, "sync", "--json")
+    assert json.loads(out)["notes"] == [
+        {
+            "message": "not auto-committed: ~/mine is on a detached HEAD",
+            "source": "mine",
+            "path": str(mine),
+        }
+    ]
 
 
 def test_usage(capsys: pytest.CaptureFixture[str]) -> None:

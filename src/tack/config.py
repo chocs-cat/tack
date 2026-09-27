@@ -296,6 +296,8 @@ def _source(raw: Any, i: int, file: Path, base: Path, harnesses: dict[str, Harne
         raise ConfigError(f"{file}: {where} is a path source; `ref` applies to git sources")
     if git is not None and (raw.get("autocommit") or raw.get("autopush")):
         raise ConfigError(f"{file}: {where} is a git source; auto-commit applies to path sources")
+    if raw.get("autopush") and not raw.get("autocommit"):
+        raise ConfigError(f"{file}: {where} autopush pushes auto-commits; it needs autocommit")
 
     subdir = raw.get("subdir", "skills")
     if Path(subdir).is_absolute() or ".." in Path(subdir).parts:

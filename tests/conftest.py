@@ -10,6 +10,7 @@ _ENV = (
     "TACK_CONFIG",
     "TACK_DATA",
     "TACK_STATE",
+    "TACK_NO_COMMIT",
     "XDG_CONFIG_HOME",
     "XDG_DATA_HOME",
     "XDG_STATE_HOME",

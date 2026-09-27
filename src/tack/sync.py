@@ -27,9 +27,10 @@ from tack.sources import SourceError
 from tack.text import tilde
 
 Action = Literal[
-    "pin", "update", "clone", "checkout", "write", "link", "relink", "unlink", "adopt", "delete"
-]
-ProblemKind = Literal["source", "conflict", "collision", "after-save", "error"]
+    "pin", "update", "clone", "checkout", "write", "link", "relink", "unlink", "adopt", "delete",
+    "commit", "push",
+]  # fmt: skip
+ProblemKind = Literal["source", "conflict", "collision", "after-save", "commit", "push", "error"]
 
 
 @dataclass(frozen=True)
@@ -50,15 +51,26 @@ class Problem:
     path: Path | None = None
 
 
+@dataclass(frozen=True)
+class Note:
+    """Something worth knowing that isn't a problem, like a skipped auto-commit."""
+
+    message: str
+    source: str | None = None
+    path: Path | None = None
+
+
 @dataclass
 class Result:
     dry_run: bool
     changes: list[Change] = field(default_factory=list)
     problems: list[Problem] = field(default_factory=list)
+    notes: list[Note] = field(default_factory=list)
 
     def extend(self, other: Result) -> Result:
         self.changes += other.changes
         self.problems += other.problems
+        self.notes += other.notes
         return self
 
 

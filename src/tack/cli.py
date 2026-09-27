@@ -9,7 +9,9 @@
     tack doctor [PATH...] [--global-only|--projects-only]   audit
 
 Every command takes --json (the result goes to stdout as JSON) and
---config DIR (the directory holding tack.toml).
+--config DIR (the directory holding tack.toml). sync, update, add and remove
+also commit pending edits to the skills of path sources with `autocommit`;
+--no-commit (or TACK_NO_COMMIT=1) skips that for one run.
 
 Exit codes: 0 ok / nothing to report, 1 findings or a partial failure,
 2 usage or configuration error.
@@ -19,13 +21,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from dataclasses import asdict, is_dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from tack import __version__, config, doctor, edit, outdated, status, sync, update
+from tack import __version__, commit, config, doctor, edit, outdated, status, sync, update
 from tack.config import Config, ConfigError, UsageError
 from tack.doctor.findings import Finding
 from tack.text import tilde
@@ -42,6 +45,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="the directory holding tack.toml (default: $TACK_CONFIG, else ~/.config/tack)",
     )
 
+    # For the commands that change things, and so auto-commit.
+    changes = argparse.ArgumentParser(add_help=False)
+    changes.add_argument(
+        "--dry-run", action="store_true", help="say what would change; change nothing"
+    )
+    changes.add_argument(
+        "--no-commit",
+        action="store_true",
+        help="don't auto-commit edits to your own skills this run (also: TACK_NO_COMMIT=1)",
+    )
+
     parser = argparse.ArgumentParser(
         prog="tack",
         description="Keep agent skills deployed identically to every coding agent, "
@@ -52,13 +66,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser(
         "sync",
-        parents=[common],
+        parents=[common, changes],
         help="make every harness match the manifest and the lockfile",
         description="Fetch and check out git sources at their pins (pinning new ones), "
         "link the selected skills into each harness, and remove tack's links to skills "
         "no longer selected. Exits 1 on a conflict or a source it couldn't update.",
     )
-    p.add_argument("--dry-run", action="store_true", help="say what would change; change nothing")
     p.add_argument(
         "--adopt",
         action="store_true",
@@ -87,18 +100,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser(
         "update",
-        parents=[common],
+        parents=[common, changes],
         help="move git sources' pins to the tip of their refs, then sync",
         description="Re-pin git sources to the current tip of their refs, write the "
         "lockfile, and sync. `tack outdated --diff` shows what that takes in.",
     )
     p.add_argument("sources", nargs="*", metavar="SOURCE", help="these sources (default: all)")
-    p.add_argument("--dry-run", action="store_true", help="say what would change; change nothing")
     p.set_defaults(func=cmd_update)
 
     p = sub.add_parser(
         "add",
-        parents=[common],
+        parents=[common, changes],
         help="add a source to the manifest, then sync",
         description="Add a git repository (a URL) or a local directory as a source. A git "
         "source is pinned to the tip of its ref and fetched first; nothing is written unless "
@@ -117,18 +129,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--ref", metavar="R", help="the branch or tag to follow (default: the remote's)")
     p.add_argument("--subdir", metavar="D", help="where the skills are (default: skills)")
-    p.add_argument("--dry-run", action="store_true", help="say what would change; change nothing")
     p.set_defaults(func=cmd_add)
 
     p = sub.add_parser(
         "remove",
-        parents=[common],
+        parents=[common, changes],
         help="remove a source, its links and its checkout",
         description="Remove a source from the manifest and the lockfile, sync (removing its "
         "links), and delete tack's checkout of it unless that has local changes.",
     )
     p.add_argument("source", metavar="SOURCE")
-    p.add_argument("--dry-run", action="store_true", help="say what would change; change nothing")
     p.set_defaults(func=cmd_remove)
 
     p = sub.add_parser(
@@ -205,16 +215,19 @@ _VERBS = {
     "unlink": ("remove", "removed"),
     "adopt": ("adopt", "adopted"),
     "delete": ("delete", "deleted"),
+    "commit": ("commit", "committed"),
+    "push": ("push", "pushed"),
 }
 
 
 def cmd_sync(args: argparse.Namespace, cfg: Config) -> int:
-    return _report(args, sync.sync(cfg, dry_run=args.dry_run, adopt=args.adopt))
+    result = sync.sync(cfg, dry_run=args.dry_run, adopt=args.adopt)
+    return _report(args, _autocommit(args, cfg, result))
 
 
 def cmd_update(args: argparse.Namespace, cfg: Config) -> int:
     result = update.update(cfg, args.sources, dry_run=args.dry_run)
-    return _report(args, result, idle="already up to date")
+    return _report(args, _autocommit(args, cfg, result), idle="already up to date")
 
 
 def cmd_add(args: argparse.Namespace, cfg: Config) -> int:
@@ -227,11 +240,20 @@ def cmd_add(args: argparse.Namespace, cfg: Config) -> int:
         subdir=args.subdir,
         dry_run=args.dry_run,
     )
-    return _report(args, result)
+    return _report(args, _autocommit(args, cfg, result))
 
 
 def cmd_remove(args: argparse.Namespace, cfg: Config) -> int:
-    return _report(args, edit.remove(cfg, args.source, dry_run=args.dry_run))
+    result = edit.remove(cfg, args.source, dry_run=args.dry_run)
+    return _report(args, _autocommit(args, cfg, result))
+
+
+def _autocommit(args: argparse.Namespace, cfg: Config, result: sync.Result) -> sync.Result:
+    """`result`, followed by the auto-commit that ends every command changing
+    things (with the manifest as it was when the command started)."""
+    if args.no_commit or os.environ.get("TACK_NO_COMMIT", "") not in ("", "0"):
+        return result
+    return result.extend(commit.autocommit(cfg, dry_run=args.dry_run))
 
 
 def _report(args: argparse.Namespace, result: sync.Result, idle: str = "already in sync") -> int:
@@ -250,6 +272,7 @@ def _sync_text(result: sync.Result, idle: str) -> str:
         present, past = _VERBS[c.action]
         verb = f"would {present}" if result.dry_run else past
         lines.append(f"{label:<{width}}  {verb} {c.detail}")
+    lines += [f"note: {n.source + ': ' if n.source else ''}{n.message}" for n in result.notes]
     for p in result.problems:
         label = " ".join(x for x in (p.source, p.harness) if x)
         lines.append(f"{p.kind}: {label + ': ' if label else ''}{p.message}")

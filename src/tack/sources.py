@@ -8,7 +8,7 @@ is a directory in the source's `subdir`, named by its directory name.
 from __future__ import annotations
 
 import os
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -180,29 +180,70 @@ def git_sources(cfg: Config, names: Sequence[str]) -> list[Source]:
 # --- pending edits in path sources ------------------------------------------------
 
 
-def edits(source: Source, paths: Paths) -> tuple[list[str], list[str]]:
-    """The skills a `path` source has uncommitted edits to, and those touched by
-    commits not pushed to its upstream. Empty outside a git repository."""
+def skills_in(files: Iterable[str], rel: str) -> set[str]:
+    """The skills that paths (relative to a work tree) are in, for a skills dir
+    at `rel` ("." at the root): the directories directly in it. A loose file
+    beside them is in no skill."""
+    prefix = "" if rel == "." else rel + "/"
+    out: set[str] = set()
+    for f in files:
+        if f.startswith(prefix):
+            name, sep, _ = f[len(prefix) :].partition("/")
+            if sep and name and not name.startswith("."):
+                out.add(name)
+    return out
+
+
+def skills_at(repo: Path, commit: str, rel: str) -> set[str]:
+    """The skills in `rel` ("." at the root) at `commit`: the directories
+    there; none if the commit (or `rel` in it) doesn't exist."""
+    tree = f"{commit}:" if rel == "." else f"{commit}:{rel}"
+    r = git.run(repo, "ls-tree", "-d", "--name-only", "-z", tree)
+    if r.returncode != 0:
+        return set()
+    return {n for n in r.stdout.split("\0") if n and not n.startswith(".")}
+
+
+def work_tree(source: Source, paths: Paths) -> tuple[Path, str] | None:
+    """The git work tree holding a source's skills dir, and that dir relative
+    to it ("." at its root); None outside one."""
     d = skills_dir(source, paths)
     top = git.toplevel(d) if d.is_dir() else None
     if top is None:
-        return [], []
-    rel = os.path.relpath(os.path.realpath(d), os.path.realpath(top))
-    prefix = "" if rel == "." else rel + "/"
+        return None
+    return top, os.path.relpath(os.path.realpath(d), os.path.realpath(top))
 
-    def names(changed: list[str]) -> list[str]:
-        found = {p[len(prefix) :].split("/", 1)[0] for p in changed if p.startswith(prefix)}
-        return sorted(n for n in found if n and not n.startswith("."))
 
-    status = git.run(top, "status", "--porcelain=v1", "-z", "--", rel)
+def uncommitted(top: Path, rel: str) -> set[str]:
+    """The skills in `rel` with uncommitted edits, new files included."""
+    r = git.run(
+        top, "--literal-pathspecs", "status", "--porcelain=v1", "-z", "--untracked-files=all",
+        "--", rel,
+    )  # fmt: skip
     changed: list[str] = []
-    fields = iter(status.stdout.split("\0"))
+    fields = iter(r.stdout.split("\0"))
     for f in fields:
         if len(f) > 3:
             changed.append(f[3:])
             if "R" in f[:2] or "C" in f[:2]:
                 changed.append(next(fields, ""))  # the source of a rename or copy
+    return skills_in(changed, rel)
 
-    log = git.run(top, "log", "--format=", "--name-only", "@{upstream}..HEAD", "--", rel)
-    unpushed = names(log.stdout.splitlines()) if log.returncode == 0 else []
-    return names(changed), unpushed
+
+def unpushed(top: Path, rel: str) -> set[str]:
+    """The skills in `rel` touched by commits not in the branch's upstream;
+    none when it has no upstream."""
+    r = git.run(
+        top, "--literal-pathspecs", "-c", "core.quotePath=false", "log", "--format=",
+        "--name-only", "@{upstream}..HEAD", "--", rel,
+    )  # fmt: skip
+    return skills_in(r.stdout.splitlines(), rel) if r.returncode == 0 else set()
+
+
+def edits(source: Source, paths: Paths) -> tuple[list[str], list[str]]:
+    """The skills a `path` source has uncommitted edits to, and those touched by
+    commits not pushed to its upstream. Empty outside a git repository."""
+    where = work_tree(source, paths)
+    if where is None:
+        return [], []
+    return sorted(uncommitted(*where)), sorted(unpushed(*where))

@@ -12,7 +12,6 @@ from __future__ import annotations
 import os
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Literal
 
 from tack import config, git, sources
@@ -109,11 +108,11 @@ def _compare(src: Source, cfg: Config, entry: LockEntry | None, *, diff: bool) -
 
     sub = os.path.normpath(src.subdir)
     prefix = "" if sub == "." else sub + "/"
-    at_pin, at_tip = _skill_dirs(d, pin, sub), _skill_dirs(d, tip, sub)
+    at_pin, at_tip = sources.skills_at(d, pin, sub), sources.skills_at(d, tip, sub)
     selected = at_pin | at_tip if src.skills is None else {s.name for s in src.skills}
 
     changed = git.run(d, "diff", "--name-only", "-z", pin, tip, "--", sub)
-    touched = _skills_in(changed.stdout.split("\0"), prefix) & selected
+    touched = sources.skills_in(changed.stdout.split("\0"), sub) & selected
     for name in sorted(touched):
         kind: SkillChange = (
             "added" if name not in at_pin else "removed" if name not in at_tip else "modified"
@@ -127,7 +126,7 @@ def _compare(src: Source, cfg: Config, entry: LockEntry | None, *, diff: bool) -
     for record in log.stdout.split("\x1e")[1:]:
         head, _, files = record.partition("\n")
         commit, _, subject = head.partition("\x1f")
-        if names := sorted(_skills_in(files.splitlines(), prefix) & selected):
+        if names := sorted(sources.skills_in(files.splitlines(), sub) & selected):
             r.commits.append(Commit(commit, subject, names))
 
     if diff and touched:
@@ -135,23 +134,3 @@ def _compare(src: Source, cfg: Config, entry: LockEntry | None, *, diff: bool) -
         out = git.run(d, "diff", "--no-color", "--no-ext-diff", pin, tip, "--", *paths)
         r.diff = out.stdout
     return r
-
-
-def _skill_dirs(checkout: Path, commit: str, sub: str) -> set[str]:
-    """The skill directories in `sub` at `commit`."""
-    tree = f"{commit}:" if sub == "." else f"{commit}:{sub}"
-    r = git.run(checkout, "ls-tree", "-d", "--name-only", "-z", tree)
-    if r.returncode != 0:
-        return set()
-    return {n for n in r.stdout.split("\0") if n and not n.startswith(".")}
-
-
-def _skills_in(files: list[str], prefix: str) -> set[str]:
-    """The skills that paths (relative to the checkout) under `prefix` are in."""
-    out: set[str] = set()
-    for f in files:
-        if f.startswith(prefix):
-            name, sep, _ = f[len(prefix) :].partition("/")
-            if sep and not name.startswith("."):
-                out.add(name)
-    return out

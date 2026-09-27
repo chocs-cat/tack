@@ -5,11 +5,13 @@ from one manifest of sources — your own skill repos and pinned third-party
 ones — and audit your projects so either agent sees the same instructions,
 skills, and hooks.
 
-**Status: phase 4 of [the design](docs/design.md).** `tack sync` deploys
+**Status: phase 5 of [the design](docs/design.md).** `tack sync` deploys
 skills from the manifest's sources, `tack status` shows what is where,
 `tack outdated` and `tack update` track upstream, `tack add` and `tack remove`
-edit the manifest, and `tack doctor` audits; auto-committing edits to your own
-skills comes next.
+edit the manifest, and `tack doctor` audits. A `path` source with
+`autocommit = true` (and `autopush`) has its skill edits committed, and
+pushed, whenever `sync`, `update`, `add` or `remove` runs. Scaffolding the
+fixes `doctor` suggests comes next.
 
 ```sh
 uv tool install -e .      # or: uv run tack ...
