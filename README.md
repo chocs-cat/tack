@@ -1,4 +1,7 @@
-# tack
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/chocs-cat/tack/master/docs/logo-dark.svg">
+  <img alt="tack" src="https://raw.githubusercontent.com/chocs-cat/tack/master/docs/logo-light.svg" height="64">
+</picture>
 
 Keep your coding agents' skills deployed identically to Claude Code and Codex
 from one manifest of sources — your own skill repos and pinned third-party
@@ -40,4 +43,17 @@ tack doctor --json        # for scripts; exit 1 when there is an error or warnin
 tack scaffold hooks ~/Code/app --dry-run   # the diff a doctor fix would make
 ```
 
-Working on tack itself: see [CONTRIBUTING.md](CONTRIBUTING.md).
+## Development
+
+```sh
+uv sync
+uv run tack …             # the checkout, not an installed copy
+uv run pytest && uv run ruff check . && uv run ruff format --check . && uv run ty check
+```
+
+[CONTRIBUTING.md](CONTRIBUTING.md) has the commit convention and how releases
+are cut.
+
+## License
+
+MIT; see [LICENSE](LICENSE).
