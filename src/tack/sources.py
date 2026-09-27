@@ -8,13 +8,14 @@ is a directory in the source's `subdir`, named by its directory name.
 from __future__ import annotations
 
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
 from tack import git
-from tack.config import LockEntry, Paths, Source
+from tack.config import Config, LockEntry, Paths, Source, UsageError
 from tack.text import tilde
 
 
@@ -77,8 +78,22 @@ def head(checkout: Path) -> str | None:
     return r.stdout.strip() if r.returncode == 0 else None
 
 
-def _has(checkout: Path, commit: str) -> bool:
+def has_commit(checkout: Path, commit: str) -> bool:
     return git.run(checkout, "cat-file", "-e", f"{commit}^{{commit}}").returncode == 0
+
+
+def fetch(checkout: Path, source: Source, commit: str) -> bool:
+    """Fetch the source into tack's checkout of it, unless the checkout has
+    `commit` already; whether it has it now."""
+    assert source.git is not None
+    if has_commit(checkout, commit):
+        return True
+    if git.run(checkout, "remote", "get-url", "origin").stdout.strip() != source.git:
+        git.run(checkout, "remote", "set-url", "origin", source.git)
+    r = git.run(checkout, "fetch", "--quiet", "--tags", "origin")
+    if r.returncode != 0:
+        raise SourceError(f"can't fetch {source.git}: {git.error(r)}")
+    return has_commit(checkout, commit)
 
 
 def local_changes(checkout: Path) -> bool:
@@ -110,11 +125,9 @@ def sync_git(
     if exists and local_changes(d):
         raise SourceError(f"tack's checkout at {tilde(d)} has local changes; discard or move them")
 
-    out = Checkout(entry) if entry is not None else Checkout(_pin(source, now))
+    out = Checkout(entry) if entry is not None else Checkout(pin(source, now))
     if entry is None:
-        out.steps.append(
-            ("pin", f"{source.ref or 'the default branch'} at {out.entry.commit[:12]}")
-        )
+        out.steps.append(("pin", pin_detail(out.entry)))
     commit = out.entry.commit
 
     if not exists:
@@ -124,19 +137,13 @@ def sync_git(
             r = git.run(None, "clone", "--quiet", "--no-checkout", source.git, str(d))
             if r.returncode != 0:
                 raise SourceError(f"can't clone {source.git}: {git.error(r)}")
-    elif not dry_run and git.run(d, "remote", "get-url", "origin").stdout.strip() != source.git:
-        git.run(d, "remote", "set-url", "origin", source.git)
 
     if dry_run:
         if not exists or head(d) != commit:
             out.steps.append(("checkout", commit[:12]))
         return out
-    if not _has(d, commit):
-        r = git.run(d, "fetch", "--quiet", "--tags", "origin")
-        if r.returncode != 0:
-            raise SourceError(f"can't fetch {source.git}: {git.error(r)}")
-        if not _has(d, commit):
-            raise SourceError(f"pinned commit {commit[:12]} isn't in {source.git}")
+    if not fetch(d, source, commit):
+        raise SourceError(f"pinned commit {commit[:12]} isn't in {source.git}")
     # A fresh --no-checkout clone has HEAD at the tip but no files: always check out.
     if not exists or head(d) != commit:
         r = git.run(d, "checkout", "--quiet", "--detach", commit)
@@ -146,11 +153,28 @@ def sync_git(
     return out
 
 
-def _pin(source: Source, now: datetime | None) -> LockEntry:
+def pin(source: Source, now: datetime | None = None) -> LockEntry:
+    """A lock entry for the source at the tip of its ref."""
     assert source.git is not None
     commit = remote_tip(source.git, source.ref)
     when = (now or datetime.now(UTC)).replace(microsecond=0)
     return LockEntry(source.git, source.ref, commit, when)
+
+
+def pin_detail(entry: LockEntry) -> str:
+    return f"{entry.ref or 'the default branch'} at {entry.commit[:12]}"
+
+
+def git_sources(cfg: Config, names: Sequence[str]) -> list[Source]:
+    """The git sources `names` asks for (every one if it is empty), in
+    manifest order."""
+    by_name = {s.name: s for s in cfg.sources}
+    for name in names:
+        if name not in by_name:
+            raise UsageError(f"no source named {name!r}")
+        if by_name[name].git is None:
+            raise UsageError(f"{name!r} is a path source; only git sources are pinned")
+    return [s for s in cfg.sources if s.git is not None and (not names or s.name in names)]
 
 
 # --- pending edits in path sources ------------------------------------------------
