@@ -15,7 +15,7 @@ from tack.doctor import hooks, instructions, project_skills, skills
 from tack.doctor.findings import SEVERITIES, Finding, Severity
 from tack.doctor.projects import discover, is_clone
 
-__all__ = ["Finding", "Report", "run"]
+__all__ = ["Finding", "Report", "check_project", "run"]
 
 
 @dataclass
@@ -62,7 +62,14 @@ def run(
             else:
                 projects.append(repo)
         for project in projects:
-            findings += instructions.check_project(cfg, project)
-            findings += project_skills.check(cfg, project)
-            findings += hooks.check_project(cfg, project)
+            findings += check_project(cfg, project)
     return Report(cfg.manifest, projects, findings, clones)
+
+
+def check_project(cfg: Config, project: Path) -> list[Finding]:
+    """The per-project findings for one project."""
+    return [
+        *instructions.check_project(cfg, project),
+        *project_skills.check(cfg, project),
+        *hooks.check_project(cfg, project),
+    ]

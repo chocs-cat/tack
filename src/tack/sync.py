@@ -28,9 +28,11 @@ from tack.text import tilde
 
 Action = Literal[
     "pin", "update", "clone", "checkout", "write", "link", "relink", "unlink", "adopt", "delete",
-    "commit", "push",
+    "commit", "push", "move",
 ]  # fmt: skip
-ProblemKind = Literal["source", "conflict", "collision", "after-save", "commit", "push", "error"]
+ProblemKind = Literal[
+    "source", "conflict", "collision", "after-save", "commit", "push", "refused", "error"
+]
 
 
 @dataclass(frozen=True)
@@ -40,6 +42,7 @@ class Change:
     source: str | None = None
     harness: str | None = None
     path: Path | None = None
+    diff: str | None = None  # a written file's unified diff, where tack shows one
 
 
 @dataclass(frozen=True)

@@ -25,25 +25,33 @@ _IMPORT = re.compile(r"(?:^|(?<=\s))@(\S+)")
 def imports(file: Path) -> list[Path]:
     """The files `file` imports with `@path`, resolved but not necessarily existing.
 
-    Claude Code's rules: a token at the start of a line or after whitespace,
-    outside code blocks, code spans and HTML comments; `~` is the home
-    directory and a relative path is relative to the importing file.
+    `~` is the home directory and a relative path is relative to the
+    importing file.
     """
     try:
         text = file.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return []
-    out: list[Path] = []
+    return [_resolve(token, file.parent) for _, token in import_tokens(text)]
+
+
+def import_tokens(text: str) -> list[tuple[int, str]]:
+    """Each `@path` import in `text`, with its line number (from 1).
+
+    Claude Code's rules: a token at the start of a line or after whitespace,
+    outside code blocks, code spans and HTML comments.
+    """
+    # Blank out comments rather than removing them, so line numbers hold.
+    text = _COMMENT.sub(lambda m: "\n" * m.group().count("\n"), text)
+    out: list[tuple[int, str]] = []
     in_fence = False
-    for line in _COMMENT.sub("", text).splitlines():
+    for n, line in enumerate(text.splitlines(), 1):
         if _FENCE.match(line):
             in_fence = not in_fence
             continue
         if in_fence:
             continue
-        out.extend(
-            _resolve(m.group(1), file.parent) for m in _IMPORT.finditer(_CODE_SPAN.sub("", line))
-        )
+        out.extend((n, m.group(1)) for m in _IMPORT.finditer(_CODE_SPAN.sub("", line)))
     return out
 
 

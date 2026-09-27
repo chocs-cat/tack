@@ -60,6 +60,14 @@ def check(cfg: Config, project: Path) -> Iterator[Finding]:
             claude_dir,
             error=True,
         )
+    if only := sorted(set(agents_skills) - set(claude_skills)):
+        yield found(
+            "codex-only-skills",
+            f"Claude Code can't see skills in {agents_rel} that aren't in {claude_rel}: "
+            + ", ".join(only),
+            agents_dir,
+            error=True,
+        )
     copies = sorted(
         n for n, e in claude_skills.items() if n in agents_skills and not e.is_symlink()
     )

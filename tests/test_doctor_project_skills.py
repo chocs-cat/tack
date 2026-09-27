@@ -36,9 +36,24 @@ def test_codex_skills_dir(home: Path) -> None:
 def test_codex_skills_dir_linked_to_agents_is_harmless(home: Path) -> None:
     p = home / "p"
     skill(p / ".agents" / "skills", "a")
-    (p / ".codex").mkdir()
-    (p / ".codex" / "skills").symlink_to("../.agents/skills")
+    for d in (".codex", ".claude"):
+        (p / d).mkdir()
+        (p / d / "skills").symlink_to("../.agents/skills")
     assert check(home, p) == []
+
+
+def test_codex_only_skills(home: Path) -> None:
+    p = home / "p"
+    skill(p / ".agents" / "skills", "a")
+    skill(p / ".agents" / "skills", "b")
+    skill(p / ".claude" / "skills", "a")
+    (f, dup) = project_skills.check(load(home), p)
+    assert (f.id, f.severity, f.fix) == ("codex-only-skills", "error", "skills-dir")
+    assert (
+        f.message
+        == "Claude Code can't see skills in .agents/skills that aren't in .claude/skills: b"
+    )
+    assert dup.id == "duplicate-skill-copies"
 
 
 def test_claude_only_skills(home: Path) -> None:

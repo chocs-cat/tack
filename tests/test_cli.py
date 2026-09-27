@@ -339,6 +339,43 @@ def test_changing_commands_auto_commit(
     ]
 
 
+def test_scaffold(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    project = repo(home / "p", {"CLAUDE.md": "Ask Claude.\n"})
+    code, out, _ = run(capsys, "scaffold", "agents-md", str(project), "--dry-run")
+    assert (code, out.splitlines()) == (
+        0,
+        [
+            "would move CLAUDE.md -> AGENTS.md",
+            "would write CLAUDE.md",
+            "--- /dev/null",
+            "+++ b/CLAUDE.md",
+            "@@ -0,0 +1 @@",
+            "+@AGENTS.md",
+            "note: AGENTS.md:1 names one agent: Ask Claude.",
+            "",
+            "would make 2 changes",
+        ],
+    )
+    code, out, _ = run(capsys, "scaffold", "agents-md", str(project))
+    assert (code, out.splitlines()[:2]) == (0, ["moved CLAUDE.md -> AGENTS.md", "wrote CLAUDE.md"])
+    code, out, _ = run(capsys, "scaffold", "agents-md", str(project))
+    assert (code, out.strip()) == (0, "nothing to fix")
+
+    skill(project / ".claude" / "skills", "a", description="Mine.")
+    skill(project / ".agents" / "skills", "a", description="Theirs.")
+    code, out, _ = run(capsys, "scaffold", "skills-dir", str(project), "--json")
+    data = json.loads(out)
+    assert code == 1
+    assert (data["changes"], [p["kind"] for p in data["problems"]]) == ([], ["refused"])
+
+    with pytest.raises(SystemExit) as e:
+        main(["scaffold", "tidy", str(project)])
+    assert e.value.code == 2
+    assert "invalid choice: 'tidy'" in capsys.readouterr().err
+    code, _, err = run(capsys, "scaffold", "agents-md", str(project), "--from", "codex")
+    assert (code, err.strip()) == (2, "tack: --from applies to the hooks fix")
+
+
 def test_usage(capsys: pytest.CaptureFixture[str]) -> None:
     code, _, err = run(capsys)
     assert code == 2

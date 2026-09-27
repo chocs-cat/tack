@@ -7,10 +7,11 @@
     tack add GIT_URL|PATH [--name N] [--skill S...] ...     add a source
     tack remove SOURCE [--dry-run]                          remove a source
     tack doctor [PATH...] [--global-only|--projects-only]   audit
+    tack scaffold FIX PATH [--from HARNESS] [--dry-run]     apply a doctor fix to a project
 
 Every command takes --json (the result goes to stdout as JSON) and
---config DIR (the directory holding tack.toml). sync, update, add and remove
-also commit pending edits to the skills of path sources with `autocommit`;
+--config DIR (the directory holding tack.toml). sync, update, add, remove and
+scaffold also commit pending edits to the skills of path sources with `autocommit`;
 --no-commit (or TACK_NO_COMMIT=1) skips that for one run.
 
 Exit codes: 0 ok / nothing to report, 1 findings or a partial failure,
@@ -28,7 +29,18 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from tack import __version__, commit, config, doctor, edit, outdated, status, sync, update
+from tack import (
+    __version__,
+    commit,
+    config,
+    doctor,
+    edit,
+    outdated,
+    scaffold,
+    status,
+    sync,
+    update,
+)
 from tack.config import Config, ConfigError, UsageError
 from tack.doctor.findings import Finding
 from tack.text import tilde
@@ -158,6 +170,27 @@ def build_parser() -> argparse.ArgumentParser:
     scope.add_argument("--global-only", action="store_true", help="skip the project checks")
     scope.add_argument("--projects-only", action="store_true", help="skip the global checks")
     p.set_defaults(func=cmd_doctor)
+
+    p = sub.add_parser(
+        "scaffold",
+        parents=[common, changes],
+        help="apply a doctor fix to a project (never commits)",
+        description="Write, move and remove files in a project so that doctor's findings "
+        "with this fix go away. Tracked files move through git and what tack writes is "
+        "staged; nothing is committed. Exits 1 when the fix can't be applied safely, "
+        "having changed nothing.",
+    )
+    p.add_argument(
+        "fix", choices=list(scaffold.FIXES), metavar="FIX", help=", ".join(scaffold.FIXES)
+    )
+    p.add_argument("path", metavar="PATH", help="the project")
+    p.add_argument(
+        "--from",
+        dest="source",
+        metavar="HARNESS",
+        help="for hooks: whose version wins where both harnesses have a hook but differ",
+    )
+    p.set_defaults(func=cmd_scaffold)
     return parser
 
 
@@ -217,6 +250,7 @@ _VERBS = {
     "delete": ("delete", "deleted"),
     "commit": ("commit", "committed"),
     "push": ("push", "pushed"),
+    "move": ("move", "moved"),
 }
 
 
@@ -248,6 +282,12 @@ def cmd_remove(args: argparse.Namespace, cfg: Config) -> int:
     return _report(args, _autocommit(args, cfg, result))
 
 
+def cmd_scaffold(args: argparse.Namespace, cfg: Config) -> int:
+    project = Path(args.path).expanduser().absolute()
+    result = scaffold.scaffold(cfg, args.fix, project, source=args.source, dry_run=args.dry_run)
+    return _report(args, _autocommit(args, cfg, result), idle="nothing to fix")
+
+
 def _autocommit(args: argparse.Namespace, cfg: Config, result: sync.Result) -> sync.Result:
     """`result`, followed by the auto-commit that ends every command changing
     things (with the manifest as it was when the command started)."""
@@ -271,7 +311,9 @@ def _sync_text(result: sync.Result, idle: str) -> str:
     for label, c in rows:
         present, past = _VERBS[c.action]
         verb = f"would {present}" if result.dry_run else past
-        lines.append(f"{label:<{width}}  {verb} {c.detail}")
+        lines.append(f"{label:<{width}}  {verb} {c.detail}" if width else f"{verb} {c.detail}")
+        if result.dry_run and c.diff:
+            lines += c.diff.rstrip("\n").splitlines()
     lines += [f"note: {n.source + ': ' if n.source else ''}{n.message}" for n in result.notes]
     for p in result.problems:
         label = " ".join(x for x in (p.source, p.harness) if x)

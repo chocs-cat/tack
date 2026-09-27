@@ -8,7 +8,9 @@ Every hook file has the same shape once parsed -- Claude Code's
 
 Counterparts are found by *signature*: the command with every path reduced
 to its file name, so the same script installed under each harness's own
-directory still pairs up.
+directory still pairs up. Counterparts then compare as `tack scaffold hooks`
+writes them: `args` folded into the command, the project directory however
+it is named, and `apply_patch` as the `Edit|Write` it stands for.
 """
 
 from __future__ import annotations
@@ -19,7 +21,7 @@ import shlex
 import tomllib
 from collections import defaultdict
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -31,12 +33,20 @@ class HookFileError(Exception):
     pass
 
 
+# How each harness's hooks can name the project directory.
+PROJECT_DIR = re.compile(r"\$\{CLAUDE_PROJECT_DIR\}|\$CLAUDE_PROJECT_DIR\b")
+GIT_TOPLEVEL = "$(git rev-parse --show-toplevel)"
+# Codex's edit tool, and the Claude Code tools its matcher aliases stand for.
+APPLY_PATCH, EDIT_TOOLS = "apply_patch", ("Edit", "Write")
+
+
 @dataclass(frozen=True)
 class Hook:
     event: str
     matcher: str
     command: str  # the command with its args, or a description of a non-command hook
     file: Path
+    spec: dict[str, Any] = field(default_factory=dict, compare=False, hash=False, repr=False)
 
     @property
     def signature(self) -> str:
@@ -47,8 +57,20 @@ class Hook:
         return " ".join(PurePosixPath(t).name if "/" in t else t for t in tokens)
 
     @property
+    def normalized(self) -> str:
+        """The command as it compares with its counterparts."""
+        try:
+            tokens = shlex.split(self.command)
+        except ValueError:
+            return self.command
+        project = [PROJECT_DIR.sub("$PROJECT", t).replace(GIT_TOPLEVEL, "$PROJECT") for t in tokens]
+        return shlex.join(project)
+
+    @property
     def alternatives(self) -> frozenset[str]:
         alts = {a.strip() for a in self.matcher.split("|")} - {""}
+        if APPLY_PATCH in alts:
+            alts = (alts - {APPLY_PATCH}) | set(EDIT_TOOLS)
         return frozenset({"*"} if not alts or "*" in alts else alts)
 
 
@@ -76,14 +98,15 @@ def read(file: Path) -> list[Hook]:
                 continue
             matcher = entry.get("matcher", "")
             out.extend(
-                Hook(event, str(matcher), _command(h), file)
+                Hook(event, str(matcher), command_of(h), file, h)
                 for h in entry.get("hooks", [])
                 if isinstance(h, dict)
             )
     return out
 
 
-def _command(h: dict[str, Any]) -> str:
+def command_of(h: dict[str, Any]) -> str:
+    """A hook's command with its args, or a description of a non-command hook."""
     command, args = h.get("command"), h.get("args")
     if isinstance(command, str):
         if isinstance(args, list) and args:
@@ -93,7 +116,7 @@ def _command(h: dict[str, Any]) -> str:
     return json.dumps(rest, sort_keys=True)
 
 
-def _describe(hook: Hook) -> str:
+def describe(hook: Hook) -> str:
     matcher = f" [{hook.matcher}]" if hook.matcher not in ("", "*") else ""
     return f"{hook.event}{matcher} `{hook.command}`"
 
@@ -139,8 +162,7 @@ def check_global(cfg: Config) -> Iterator[Finding]:
         yield Finding(
             "hook-one-harness",
             "info",
-            f"{_describe(hook)} is registered for {', '.join(by_harness)}, "
-            f"not {', '.join(lacking)}",
+            f"{describe(hook)} is registered for {', '.join(by_harness)}, not {', '.join(lacking)}",
             path=hook.file,
             harness=have,
         )
@@ -151,31 +173,27 @@ def check_project(cfg: Config, project: Path) -> Iterator[Finding]:
     hooks, errors = _read_all(files, project)
     yield from errors
 
-    # signature -> harness -> (event, command) -> matcher alternatives, merged
-    index: dict[str, dict[str, dict[tuple[str, str], set[str]]]] = defaultdict(dict)
-    first: dict[str, Hook] = {}
+    # signature -> harness -> its hooks with that signature
+    index: dict[str, dict[str, list[Hook]]] = defaultdict(dict)
     for name, hs in hooks.items():
         for hook in hs:
-            slot = index[hook.signature].setdefault(name, defaultdict(set))
-            slot[hook.event, hook.command] |= hook.alternatives
-            first.setdefault(hook.signature, hook)
+            index[hook.signature].setdefault(name, []).append(hook)
 
-    for sig, by_harness in index.items():
-        hook = first[sig]
+    for by_harness in index.values():
+        hook = next(iter(by_harness.values()))[0]
         lacking = [n for n in cfg.harnesses if n not in by_harness]
         if lacking:
             yield Finding(
                 "hook-one-harness",
                 "warn",
-                f"{_describe(hook)} has no counterpart for {', '.join(lacking)}",
+                f"{describe(hook)} has no counterpart for {', '.join(lacking)}",
                 path=hook.file,
                 project=project,
                 fix="hooks",
             )
             continue
-        variants = {n: dict(v) for n, v in by_harness.items()}
-        if len({_freeze(v) for v in variants.values()}) > 1:
-            detail = "; ".join(f"{n}: {_summary(v)}" for n, v in variants.items())
+        if len({variant(hs) for hs in by_harness.values()}) > 1:
+            detail = "; ".join(f"{n}: {_summary(hs)}" for n, hs in by_harness.items())
             yield Finding(
                 "hook-mismatch",
                 "warn",
@@ -193,20 +211,29 @@ def check_project(cfg: Config, project: Path) -> Iterator[Finding]:
                 yield Finding(
                     "hook-hardcoded-home",
                     "info",
-                    f"{_describe(hook)} names a home directory; it breaks on another "
+                    f"{describe(hook)} names a home directory; it breaks on another "
                     "machine or clone",
                     path=hook.file,
                     project=project,
                 )
 
 
-def _freeze(v: dict[tuple[str, str], set[str]]) -> frozenset:
-    return frozenset((k, frozenset(alts)) for k, alts in v.items())
+def variant(hooks: list[Hook]) -> frozenset[tuple[str, str, frozenset[str]]]:
+    """One harness's registrations of a hook, as they compare with another's:
+    each event and command with its matchers' alternatives merged."""
+    merged: dict[tuple[str, str], set[str]] = defaultdict(set)
+    for h in hooks:
+        merged[h.event, h.normalized] |= h.alternatives
+    return frozenset((e, c, frozenset(alts)) for (e, c), alts in merged.items())
 
 
-def _summary(v: dict[tuple[str, str], set[str]]) -> str:
+def _summary(hooks: list[Hook]) -> str:
+    merged: dict[tuple[str, str], set[str]] = {}
+    for h in hooks:
+        merged.setdefault((h.event, h.command), set()).update(h.alternatives)
     return ", ".join(
-        f"{event} [{'|'.join(sorted(alts))}] `{command}`" for (event, command), alts in v.items()
+        f"{event} [{'|'.join(sorted(alts))}] `{command}`"
+        for (event, command), alts in merged.items()
     )
 
 
