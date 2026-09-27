@@ -114,6 +114,72 @@ def test_clones_are_skipped_unless_named(machine: Path, capsys: pytest.CaptureFi
     assert [f["id"] for f in data["findings"]] == ["agents-md-missing"]
 
 
+def test_sync_and_status(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    for name in ("a", "b"):
+        skill(home / "mine" / "skills", name)
+    skill(home / ".claude" / "skills", "b")  # a conflict
+    manifest(home, '[[source]]\nname = "mine"\npath = "~/mine"\n')
+
+    code, out, _ = run(capsys, "sync", "--dry-run")
+    assert code == 1
+    assert out.splitlines() == [
+        "claude-code  would link a -> ~/mine/skills/a",
+        "codex        would link a -> ~/mine/skills/a",
+        "codex        would link b -> ~/mine/skills/b",
+        "conflict: mine claude-code: b: a real directory is in the way; "
+        "`tack sync --adopt` takes it over",
+        "",
+        "would make 3 changes, 1 problem",
+    ]
+    assert not (home / ".agents" / "skills").exists()
+
+    code, out, _ = run(capsys, "sync", "--json")
+    data = json.loads(out)
+    assert code == 1
+    assert data["dry_run"] is False
+    assert [c["action"] for c in data["changes"]] == ["link", "link", "link"]
+    assert data["problems"][0]["kind"] == "conflict"
+    assert data["problems"][0]["path"] == str(home / ".claude" / "skills" / "b")
+
+    code, out, _ = run(capsys, "sync", "--adopt")
+    assert code == 0
+    assert out.splitlines()[-1] == "1 change"
+    code, out, _ = run(capsys, "sync")
+    assert (code, out.strip()) == (0, "already in sync")
+
+    code, out, _ = run(capsys, "status")
+    assert code == 0
+    assert out.splitlines() == [
+        "sources",
+        "  mine  ~/mine",
+        "        2 skills",
+        "",
+        "skill  source  claude-code  codex",
+        "a      mine    linked       linked",
+        "b      mine    linked       linked",
+    ]
+    code, out, _ = run(capsys, "status", "--json")
+    data = json.loads(out)
+    assert data["sources"][0]["name"] == "mine"
+    assert data["skills"][1] == {
+        "name": "b",
+        "source": "mine",
+        "harnesses": {"claude-code": "linked", "codex": "linked"},
+    }
+
+
+def test_status_without_sources(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    code, out, _ = run(capsys, "status")
+    assert (code, out.strip()) == (0, "no sources in ~/.config/tack/tack.toml")
+
+
+def test_corrupt_state_is_a_config_error(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    write(home / ".local" / "state" / "tack" / "state.json", "{")
+    code, _, err = run(capsys, "sync")
+    assert code == 2
+    assert "state.json" in err
+
+
 def test_info_findings_alone_exit_zero(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
     write(
         home / ".claude" / "settings.json", '{"hooks": {"Stop": [{"hooks": [{"command": "x"}]}]}}'

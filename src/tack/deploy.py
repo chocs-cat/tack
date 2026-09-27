@@ -7,13 +7,18 @@ compares against it.
 
 from __future__ import annotations
 
+import json
 import os
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
 
 from tack import sources
-from tack.config import Config, Source
+from tack.config import Config, ConfigError, Paths, Source, write_atomic
+
+RECORD = "state.json"
+RECORD_VERSION = 1
 
 
 @dataclass(frozen=True)
@@ -104,11 +109,75 @@ def within(path: Path, root: Path) -> bool:
     return False
 
 
-def is_owned(entry: Path, cfg: Config) -> bool:
-    """Whether an entry in a harness skills dir is tack's: a symlink into tack's
-    data directory or into a configured source."""
+# --- ownership -----------------------------------------------------------------
+
+
+@dataclass
+class Record:
+    """The links tack made: link path -> target."""
+
+    links: dict[str, str] = field(default_factory=dict)
+
+
+def load_record(paths: Paths) -> Record:
+    file = paths.state_dir / RECORD
+    try:
+        data = json.loads(file.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return Record()
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as e:
+        raise ConfigError(f"{file}: {e}") from e
+    links = data.get("links") if isinstance(data, dict) else None
+    if not isinstance(links, dict) or data.get("version") != RECORD_VERSION:
+        raise ConfigError(f"{file}: not a version {RECORD_VERSION} ownership record")
+    return Record({str(k): str(v) for k, v in links.items()})
+
+
+def save_record(paths: Paths, record: Record) -> None:
+    data = {"version": RECORD_VERSION, "links": dict(sorted(record.links.items()))}
+    write_atomic(paths.state_dir / RECORD, json.dumps(data, indent=2) + "\n")
+
+
+def is_owned(entry: Path, cfg: Config, record: Record) -> bool:
+    """Whether an entry in a harness skills dir is tack's: a symlink the record
+    lists (still pointing where it did), or one into tack's data directory or a
+    configured source."""
     if not entry.is_symlink():
         return False
     target = link_target(entry)
+    recorded = record.links.get(str(entry))
+    if recorded is not None and same_path(target, Path(recorded)):
+        return True
     roots = [cfg.paths.data_dir, *(sources.root(s, cfg.paths) for s in cfg.sources)]
     return any(within(target, r) for r in roots)
+
+
+# What is at a harness skills dir entry, against what the manifest wants there:
+#   absent    nothing
+#   ok        a link to the skill the manifest deploys
+#   stale     a tack link pointing elsewhere          (sync relinks it)
+#   conflict  anything else in the way                (sync --adopt takes it over)
+#   owned     a tack link the manifest doesn't want   (sync removes it)
+#   foreign   something else the manifest doesn't want (left alone)
+State = Literal["absent", "ok", "stale", "conflict", "owned", "foreign"]
+
+
+def state(entry: Path, sel: Selected | None, cfg: Config, record: Record) -> State:
+    if not entry.is_symlink() and not entry.exists():
+        return "absent"
+    owned = is_owned(entry, cfg, record)
+    if sel is None:
+        return "owned" if owned else "foreign"
+    if entry.is_symlink() and same_path(link_target(entry), sel.path):
+        return "ok"
+    return "stale" if owned else "conflict"
+
+
+def make_link(entry: Path, target: Path) -> None:
+    """Point `entry` at `target`, atomically replacing a symlink already there."""
+    entry.parent.mkdir(parents=True, exist_ok=True)
+    tmp = entry.with_name(f".{entry.name}.tack-tmp")  # a dot-entry: ignored meanwhile
+    if tmp.is_symlink() or tmp.exists():
+        tmp.unlink()
+    tmp.symlink_to(target)
+    tmp.replace(entry)

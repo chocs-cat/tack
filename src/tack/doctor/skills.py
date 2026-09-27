@@ -8,16 +8,16 @@ import re
 from collections.abc import Iterator
 from pathlib import Path
 
-from tack import deploy, git, sources
+from tack import deploy, sources
 from tack.config import Config, Harness
-from tack.deploy import Plan, Selected, SourceState
-from tack.doctor.findings import Finding, Severity
+from tack.deploy import Plan, Record, Selected
+from tack.doctor.findings import Finding
 from tack.text import tilde
 
 
 def check(cfg: Config) -> Iterator[Finding]:
     plan = deploy.plan(cfg)
-    yield from _deployments(cfg, plan)
+    yield from _deployments(cfg, plan, deploy.load_record(cfg.paths))
     yield from _sources(cfg, plan)
     for name, (harnesses, srcs) in plan.collisions.items():
         yield Finding(
@@ -32,10 +32,22 @@ def check(cfg: Config) -> Iterator[Finding]:
             if sel.path.is_dir() and (problem := skill_problem(sel.path)):
                 yield Finding("bad-skill", "warn", problem, path=sel.path)
         if state.present and state.source.path is not None:
-            yield from _dirty(state)
+            uncommitted, unpushed = sources.edits(state.source, cfg.paths)
+            parts = []
+            if uncommitted:
+                parts.append(f"uncommitted edits to {', '.join(uncommitted)}")
+            if unpushed:
+                parts.append(f"unpushed commits touching {', '.join(unpushed)}")
+            if parts:
+                yield Finding(
+                    "dirty-source",
+                    "info",
+                    f"source {state.source.name!r} has {'; '.join(parts)}",
+                    path=state.root,
+                )
 
 
-def _deployments(cfg: Config, plan: Plan) -> Iterator[Finding]:
+def _deployments(cfg: Config, plan: Plan, record: Record) -> Iterator[Finding]:
     for h in cfg.harnesses.values():
         want = plan.links[h.name]
         try:
@@ -44,7 +56,7 @@ def _deployments(cfg: Config, plan: Plan) -> Iterator[Finding]:
             entries = []
         names = [e.name for e in entries if not h.ignores(e.name)]
         for name in names:
-            if found := _entry(cfg, h, h.skills_dir / name, want.get(name)):
+            if found := _entry(cfg, h, h.skills_dir / name, want.get(name), record):
                 yield found
         for name in sorted(set(want) - set(names)):
             sel = want[name]
@@ -58,43 +70,34 @@ def _deployments(cfg: Config, plan: Plan) -> Iterator[Finding]:
             )
 
 
-def _entry(cfg: Config, h: Harness, entry: Path, sel: Selected | None) -> Finding | None:
+def _entry(
+    cfg: Config, h: Harness, entry: Path, sel: Selected | None, record: Record
+) -> Finding | None:
     """The finding, if any, for one entry in a harness skills dir; `sel` is what
     the manifest deploys under that name."""
-    fid: str
-    severity: Severity = "warn"
-    if entry.is_symlink():
-        target = deploy.link_target(entry)
-        if not entry.exists():
-            fid, severity, msg = (
-                "dangling-link",
-                "error",
-                f"links to {tilde(target)}, which is gone",
-            )
-        elif sel and not deploy.same_path(target, sel.path):
-            fid = "not-synced"
-            msg = (
-                f"links to {tilde(target)}; the manifest deploys it from "
-                f"{sel.source.name} ({tilde(sel.path)})"
-            )
-        elif sel:
-            return None
-        elif deploy.is_owned(entry, cfg):
-            fid = "not-synced"
-            msg = (
-                f"a tack link to {tilde(target)}, but the manifest no longer deploys "
-                f"{entry.name!r} to {h.name}"
-            )
-        else:
-            fid, msg = "unmanaged-skill", f"links to {tilde(target)}, outside tack"
+    if entry.is_symlink() and not entry.exists():
+        target = tilde(deploy.link_target(entry))
+        return Finding("dangling-link", "error", f"links to {target}, which is gone", entry, h.name)
+    st = deploy.state(entry, sel, cfg, record)
+    if st == "ok":
+        return None
+    here = f"links to {tilde(deploy.link_target(entry))}" if entry.is_symlink() else ""
+    if not here:
+        here = f"a real {'directory' if entry.is_dir() else 'file'}"
+    if st == "foreign":
+        fid, msg = "unmanaged-skill", f"{here}, outside tack"
+    elif st == "owned":
+        fid = "not-synced"
+        msg = (
+            f"{here}, a tack link the manifest no longer deploys to {h.name}; "
+            "`tack sync` removes it"
+        )
     else:
-        kind = "directory" if entry.is_dir() else "file"
-        if sel:
-            fid = "not-synced"
-            msg = f"a real {kind} where the manifest deploys a link to {tilde(sel.path)}"
-        else:
-            fid, msg = "unmanaged-skill", f"a {kind} installed outside tack"
-    return Finding(fid, severity, msg, path=entry, harness=h.name)
+        assert sel is not None
+        fix = "`tack sync` fixes it" if st == "stale" else "`tack sync --adopt` replaces it"
+        fid = "not-synced"
+        msg = f"{here}; the manifest deploys it from {sel.source.name} ({tilde(sel.path)}); {fix}"
+    return Finding(fid, "warn", msg, path=entry, harness=h.name)
 
 
 def _sources(cfg: Config, plan: Plan) -> Iterator[Finding]:
@@ -171,43 +174,3 @@ def frontmatter(text: str) -> dict[str, str] | None:
         elif key and line[:1].isspace() and line.strip():
             meta[key] = f"{meta[key]} {line.strip()}".strip()
     return meta
-
-
-# --- uncommitted and unpushed edits ---------------------------------------------
-
-
-def _dirty(state: SourceState) -> Iterator[Finding]:
-    src = state.source
-    skills_dir = Path(os.path.normpath(state.root / src.subdir))
-    top = git.toplevel(skills_dir)
-    if top is None:
-        return
-    rel = os.path.relpath(os.path.realpath(skills_dir), os.path.realpath(top))
-    prefix = "" if rel == "." else rel + "/"
-
-    def skill_names(paths: list[str]) -> list[str]:
-        names = {p[len(prefix) :].split("/", 1)[0] for p in paths if p.startswith(prefix)}
-        return sorted(n for n in names if n and not n.startswith("."))
-
-    status = git.run(top, "status", "--porcelain=v1", "-z", "--", rel)
-    changed: list[str] = []
-    fields = iter(status.stdout.split("\0"))
-    for f in fields:
-        if len(f) > 3:
-            changed.append(f[3:])
-            if "R" in f[:2] or "C" in f[:2]:
-                changed.append(next(fields, ""))  # the source of a rename or copy
-    uncommitted = skill_names(changed)
-
-    log = git.run(top, "log", "--format=", "--name-only", "@{upstream}..HEAD", "--", rel)
-    unpushed = skill_names(log.stdout.splitlines()) if log.returncode == 0 else []
-
-    parts = []
-    if uncommitted:
-        parts.append(f"uncommitted edits to {', '.join(uncommitted)}")
-    if unpushed:
-        parts.append(f"unpushed commits touching {', '.join(unpushed)}")
-    if parts:
-        yield Finding(
-            "dirty-source", "info", f"source {src.name!r} has {'; '.join(parts)}", path=state.root
-        )
