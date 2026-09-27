@@ -8,6 +8,7 @@
     tack remove SOURCE [--dry-run]                          remove a source
     tack doctor [PATH...] [--global-only|--projects-only]   audit
     tack scaffold FIX PATH [--from HARNESS] [--dry-run]     apply a doctor fix to a project
+    tack                                                    the TUI (in a terminal)
 
 Every command takes --json (the result goes to stdout as JSON) and
 --config DIR (the directory holding tack.toml). sync, update, add, remove and
@@ -22,7 +23,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from dataclasses import asdict, is_dataclass
 from datetime import datetime
@@ -39,6 +39,7 @@ from tack import (
     scaffold,
     status,
     sync,
+    text,
     update,
 )
 from tack.config import Config, ConfigError, UsageError
@@ -198,6 +199,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.command is None:
+        if sys.stdin.isatty() and sys.stdout.isatty():
+            from tack import tui
+
+            return tui.run()
         parser.print_help(sys.stderr)
         return EXIT_USAGE
     try:
@@ -231,27 +236,7 @@ def _print_json(data: Any) -> None:
     print(json.dumps(_plain(data), indent=2, ensure_ascii=False))
 
 
-def _plural(n: int, word: str) -> str:
-    return f"{n} {word}{'' if n == 1 else 's'}"
-
-
 # --- sync ------------------------------------------------------------------------
-
-_VERBS = {
-    "pin": ("pin", "pinned"),
-    "update": ("update", "updated"),
-    "clone": ("clone", "cloned"),
-    "checkout": ("check out", "checked out"),
-    "write": ("write", "wrote"),
-    "link": ("link", "linked"),
-    "relink": ("relink", "relinked"),
-    "unlink": ("remove", "removed"),
-    "adopt": ("adopt", "adopted"),
-    "delete": ("delete", "deleted"),
-    "commit": ("commit", "committed"),
-    "push": ("push", "pushed"),
-    "move": ("move", "moved"),
-}
 
 
 def cmd_sync(args: argparse.Namespace, cfg: Config) -> int:
@@ -291,7 +276,7 @@ def cmd_scaffold(args: argparse.Namespace, cfg: Config) -> int:
 def _autocommit(args: argparse.Namespace, cfg: Config, result: sync.Result) -> sync.Result:
     """`result`, followed by the auto-commit that ends every command changing
     things (with the manifest as it was when the command started)."""
-    if args.no_commit or os.environ.get("TACK_NO_COMMIT", "") not in ("", "0"):
+    if args.no_commit or commit.disabled():
         return result
     return result.extend(commit.autocommit(cfg, dry_run=args.dry_run))
 
@@ -300,45 +285,11 @@ def _report(args: argparse.Namespace, result: sync.Result, idle: str = "already 
     if args.json:
         _print_json(result)
     else:
-        print(_sync_text(result, idle))
+        print(text.result_text(result, idle))
     return EXIT_FINDINGS if result.problems else EXIT_OK
 
 
-def _sync_text(result: sync.Result, idle: str) -> str:
-    rows = [(c.harness or c.source or "", c) for c in result.changes]
-    width = max((len(label) for label, _ in rows), default=0)
-    lines = []
-    for label, c in rows:
-        present, past = _VERBS[c.action]
-        verb = f"would {present}" if result.dry_run else past
-        lines.append(f"{label:<{width}}  {verb} {c.detail}" if width else f"{verb} {c.detail}")
-        if result.dry_run and c.diff:
-            lines += c.diff.rstrip("\n").splitlines()
-    lines += [f"note: {n.source + ': ' if n.source else ''}{n.message}" for n in result.notes]
-    for p in result.problems:
-        label = " ".join(x for x in (p.source, p.harness) if x)
-        lines.append(f"{p.kind}: {label + ': ' if label else ''}{p.message}")
-    n = len(result.changes)
-    if not n:
-        summary = idle
-    else:
-        summary = f"would make {_plural(n, 'change')}" if result.dry_run else _plural(n, "change")
-    if result.problems:
-        summary += f", {_plural(len(result.problems), 'problem')}"
-    return "\n".join([*lines, *([""] if lines else []), summary])
-
-
 # --- status ----------------------------------------------------------------------
-
-_SOURCE_STATES = {
-    "missing": "its skills directory isn't there",
-    "not pinned": "not pinned yet; `tack sync` pins it",
-    "manifest changed": "the manifest's git or ref changed since it was pinned; "
-    "`tack update {name}` re-pins it",
-    "not checked out": "not checked out; `tack sync` fetches it",
-    "local changes": "tack's checkout has local changes",
-    "off its pin": "checked out away from its pin; `tack sync` fixes it",
-}
 
 
 def cmd_status(args: argparse.Namespace, cfg: Config) -> int:
@@ -365,8 +316,8 @@ def _status_text(st: status.Status, cfg: Config) -> str:
         if s.commit and s.locked:
             notes.append(f"pinned {s.commit[:12]} on {s.locked.date().isoformat()}")
         if s.state != "ok":
-            notes.append(_SOURCE_STATES[s.state].format(name=s.name))
-        notes.append(_plural(len(s.skills), "skill"))
+            notes.append(text.SOURCE_STATES[s.state].format(name=s.name))
+        notes.append(text.plural(len(s.skills), "skill"))
         if s.uncommitted:
             notes.append(f"uncommitted edits to {', '.join(s.uncommitted)}")
         if s.unpushed:
@@ -417,7 +368,7 @@ def _outdated_text(report: outdated.Report) -> str:
             lines.append(f"{s.name:<{width}}  {s.message}")
             continue
         span = f"{(s.pin or '')[:12]} -> {(s.tip or '')[:12]}"
-        lines.append(f"{s.name:<{width}}  {_plural(s.behind, 'commit')} behind {on} ({span})")
+        lines.append(f"{s.name:<{width}}  {text.plural(s.behind, 'commit')} behind {on} ({span})")
         if s.rewritten:
             lines.append(f"{pad}upstream rewrote its history: the tip no longer contains the pin")
         by_change = {
@@ -441,9 +392,9 @@ def _outdated_text(report: outdated.Report) -> str:
     behind = sum(s.state == "behind" for s in report.sources)
     unknown = sum(s.state not in ("current", "behind") for s in report.sources)
     if not behind and not unknown:
-        summary = f"{_plural(total, 'git source')}, all up to date"
+        summary = f"{text.plural(total, 'git source')}, all up to date"
     else:
-        parts = [f"{behind} of {_plural(total, 'git source')} behind"]
+        parts = [f"{behind} of {text.plural(total, 'git source')} behind"]
         if unknown:
             parts.append(f"{unknown} not compared")
         summary = ", ".join(parts)

@@ -165,6 +165,7 @@ def test_sync_and_status(home: Path, capsys: pytest.CaptureFixture[str]) -> None
         "name": "b",
         "source": "mine",
         "harnesses": {"claude-code": "linked", "codex": "linked"},
+        "path": str(home / "mine" / "skills" / "b"),
     }
 
 

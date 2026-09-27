@@ -43,6 +43,7 @@ class SkillStatus:
     name: str
     source: str
     harnesses: dict[str, LinkStatus]  # only the harnesses it targets
+    path: Path | None = None  # the skill directory the links point to
 
 
 @dataclass
@@ -90,7 +91,7 @@ def status(cfg: Config) -> Status:
                     continue
                 st = deploy.state(cfg.harnesses[h].skills_dir / sel.name, sel, cfg, record)
                 links[h] = _LINK.get(st, "conflict")
-            skills.append(SkillStatus(sel.name, ss.source.name, links))
+            skills.append(SkillStatus(sel.name, ss.source.name, links, sel.path))
     skills.sort(key=lambda k: (k.name, k.source))
     return Status(out_sources, skills)
 

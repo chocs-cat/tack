@@ -1,8 +1,9 @@
 # tack — design
 
 Status: **approved** (2026-09-27); phases 2 (`doctor`), 3 (sources and
-`sync`, with the maintainer's setup migrated), 4 (tracking), 5 (auto-commit)
-and 6 (scaffolding) are done; phase 7 (the TUI) is next. This document
+`sync`, with the maintainer's setup migrated), 4 (tracking), 5 (auto-commit),
+6 (scaffolding) and 7 (the TUI) are done; phase 8 (release) is next. This
+document
 is the spec. Decisions below were settled with the maintainer in an
 interview; where one is still open it says so, in
 [Open questions](#open-questions).
@@ -544,7 +545,8 @@ Three tabs, each a list with a detail pane for the selected row:
   unpushed skill edits. The detail shows the pin, the commits since, the
   changed skills, and their diff.
 - **Doctor** — the findings by project, colored by severity. The detail
-  shows the message, the path, and the fix.
+  shows the message, the path, and the fix. Errors come first, then warnings,
+  then info.
 
 It opens on the tab that needs attention: Doctor if it has an error or a
 warning, else Sources if a source is behind or has uncommitted or unpushed

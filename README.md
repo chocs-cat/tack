@@ -5,16 +5,19 @@ from one manifest of sources — your own skill repos and pinned third-party
 ones — and audit your projects so either agent sees the same instructions,
 skills, and hooks.
 
-**Status: phase 6 of [the design](docs/design.md).** `tack sync` deploys
+**Status: phase 7 of [the design](docs/design.md).** `tack sync` deploys
 skills from the manifest's sources, `tack status` shows what is where,
 `tack outdated` and `tack update` track upstream, `tack add` and `tack remove`
 edit the manifest, `tack doctor` audits, and `tack scaffold` applies the fixes
 it suggests. A `path` source with `autocommit = true` (and `autopush`) has its
 skill edits committed, and pushed, whenever a command that changes things
-runs. A TUI comes next.
+runs. A bare `tack` opens a TUI over all of it: Skills, Sources and Doctor
+tabs, with every action previewed before it runs. Publishing to PyPI and
+Homebrew comes next.
 
 ```sh
 uv tool install -e .      # or: uv run tack ...
+tack                      # the TUI
 tack add https://github.com/cloudflare/skills.git --skill wrangler
 tack sync --dry-run       # what would change
 tack sync                 # fetch pinned sources, link skills into every harness

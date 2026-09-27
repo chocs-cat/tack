@@ -13,6 +13,7 @@ within a run.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from tack import git, sources
@@ -28,6 +29,11 @@ _UNDER_WAY = (
     ("CHERRY_PICK_HEAD", "mid-cherry-pick"),
     ("REVERT_HEAD", "mid-revert"),
 )
+
+
+def disabled() -> bool:
+    """Whether the environment turns auto-commit off (TACK_NO_COMMIT=1)."""
+    return os.environ.get("TACK_NO_COMMIT", "") not in ("", "0")
 
 
 def autocommit(cfg: Config, *, dry_run: bool = False) -> Result:
