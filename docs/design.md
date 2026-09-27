@@ -1,9 +1,7 @@
 # tack — design
 
-Status: **approved** (2026-09-27); phases 2 (`doctor`), 3 (sources and
-`sync`, with the maintainer's setup migrated), 4 (tracking), 5 (auto-commit),
-6 (scaffolding) and 7 (the TUI) are done; phase 8 (release) is next. This
-document
+Status: **approved** (2026-09-27); every phase is done, and tack 0.1.0 is
+released on PyPI and Homebrew. This document
 is the spec. Decisions below were settled with the maintainer in an
 interview; where one is still open it says so, in
 [Open questions](#open-questions).
