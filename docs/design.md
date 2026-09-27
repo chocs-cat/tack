@@ -1,8 +1,8 @@
 # tack — design
 
 Status: **approved** (2026-09-27); phases 2 (`doctor`), 3 (sources and
-`sync`, with the maintainer's setup migrated) and 4 (tracking) are done;
-phase 5 (auto-commit) is next. This document
+`sync`, with the maintainer's setup migrated), 4 (tracking) and 5
+(auto-commit) are done; phase 6 (scaffolding) is next. This document
 is the spec. Decisions below were settled with the maintainer in an
 interview; where one is still open it says so, in
 [Open questions](#open-questions).
@@ -180,7 +180,7 @@ Paths expand `~`, and a relative path is relative to the manifest's directory.
 | `skills` | all | `"*"` | Which skills to deploy: `"*"`, or a list. A list entry is a name, or `{ name = "…", harnesses = ["claude-code"] }` to limit that skill. |
 | `harnesses` | all | every harness | Limit the whole source. |
 | `autocommit` | path | `false` | Commit pending edits to this source's skills when tack runs. |
-| `autopush` | path | `false` | Push after an auto-commit. |
+| `autopush` | path | `false` | Push auto-commits. Needs `autocommit`. |
 
 ### Harness fields
 
@@ -258,15 +258,18 @@ partial failure, `2` usage or configuration error.
 
 | Command | What it does |
 |---|---|
-| `tack sync [--dry-run] [--adopt]` | Make every harness match the manifest and lock: fetch/check out git sources at their pinned commits, create missing links, remove links to skills no longer selected. Reports conflicts instead of overwriting (see [Ownership](#ownership-and-conflicts)); `--adopt` takes them over. |
+| `tack sync [--dry-run] [--adopt] [--no-commit]` | Make every harness match the manifest and lock: fetch/check out git sources at their pinned commits, create missing links, remove links to skills no longer selected. Reports conflicts instead of overwriting (see [Ownership](#ownership-and-conflicts)); `--adopt` takes them over. |
 | `tack status` | What is deployed where, each source's pin or checkout state, and pending auto-commits (uncommitted and unpushed skill edits in `path` sources). Read-only; exits `0`. |
 | `tack outdated [SOURCE…] [--diff]` | Fetch each git source's `ref` and show how far its pin is behind: commits, and which *selected* skills changed. `--diff` prints the diff limited to those skills. |
-| `tack update [SOURCE…] [--dry-run]` | Move pins to the current tip of `ref`, write the lock, then `sync`. |
-| `tack add GIT_URL\|PATH [--name N] [--skill S…] [--ref R] [--subdir D] [--dry-run]` | Add a source to the manifest (then `sync`). |
-| `tack remove SOURCE [--dry-run]` | Remove a source from the manifest and its links (then `sync`). |
+| `tack update [SOURCE…] [--dry-run] [--no-commit]` | Move pins to the current tip of `ref`, write the lock, then `sync`. |
+| `tack add GIT_URL\|PATH [--name N] [--skill S…] [--ref R] [--subdir D] [--dry-run] [--no-commit]` | Add a source to the manifest (then `sync`). |
+| `tack remove SOURCE [--dry-run] [--no-commit]` | Remove a source from the manifest and its links (then `sync`). |
 | `tack doctor [PATH…] [--global-only\|--projects-only]` | Audit; see [`doctor` checks](#doctor-checks). Read-only. |
 | `tack scaffold CHECK PATH [--dry-run]` | Apply the fix for one `doctor` finding to one project; see [Scaffolding](#scaffolding). |
 | `tack` (no arguments, later) | Launch the TUI. |
+
+`sync`, `update`, `add` and `remove` also commit pending edits to your own
+skills; see [Auto-commit](#auto-commit).
 
 `sync` is idempotent and safe to run from a login hook or a dotfiles
 tool's post-apply step; bootstrapping a new machine is: install tack, put the
@@ -353,21 +356,35 @@ rather than removed.
 
 ## Auto-commit
 
-For each `path` source with `autocommit = true` that is a git repository,
-every tack command **except `doctor` and `status`** (which stay read-only)
-first commits pending edits:
+For each `path` source with `autocommit = true`, the commands that change
+things — `sync`, `update`, `add` and `remove`, and `scaffold` once it exists —
+also commit pending edits to its skills. `doctor`, `status` and `outdated`
+only report, and never commit.
 
-1. Skip, with a note, if the repository is mid-merge, mid-rebase, on a
+1. Skip, with a note, if the skills directory isn't in a git work tree, or the
+   repository is mid-merge, mid-rebase, mid-cherry-pick or mid-revert, on a
    detached HEAD, or has conflicts.
-2. Stage only changes under the source's `subdir` — never anything else in the
-   repository, so unrelated work is not swept into the commit.
-3. Commit as the user, with a message naming the changed skills
-   (`Update interview, pr-body-md`).
-4. If `autopush`, push. A rejected push (the remote moved) is reported, not
-   retried or rebased: fixing it is the user's call.
+2. Stage only changes inside the source's skill directories (the directories
+   in its `subdir`) — never anything else in the repository, not even a loose
+   file beside them in `subdir`, so unrelated work is not swept into the
+   commit. Anything else already staged stays staged, and out of the commit.
+3. Commit as the user, with their git configuration (hooks and signing
+   included), and a message naming the changed skills with a verb for each
+   kind of change: `Add foo; update interview, pr-body-md; remove bar`.
+4. If `autopush`, push the current branch to its upstream while commits
+   touching skills are unpushed: right after an auto-commit, and again on a
+   later run if that push failed (offline, say). Each run tries once. A
+   rejected push (the remote moved) is reported, not retried or rebased:
+   fixing it is the user's call.
 
-`--no-commit` (or `TACK_NO_COMMIT=1`) skips this for one run. `status` and
-`doctor` report uncommitted and unpushed skill edits.
+The commit comes after the command's own work, so a command stopped by a
+usage or configuration error (exit `2`) commits nothing. A skip is a note and
+leaves the exit code alone; a failed commit or push is a problem (exit `1`),
+and a failed commit leaves its changes staged. `--dry-run` says what would be
+committed and pushed and changes nothing. `--no-commit` (or
+`TACK_NO_COMMIT=1`) skips auto-commit for one run. `status` and `doctor`
+report uncommitted and unpushed skill edits: exactly the ones auto-commit
+takes.
 
 Why on-run rather than a background watcher: no daemon to install or keep
 alive, and the delay is only until tack next runs.
