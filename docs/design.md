@@ -1,8 +1,8 @@
 # tack — design
 
-Status: **approved** (2026-09-27); phases 2 (`doctor`) and 3 (sources and
-`sync`, with the maintainer's setup migrated) are done; phase 4 (tracking) is
-next. This document
+Status: **approved** (2026-09-27); phases 2 (`doctor`), 3 (sources and
+`sync`, with the maintainer's setup migrated) and 4 (tracking) are done;
+phase 5 (auto-commit) is next. This document
 is the spec. Decisions below were settled with the maintainer in an
 interview; where one is still open it says so, in
 [Open questions](#open-questions).
@@ -209,9 +209,15 @@ harness it adds to the built-in list rather than replacing it.
 
 ### Writing the manifest
 
-tack edits `tack.toml` only through `add`/`remove` (and the TUI), with
-[tomlkit](https://github.com/python-poetry/tomlkit) so comments and layout
-survive. After writing either file it runs `after_save` once per file changed,
+tack edits `tack.toml` only through `add`/`remove` (and the TUI), and as
+text, so comments and layout survive: it appends one `[[source]]` table after
+the last, or cuts one out together with the comment lines directly above its
+header, and leaves every other line alone. The edit is kept only if the new
+text parses to the old manifest with exactly that source added or removed;
+otherwise tack writes nothing and asks for the change to be made by hand
+(exit `2`). (A TOML round-trip library was the first plan, but tomlkit keeps a
+table's leading comments in the table before it, so cutting a table moves its
+neighbours' comments.) After writing either file it runs `after_save` once per file changed,
 with `{path}` replaced by the absolute path (shell-quoted; the command runs
 under `sh -c`), and reports a failure without undoing the write. A
 `--dry-run` writes nothing and runs nothing.
@@ -255,9 +261,9 @@ partial failure, `2` usage or configuration error.
 | `tack sync [--dry-run] [--adopt]` | Make every harness match the manifest and lock: fetch/check out git sources at their pinned commits, create missing links, remove links to skills no longer selected. Reports conflicts instead of overwriting (see [Ownership](#ownership-and-conflicts)); `--adopt` takes them over. |
 | `tack status` | What is deployed where, each source's pin or checkout state, and pending auto-commits (uncommitted and unpushed skill edits in `path` sources). Read-only; exits `0`. |
 | `tack outdated [SOURCE…] [--diff]` | Fetch each git source's `ref` and show how far its pin is behind: commits, and which *selected* skills changed. `--diff` prints the diff limited to those skills. |
-| `tack update [SOURCE…]` | Move pins to the current tip of `ref`, write the lock, then `sync`. |
-| `tack add GIT_URL\|PATH [--name N] [--skill S…] [--ref R]` | Add a source to the manifest (then `sync`). |
-| `tack remove SOURCE` | Remove a source from the manifest and its links (then `sync`). |
+| `tack update [SOURCE…] [--dry-run]` | Move pins to the current tip of `ref`, write the lock, then `sync`. |
+| `tack add GIT_URL\|PATH [--name N] [--skill S…] [--ref R] [--subdir D] [--dry-run]` | Add a source to the manifest (then `sync`). |
+| `tack remove SOURCE [--dry-run]` | Remove a source from the manifest and its links (then `sync`). |
 | `tack doctor [PATH…] [--global-only\|--projects-only]` | Audit; see [`doctor` checks](#doctor-checks). Read-only. |
 | `tack scaffold CHECK PATH [--dry-run]` | Apply the fix for one `doctor` finding to one project; see [Scaffolding](#scaffolding). |
 | `tack` (no arguments, later) | Launch the TUI. |
@@ -265,6 +271,57 @@ partial failure, `2` usage or configuration error.
 `sync` is idempotent and safe to run from a login hook or a dotfiles
 tool's post-apply step; bootstrapping a new machine is: install tack, put the
 manifest and lock in place, `tack sync`.
+
+### Tracking upstream
+
+Only git sources are tracked; naming a `path` source, or a name the manifest
+doesn't have, to `outdated` or `update` is a usage error. With no names, both
+take every git source.
+
+**`outdated`** fetches into tack's checkouts, which it never moves, and
+compares each pin with the tip of its `ref`. It reports how many commits the
+pin is behind, the commits that touch selected skills, and each selected skill
+that changed, as *modified*, *added* or *removed* (for a source taking `"*"`,
+every skill at the pin or the tip is selected, so a new upstream skill shows as
+added). A tip whose history no longer contains the pin (upstream rewrote it)
+is flagged. A source that isn't pinned, isn't checked out, or whose manifest
+entry changed since it was pinned can't be compared; it is reported with the
+command that fixes it. `--diff` adds `git diff` output limited to the changed
+skills. Exits `1` when any source is behind or couldn't be compared.
+
+**`update`** re-pins each source to the tip of its `ref`, including one whose
+`git` or `ref` changed in the manifest, and leaves the entry alone (its
+`locked` time too) when the tip is the pin. Then it syncs with the new pins,
+writing the lock once. The new pin is the tip when `update` runs, so run
+`outdated --diff` just before it to see what you are taking.
+
+### Adding and removing sources
+
+**`add`** reads its argument as a git URL when it has a scheme (`https://…`)
+or is in git's `host:path` form (nothing before the colon contains a slash),
+and as a local directory otherwise; a directory becomes a `path` source,
+written as an absolute path or with `~`. The name defaults to the
+repository's or directory's name without `.git`, except that a repository
+named `skills` takes its owner's name (`cloudflare/skills` becomes
+`cloudflare`). `--skill` limits the source to those skills (`"*"` otherwise);
+`--subdir` sets where its skills are.
+
+Before writing anything, `add` pins a git source to the tip of its ref and
+clones it, then refuses (exit `2`, nothing written, a fresh clone removed) a
+name already in the manifest, a source already in it (the same `path`, or the
+same `git` and `ref`), a source with no skills in its `subdir`, a `--skill`
+the source doesn't have, and a skill another source already deploys to the
+same harness. Otherwise it appends the table and syncs. A git source it can't
+reach is reported (exit `1`) with nothing written. A new source is always
+pinned afresh, replacing any lock entry left under its name. A dry run doesn't
+clone, so it can't check a git source's skills.
+
+**`remove`** cuts the source's table, drops its lock entry, syncs (which
+removes its links), and then deletes tack's checkout of it, unless the
+checkout has local changes: those are reported and the checkout is left where
+it is. A name only the lockfile has (a source commented out of the manifest)
+loses its entry and its checkout the same way. A `path` source's directory is
+never touched.
 
 ## Ownership and conflicts
 
@@ -429,12 +486,15 @@ changes one means a check changes.
 - Python ≥ 3.11 (`tomllib`), packaged with uv and hatchling, like corral.
   Distribution name `tack-agents` (`tack` is taken on PyPI); the command is
   `tack`.
-- Dependencies: `tomlkit` (round-trip manifest edits), `textual` (TUI, phase 6
-  only). Git through `subprocess`, no Git library.
+- Dependencies: `textual` (TUI, phase 7 only). Manifest edits are text edits
+  checked by re-parsing (see [Writing the manifest](#writing-the-manifest)),
+  so no TOML writer. Git through `subprocess`, no Git library.
 - CLI with `argparse`, `--json` on every command.
 - Checks: `pytest`, `ruff check`, `ruff format --check`, `ty check`.
 - Layout: `src/tack/` with `config.py` (manifest, lock, harnesses),
   `sources.py` (checkout, pin, fetch), `deploy.py` (links, ownership),
+  one module per command for `sync`, `status`, `outdated` and `update`,
+  `edit.py` (`add`, `remove` and the manifest's text edits),
   `commit.py` (auto-commit), `doctor/` (one module per check group),
   `scaffold.py`, `cli.py`, and later `tui/`.
 - Tests build throwaway harness directories, projects and git remotes in a
