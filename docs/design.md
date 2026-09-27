@@ -20,17 +20,18 @@ interview; where one is still open it says so, in
 9. [Auto-commit](#auto-commit)
 10. [`doctor` checks](#doctor-checks)
 11. [Scaffolding](#scaffolding)
-12. [Harness facts tack relies on](#harness-facts-tack-relies-on)
-13. [Implementation](#implementation)
-14. [Phases](#phases)
-15. [Migrating the maintainer's setup](#migrating-the-maintainers-setup)
-16. [Open questions](#open-questions)
+12. [The TUI](#the-tui)
+13. [Harness facts tack relies on](#harness-facts-tack-relies-on)
+14. [Implementation](#implementation)
+15. [Phases](#phases)
+16. [Migrating the maintainer's setup](#migrating-the-maintainers-setup)
+17. [Open questions](#open-questions)
 
 ## What tack is
 
-A CLI (and later a TUI) that keeps a person's **agent skills** deployed
+A CLI and a TUI that keep a person's **agent skills** deployed
 identically to every coding agent they use, from one manifest of sources, and
-audits their projects so **Claude Code and Codex stay interchangeable**:
+audit their projects so **Claude Code and Codex stay interchangeable**:
 the same instructions, the same skills, the same hooks, whichever agent you
 start.
 
@@ -266,7 +267,7 @@ partial failure, `2` usage or configuration error.
 | `tack remove SOURCE [--dry-run] [--no-commit]` | Remove a source from the manifest and its links (then `sync`). |
 | `tack doctor [PATH…] [--global-only\|--projects-only]` | Audit; see [`doctor` checks](#doctor-checks). Read-only. |
 | `tack scaffold FIX PATH [--from HARNESS] [--dry-run] [--no-commit]` | Apply one `doctor` fix to one project; see [Scaffolding](#scaffolding). |
-| `tack` (no arguments, later) | Launch the TUI. |
+| `tack` (no arguments, in a terminal) | Launch the TUI; see [The TUI](#the-tui). |
 
 `sync`, `update`, `add`, `remove` and `scaffold` also commit pending edits to
 your own skills; see [Auto-commit](#auto-commit).
@@ -525,6 +526,45 @@ repository uses: keep the logic in a committed script that does not depend on
 the tool payload, and register an identical one-line command for each
 harness.
 
+## The TUI
+
+`tack` with no arguments, in a terminal, opens a Textual app over the same
+operations as the CLI. Piped or scripted, it prints the usage and exits `2`
+as before, so nothing waits on a screen no one sees. The app takes its
+manifest from `TACK_CONFIG` or the default location.
+
+Three tabs, each a list with a detail pane for the selected row:
+
+- **Skills** — each selected skill, its source, and its state in each
+  harness (linked, missing, stale, conflict, collision). The detail shows
+  where it comes from and its `SKILL.md` description, or what is wrong with
+  it.
+- **Sources** — each source's state: how far behind upstream a git source
+  is, or that it isn't pinned or checked out; a path source's uncommitted and
+  unpushed skill edits. The detail shows the pin, the commits since, the
+  changed skills, and their diff.
+- **Doctor** — the findings by project, colored by severity. The detail
+  shows the message, the path, and the fix.
+
+It opens on the tab that needs attention: Doctor if it has an error or a
+warning, else Sources if a source is behind or has uncommitted or unpushed
+edits, else Skills. The audit and the upstream fetch (`outdated --diff`) run
+in the background, so the app opens at once on Skills and moves to that tab
+when both are done, unless you have picked a tab by then. `r` runs them
+again.
+
+It changes nothing the CLI can't. `s` syncs; on Sources, `u` updates the
+selected source, `a` adds one (a form taking what `tack add` takes) and `x`
+removes the selected one; on Doctor, `f` applies the selected finding's fix,
+first asking which harness wins a `hook-mismatch`. Every action first shows
+its dry run, auto-commit included, and does nothing until you confirm. Then
+it runs, auto-commits as the CLI does, shows what it did in the same dialog,
+and refreshes the tabs. Opening the app commits nothing. An action waits for
+a running fetch to finish, so the two never work in one checkout at once.
+
+Diffs show colored in the detail pane and in an action's preview; `p`
+suspends the app and opens the diff in git's pager (`git var GIT_PAGER`).
+
 ## Harness facts tack relies on
 
 Verified 2026-09-27 against Claude Code 2.1.283 and codex-cli 0.155.1 and
@@ -564,7 +604,7 @@ changes one means a check changes.
 - Python ≥ 3.11 (`tomllib`), packaged with uv and hatchling, like corral.
   Distribution name `tack-agents` (`tack` is taken on PyPI); the command is
   `tack`.
-- Dependencies: `textual` (TUI, phase 7 only). Manifest edits are text edits
+- Dependencies: `textual` (the TUI), always installed. Manifest edits are text edits
   checked by re-parsing (see [Writing the manifest](#writing-the-manifest)),
   so no TOML writer. Git through `subprocess`, no Git library.
 - CLI with `argparse`, `--json` on every command.
@@ -574,10 +614,11 @@ changes one means a check changes.
   one module per command for `sync`, `status`, `outdated` and `update`,
   `edit.py` (`add`, `remove` and the manifest's text edits),
   `commit.py` (auto-commit), `doctor/` (one module per check group),
-  `scaffold/` (one module per fix), `cli.py`, and later `tui/`.
+  `scaffold/` (one module per fix), `cli.py`, and `tui/` (the app, its
+  views and its dialogs, over the same functions the CLI calls).
 - Tests build throwaway harness directories, projects and git remotes in a
   temporary directory; nothing in the test suite touches the real home
-  directory.
+  directory. The TUI is driven through Textual's test pilot.
 
 ## Phases
 
@@ -595,7 +636,8 @@ Each phase ends usable and reviewed before the next begins.
 5. **Auto-commit** for path sources.
 6. **Scaffolding** — the three fixes.
 7. **TUI** (Textual) over the same operations: deployed skills per harness,
-   sources with outdated counts and diffs, `doctor` findings with their fixes.
+   sources with outdated counts and diffs, `doctor` findings with their fixes;
+   see [The TUI](#the-tui).
 8. **Release** — PyPI `tack-agents`, Homebrew formula in `johnfoland/tap`.
 
 ## Migrating the maintainer's setup
@@ -639,5 +681,3 @@ entries under `private_dot_claude/skills/` and `dot_agents/skills/`, and
   a link would disagree with the skill's frontmatter `name`.
 - **Global hook parity.** Installer-owned hooks make `hook-one-harness`
   noisy at user level; it may need an ignore list like skills do.
-- **TUI design.** Sketched in phase 7 only; to be designed when phases 2–4
-  exist to build it on.
