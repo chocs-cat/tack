@@ -1,8 +1,9 @@
 # tack — design
 
-Status: **draft for review** (2026-09-27). No code yet; this document is the
-spec for it. Decisions below were settled with the maintainer in an interview;
-where one is still open it says so, in [Open questions](#open-questions).
+Status: **approved** (2026-09-27); phase 2 (`doctor`) is next. This document
+is the spec. Decisions below were settled with the maintainer in an
+interview; where one is still open it says so, in
+[Open questions](#open-questions).
 
 ## Contents
 
@@ -407,9 +408,14 @@ entries under `private_dot_claude/skills/` and `dot_agents/skills/`, and
 3. `tack sync --adopt`: tack replaces the chezmoi-made links with its own.
 4. `tack doctor` clean; then delete `~/.local/share/agent-skills/`.
 5. Update the global instructions' "Global skills" section to describe tack.
-6. New machines: chezmoi installs tack (Brewfile) and the manifest; a
-   `run_onchange_` script keyed on `tack.lock` runs `tack sync`. That script
-   is the maintainer's dotfiles, not tack.
+6. New machines. chezmoi doesn't install software itself; the dotfiles'
+   Brewfile does, through the existing `run_once_after_install-homebrew.sh`
+   script that runs `brew bundle install`. Once tack has a Homebrew formula
+   (phase 8), `brew "johnfoland/tap/tack"` goes in the Brewfile. Until then,
+   tack is installed by hand: `uv tool install -e ~/Code/tack`, as corral is.
+   chezmoi also places the manifest and lockfile, and a `run_onchange_after_`
+   script keyed on `tack.lock` runs `tack sync` whenever the pins change.
+   Both scripts belong to the dotfiles, not to tack.
 
 ## Open questions
 
