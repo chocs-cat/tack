@@ -1,8 +1,8 @@
 # tack — design
 
 Status: **approved** (2026-09-27); phases 2 (`doctor`), 3 (sources and
-`sync`, with the maintainer's setup migrated), 4 (tracking) and 5
-(auto-commit) are done; phase 6 (scaffolding) is next. This document
+`sync`, with the maintainer's setup migrated), 4 (tracking), 5 (auto-commit)
+and 6 (scaffolding) are done; phase 7 (the TUI) is next. This document
 is the spec. Decisions below were settled with the maintainer in an
 interview; where one is still open it says so, in
 [Open questions](#open-questions).
@@ -265,11 +265,11 @@ partial failure, `2` usage or configuration error.
 | `tack add GIT_URL\|PATH [--name N] [--skill S…] [--ref R] [--subdir D] [--dry-run] [--no-commit]` | Add a source to the manifest (then `sync`). |
 | `tack remove SOURCE [--dry-run] [--no-commit]` | Remove a source from the manifest and its links (then `sync`). |
 | `tack doctor [PATH…] [--global-only\|--projects-only]` | Audit; see [`doctor` checks](#doctor-checks). Read-only. |
-| `tack scaffold CHECK PATH [--dry-run]` | Apply the fix for one `doctor` finding to one project; see [Scaffolding](#scaffolding). |
+| `tack scaffold FIX PATH [--from HARNESS] [--dry-run] [--no-commit]` | Apply one `doctor` fix to one project; see [Scaffolding](#scaffolding). |
 | `tack` (no arguments, later) | Launch the TUI. |
 
-`sync`, `update`, `add` and `remove` also commit pending edits to your own
-skills; see [Auto-commit](#auto-commit).
+`sync`, `update`, `add`, `remove` and `scaffold` also commit pending edits to
+your own skills; see [Auto-commit](#auto-commit).
 
 `sync` is idempotent and safe to run from a login hook or a dotfiles
 tool's post-apply step; bootstrapping a new machine is: install tack, put the
@@ -357,8 +357,8 @@ rather than removed.
 ## Auto-commit
 
 For each `path` source with `autocommit = true`, the commands that change
-things — `sync`, `update`, `add` and `remove`, and `scaffold` once it exists —
-also commit pending edits to its skills. `doctor`, `status` and `outdated`
+things — `sync`, `update`, `add`, `remove` and `scaffold` — also commit
+pending edits to its skills. `doctor`, `status` and `outdated`
 only report, and never commit.
 
 1. Skip, with a note, if the skills directory isn't in a git work tree, or the
@@ -419,6 +419,7 @@ read wrong), **warn** (will drift or break later), **info**.
 | `local-md-suppresses-agents` | error | A `CLAUDE.local.md` exists beside an `AGENTS.md`, and neither it nor `CLAUDE.md` imports `AGENTS.md`, so Claude Code reads the personal file but not the repo's `AGENTS.md`. | `agents-md` |
 | `codex-skills-dir` | error | Skills under `.codex/skills`, which Codex doesn't read. | `skills-dir` |
 | `claude-only-skills` | error | Skills in `.claude/skills` that aren't in `.agents/skills` (or there is no `.agents/skills`): Codex can't see them. | `skills-dir` |
+| `codex-only-skills` | error | Skills in `.agents/skills` that aren't in `.claude/skills` (or there is no `.claude/skills`): Claude Code can't see them. | `skills-dir` |
 | `duplicate-skill-copies` | warn | Both `.claude/skills` and `.agents/skills` are real directories. | `skills-dir` |
 | `hook-one-harness` | warn | A hook in one harness's project hook file with no counterpart in the other's. | `hooks` |
 | `hook-mismatch` | warn | Counterpart hooks exist but differ (event, matcher, or command). | `hooks` |
@@ -448,22 +449,76 @@ are the same once every path in them is reduced to its file name (so
 check, their event is the same. Matchers compare as sets of `|`-separated
 alternatives, merged across entries, so four `SessionStart` entries matching
 `startup`, `resume`, `clear` and `compact` equal one matching
-`startup|resume|clear|compact`.
+`startup|resume|clear|compact`. Hooks compare as `scaffold hooks` writes
+them: `args` folded into the command, `$CLAUDE_PROJECT_DIR` and
+`$(git rev-parse --show-toplevel)` read as the same thing, and an
+`apply_patch` matcher reads as `Edit|Write`.
 
 **Exit code.** `1` when there is an error or warn finding; info findings alone
 exit `0`.
 
 ## Scaffolding
 
-`tack scaffold <fix> <project>` writes the files that resolve a finding and
-**never commits**; it prints what it changed, and `--dry-run` prints the diff
-instead.
+`tack scaffold FIX PATH` applies one fix to one project: it writes, moves and
+removes files so that `doctor`'s findings with that fix go away, and **never
+commits**. A tracked file is moved or removed through git (`git mv`, so
+history follows, and `git rm`), and a file it writes is staged if git tracks
+it or tack created it (and git doesn't ignore it), leaving one change to
+review and commit; untracked files stay untracked. It prints what it changed and what
+to review; `--dry-run` prints the diff of each file it would write instead,
+and changes nothing. With no finding for the fix it says so and exits `0`. A
+fix it can't apply safely changes nothing, says why, and exits `1`.
 
-| Fix | Does |
-|---|---|
-| `agents-md` | Moves `CLAUDE.md`'s content into `AGENTS.md` (`git mv` when tracked, so history follows), writes `CLAUDE.md` as `@AGENTS.md`, and removes a now-redundant `@AGENTS.md` line from `CLAUDE.local.md`. Leaves wording that addresses one agent by name for the user to review, and lists those lines. |
-| `skills-dir` | Moves skills to `.agents/skills/` (`git mv`), replaces `.claude/skills` with a symlink to it, removes `.codex/skills` after confirming its contents are copies or links. |
-| `hooks` | Copies a hook registration to the other harness's project hook file so both are identical. Warns when the command parses the tool payload (mentions `tool_input`, `file_path`, …), because the harnesses' payloads differ — see below. |
+**`agents-md`** makes `AGENTS.md` the project's instructions and `CLAUDE.md`
+an import of it.
+
+- With no `AGENTS.md`, it moves `CLAUDE.md` there and writes `CLAUDE.md` as
+  `@AGENTS.md`.
+- With both, it puts `@AGENTS.md` at the top of `CLAUDE.md` and removes each
+  paragraph of `CLAUDE.md` that `AGENTS.md` has word for word (a fenced code
+  block is one paragraph). What is left is for Claude Code only. `AGENTS.md`
+  isn't touched.
+- With only a `CLAUDE.local.md` beside `AGENTS.md`, it writes `CLAUDE.md` as
+  `@AGENTS.md`.
+- It removes an `@AGENTS.md` line from `CLAUDE.local.md`, now redundant.
+
+It lists for review the lines it moved into `AGENTS.md` that name one agent
+(`Claude`, `Codex`) or import a file (Codex doesn't follow imports), and the
+lines it left in `CLAUDE.md`.
+
+**`skills-dir`** makes `.agents/skills` the one real skills directory and
+`.claude/skills` a relative symlink to it. Each entry of `.claude/skills` and
+`.codex/skills` that `.agents/skills` lacks is moved there; one it already has
+— an identical copy, or a link to it — is removed, and entries git ignores
+(a `.DS_Store`) go with their directory. Then `.claude/skills` becomes the
+link and `.codex/skills` is removed. If an entry differs from its namesake in
+`.agents/skills`, or `.claude/skills` or `.codex/skills` is a link to
+somewhere else, it changes nothing and lists what to reconcile by hand.
+
+**`hooks`** registers each project hook one harness has and another lacks in
+the other's hook file, with the same event and matcher, so `doctor` pairs them
+up. When both have a hook but the two differ (`hook-mismatch`), `--from
+HARNESS` says whose version replaces the other's; without it the fix lists
+them and changes nothing.
+
+- tack writes only JSON hook files (`.claude/settings.json`,
+  `.codex/hooks.json`), creating one if needed and rewriting it with
+  two-space indents. A registration it would have to change in
+  `.codex/config.toml` is reported for you to change.
+- A copy translates what has an exact equivalent: `args` are folded into
+  Codex's single `command` string, `$CLAUDE_PROJECT_DIR` (which Codex doesn't
+  set) becomes `$(git rev-parse --show-toplevel)`, and Codex's `apply_patch`
+  matcher becomes `Edit|Write`. Only `type`, `command`, `timeout` and
+  `statusMessage` are copied; any other field, and a hook that isn't a
+  command, is reported instead.
+- It warns when a matcher names a tool the other harness doesn't have (Codex
+  has only `Bash`, `apply_patch` with its aliases `Edit` and `Write`, and MCP
+  tools), and when a hook that sees edits (its matcher includes `Edit`,
+  `Write`, `apply_patch`, or every tool) reads the tool payload — its command,
+  or a script in the project the command runs, mentions `tool_input` or
+  `file_path` — because the harnesses' edit payloads differ.
+- After writing a Codex hook file it notes that Codex asks you to trust new
+  hooks (`/hooks`).
 
 The durable pattern for a hook both agents run is the one the `courses`
 repository uses: keep the logic in a committed script that does not depend on
@@ -497,6 +552,12 @@ changes one means a check changes.
 - **Codex hook trust** is keyed on a hash of the hook definition. A new or
   changed definition needs one approval (`/hooks`); changing a script the hook
   calls does not.
+- **Codex command hooks** have `command` (one shell string), `timeout`,
+  `statusMessage`, `async` and `additionalContextLimit`, and no `args`. They
+  run in the session's working directory, and nothing names the project
+  root: Claude Code's `CLAUDE_PROJECT_DIR` has no Codex counterpart. The
+  shell tool matches `Bash` in both harnesses, with the command in
+  `tool_input.command`.
 
 ## Implementation
 
@@ -513,7 +574,7 @@ changes one means a check changes.
   one module per command for `sync`, `status`, `outdated` and `update`,
   `edit.py` (`add`, `remove` and the manifest's text edits),
   `commit.py` (auto-commit), `doctor/` (one module per check group),
-  `scaffold.py`, `cli.py`, and later `tui/`.
+  `scaffold/` (one module per fix), `cli.py`, and later `tui/`.
 - Tests build throwaway harness directories, projects and git remotes in a
   temporary directory; nothing in the test suite touches the real home
   directory.
