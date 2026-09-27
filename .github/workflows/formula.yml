@@ -1,0 +1,71 @@
+name: Formula
+
+# Write the Homebrew formula for a version on PyPI, push it to
+# chocs-cat/homebrew-tap, then install it from the tap on macOS and run it.
+# The release workflow calls this after publishing; run it by hand to redo a
+# version's formula. Pushing needs the TAP_TOKEN secret: a fine-grained token
+# with Contents read/write on chocs-cat/homebrew-tap alone.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "A version of tack-agents on PyPI, like 0.1.0"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  tap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+      - name: Write the formula
+        # PyPI can take a little while to serve a new upload.
+        run: uv run --script scripts/formula.py "$VERSION" --wait 600 > "$RUNNER_TEMP/tack.rb"
+        env:
+          VERSION: ${{ inputs.version }}
+      - uses: actions/checkout@v7
+        with:
+          repository: chocs-cat/homebrew-tap
+          token: ${{ secrets.TAP_TOKEN }}
+          path: tap
+      - name: Push it to the tap
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p tap/Formula
+          cp "$RUNNER_TEMP/tack.rb" tap/Formula/tack.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/tack.rb
+          if git diff --cached --quiet; then
+            echo "the tap already has this formula"
+            exit 0
+          fi
+          git commit -q -m "tack $VERSION"
+          git push -q
+
+  install:
+    needs: tap
+    runs-on: macos-latest
+    steps:
+      - name: Install from the tap and run it
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          brew tap chocs-cat/tap
+          brew install chocs-cat/tap/tack
+          test "$(tack --version)" = "tack $VERSION"
+          brew test chocs-cat/tap/tack
