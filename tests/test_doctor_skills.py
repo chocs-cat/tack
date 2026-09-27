@@ -40,7 +40,7 @@ def test_unmanaged_and_ignored_entries(home: Path) -> None:
         ("unmanaged-skill", claude / "hand-made", "claude-code"),
     ]
     assert "links to ~/lib/chezmoi-made" in fs[0].message
-    assert fs[1].message == "a directory installed outside tack"
+    assert fs[1].message == "a real directory, outside tack"
 
 
 def test_dangling_link(home: Path) -> None:
@@ -69,7 +69,8 @@ def test_not_synced_cases(home: Path) -> None:
         fs["not-synced", claude / "a"].message
     )
     assert fs["not-synced", codex / "a"].message == (
-        "a real directory where the manifest deploys a link to ~/mine/skills/a"
+        "a real directory; the manifest deploys it from mine (~/mine/skills/a); "
+        "`tack sync --adopt` replaces it"
     )
     assert fs["not-synced", codex / "c"].message.startswith("missing;")
 
@@ -82,7 +83,7 @@ def test_stale_tack_link_is_not_synced(home: Path) -> None:
     link(home / ".agents" / "skills" / "keep", home / "mine" / "skills" / "keep")
     (f,) = findings(home, MINE.replace('path = "~/mine"', 'path = "~/mine"\nskills = ["keep"]'))
     assert (f.id, f.path) == ("not-synced", entry)
-    assert "no longer deploys 'drop' to claude-code" in f.message
+    assert "a tack link the manifest no longer deploys to claude-code" in f.message
 
 
 def test_listed_skill_missing_from_source(home: Path) -> None:

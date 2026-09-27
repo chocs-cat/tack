@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from tack import deploy
+from tack.config import ConfigError
 from tests.helpers import link, load, skill, write
 
 
@@ -102,11 +105,54 @@ def test_ownership(home: Path) -> None:
     elsewhere = link(d / "c", home / "other" / "c")
     relative = link(d / "e", Path("../mine/skills/a"))
     (d / "real").mkdir()
-    assert deploy.is_owned(into_source, cfg)
-    assert deploy.is_owned(into_data, cfg)  # even dangling
-    assert deploy.is_owned(relative, cfg)
-    assert not deploy.is_owned(elsewhere, cfg)
-    assert not deploy.is_owned(d / "real", cfg)
+    record = deploy.Record()
+    assert deploy.is_owned(into_source, cfg, record)
+    assert deploy.is_owned(into_data, cfg, record)  # even dangling
+    assert deploy.is_owned(relative, cfg, record)
+    assert not deploy.is_owned(elsewhere, cfg, record)
+    assert not deploy.is_owned(d / "real", cfg, record)
+    # The record makes a link tack's while it still points where it did.
+    record.links[str(elsewhere)] = str(home / "other" / "c")
+    assert deploy.is_owned(elsewhere, cfg, record)
+    record.links[str(elsewhere)] = str(home / "other" / "moved")
+    assert not deploy.is_owned(elsewhere, cfg, record)
     assert deploy.link_target(relative) == home / "mine" / "skills" / "a"
     assert deploy.within(home / "mine" / "skills", home / "mine")
     assert not deploy.within(home / "mine-other", home / "mine")
+
+
+def test_record_round_trip(home: Path) -> None:
+    cfg = load(home)
+    assert deploy.load_record(cfg.paths).links == {}
+    deploy.save_record(cfg.paths, deploy.Record({"/a": "/b"}))
+    assert deploy.load_record(cfg.paths).links == {"/a": "/b"}
+    (cfg.paths.state_dir / "state.json").write_text("[]")
+    with pytest.raises(ConfigError, match="not a version 1 ownership record"):
+        deploy.load_record(cfg.paths)
+
+
+def test_state(home: Path) -> None:
+    a = skill(home / "mine" / "skills", "a")
+    skill(home / "mine" / "skills", "b")
+    cfg = load(home, '[[source]]\nname = "mine"\npath = "~/mine"\nskills = ["a"]\n')
+    sel = deploy.plan(cfg).links["codex"]["a"]
+    record = deploy.Record()
+    d = home / "d"
+    assert deploy.state(d / "a", sel, cfg, record) == "absent"
+    assert deploy.state(link(d / "ok", a), sel, cfg, record) == "ok"
+    assert (
+        deploy.state(link(d / "stale", home / "mine" / "skills" / "b"), sel, cfg, record) == "stale"
+    )
+    assert deploy.state(link(d / "other", home / "x"), sel, cfg, record) == "conflict"
+    (d / "real").mkdir()
+    assert deploy.state(d / "real", sel, cfg, record) == "conflict"
+    assert deploy.state(d / "stale", None, cfg, record) == "owned"
+    assert deploy.state(d / "other", None, cfg, record) == "foreign"
+
+
+def test_make_link_replaces_a_link_atomically(home: Path) -> None:
+    entry = home / "skills" / "a"
+    deploy.make_link(entry, home / "one")
+    deploy.make_link(entry, home / "two")
+    assert deploy.link_target(entry) == home / "two"
+    assert sorted(p.name for p in entry.parent.iterdir()) == ["a"]

@@ -60,3 +60,36 @@ def load(home: Path, manifest: str | None = None) -> Config:
 
 def ids(findings: Iterable[Finding]) -> list[str]:
     return [f.id for f in findings]
+
+
+def skill_md(name: str) -> str:
+    return f"---\nname: {name}\ndescription: The {name} skill.\n---\n"
+
+
+def upstream(path: Path, *skills: str) -> Path:
+    """A repository standing in for a git source's remote, with `skills/<name>`
+    for each skill, committed on master."""
+    return repo(path, {f"skills/{s}/SKILL.md": skill_md(s) for s in skills})
+
+
+def commit(r: Path, files: dict[str, str], message: str = "change") -> str:
+    """Commit `files` to `r`; the new commit's SHA."""
+    for rel, text in files.items():
+        write(r / rel, text)
+    git(r, "add", "-A")
+    git(r, "commit", "-q", "-m", message)
+    return git(r, "rev-parse", "HEAD").strip()
+
+
+def tree(root: Path) -> dict[str, str]:
+    """Everything under `root`: each path, and a link's target or a file's text."""
+    out: dict[str, str] = {}
+    for p in sorted(root.rglob("*")):
+        rel = str(p.relative_to(root))
+        if p.is_symlink():
+            out[rel] = "-> " + str(p.readlink())
+        elif p.is_file():
+            out[rel] = p.read_bytes().decode(errors="replace")
+        else:
+            out[rel] = "/"
+    return out
