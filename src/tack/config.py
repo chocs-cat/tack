@@ -80,6 +80,10 @@ class ConfigError(Exception):
     """The manifest can't be read or doesn't make sense (exit code 2)."""
 
 
+class UsageError(Exception):
+    """A command was asked for something it can't do as asked (exit code 2)."""
+
+
 @dataclass(frozen=True)
 class Paths:
     config_dir: Path
@@ -372,6 +376,11 @@ def _str_list(value: Any, file: Path, where: str) -> list[str]:
     return value
 
 
+def valid_name(name: str) -> bool:
+    """Whether `name` can name a source, a skill or a harness."""
+    return bool(_NAME.fullmatch(name))
+
+
 def _no_unknown(table: dict[str, Any], allowed: set[str], file: Path, where: str) -> None:
     if unknown := sorted(set(table) - allowed):
         raise ConfigError(f"{file}: unknown key {', '.join(map(repr, unknown))} in {where}")
@@ -435,10 +444,10 @@ def dump_lock(entries: dict[str, LockEntry]) -> str:
     for name in sorted(entries):
         e = entries[name]
         locked = e.locked.astimezone(UTC).replace(microsecond=0, tzinfo=None).isoformat()
-        lines += ["", f"[source.{_key(name)}]", f"git = {_str(e.git)}"]
+        lines += ["", f"[source.{_key(name)}]", f"git = {toml_str(e.git)}"]
         if e.ref is not None:
-            lines.append(f"ref = {_str(e.ref)}")
-        lines += [f"commit = {_str(e.commit)}", f"locked = {locked}Z"]
+            lines.append(f"ref = {toml_str(e.ref)}")
+        lines += [f"commit = {toml_str(e.commit)}", f"locked = {locked}Z"]
     return "\n".join(lines) + "\n"
 
 
@@ -456,11 +465,11 @@ def save_lock(paths: Paths, entries: dict[str, LockEntry]) -> bool:
 
 
 def _key(name: str) -> str:
-    return name if re.fullmatch(r"[A-Za-z0-9_-]+", name) else _str(name)
+    return name if re.fullmatch(r"[A-Za-z0-9_-]+", name) else toml_str(name)
 
 
-def _str(value: str) -> str:
-    # A JSON string is a valid TOML basic string.
+def toml_str(value: str) -> str:
+    """`value` as a TOML basic string (a JSON string is one)."""
     return json.dumps(value, ensure_ascii=False)
 
 

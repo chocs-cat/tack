@@ -2,6 +2,10 @@
 
     tack sync [--dry-run] [--adopt]                         deploy what the manifest says
     tack status                                             what is deployed where
+    tack outdated [SOURCE...] [--diff]                      what upstream has changed
+    tack update [SOURCE...] [--dry-run]                     move pins to upstream's tip
+    tack add GIT_URL|PATH [--name N] [--skill S...] ...     add a source
+    tack remove SOURCE [--dry-run]                          remove a source
     tack doctor [PATH...] [--global-only|--projects-only]   audit
 
 Every command takes --json (the result goes to stdout as JSON) and
@@ -21,8 +25,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from tack import __version__, config, doctor, status, sync
-from tack.config import Config, ConfigError
+from tack import __version__, config, doctor, edit, outdated, status, sync, update
+from tack.config import Config, ConfigError, UsageError
 from tack.doctor.findings import Finding
 from tack.text import tilde
 
@@ -70,6 +74,64 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_status)
 
     p = sub.add_parser(
+        "outdated",
+        parents=[common],
+        help="how far each git source's pin is behind upstream",
+        description="Fetch each git source and compare its pin with the tip of its ref: "
+        "the commits between them and the selected skills that changed. Moves nothing. "
+        "Exits 1 when a source is behind or can't be compared.",
+    )
+    p.add_argument("sources", nargs="*", metavar="SOURCE", help="these sources (default: all)")
+    p.add_argument("--diff", action="store_true", help="show the diff of the changed skills")
+    p.set_defaults(func=cmd_outdated)
+
+    p = sub.add_parser(
+        "update",
+        parents=[common],
+        help="move git sources' pins to the tip of their refs, then sync",
+        description="Re-pin git sources to the current tip of their refs, write the "
+        "lockfile, and sync. `tack outdated --diff` shows what that takes in.",
+    )
+    p.add_argument("sources", nargs="*", metavar="SOURCE", help="these sources (default: all)")
+    p.add_argument("--dry-run", action="store_true", help="say what would change; change nothing")
+    p.set_defaults(func=cmd_update)
+
+    p = sub.add_parser(
+        "add",
+        parents=[common],
+        help="add a source to the manifest, then sync",
+        description="Add a git repository (a URL) or a local directory as a source. A git "
+        "source is pinned to the tip of its ref and fetched first; nothing is written unless "
+        "it deploys cleanly.",
+    )
+    p.add_argument("spec", metavar="GIT_URL|PATH", help="a git URL, or a directory of your own")
+    p.add_argument("--name", metavar="N", help="the source's name (default: from the URL or path)")
+    p.add_argument(
+        "--skill",
+        dest="skills",
+        metavar="S",
+        nargs="+",
+        action="extend",
+        default=[],
+        help="deploy only these skills (default: all of them)",
+    )
+    p.add_argument("--ref", metavar="R", help="the branch or tag to follow (default: the remote's)")
+    p.add_argument("--subdir", metavar="D", help="where the skills are (default: skills)")
+    p.add_argument("--dry-run", action="store_true", help="say what would change; change nothing")
+    p.set_defaults(func=cmd_add)
+
+    p = sub.add_parser(
+        "remove",
+        parents=[common],
+        help="remove a source, its links and its checkout",
+        description="Remove a source from the manifest and the lockfile, sync (removing its "
+        "links), and delete tack's checkout of it unless that has local changes.",
+    )
+    p.add_argument("source", metavar="SOURCE")
+    p.add_argument("--dry-run", action="store_true", help="say what would change; change nothing")
+    p.set_defaults(func=cmd_remove)
+
+    p = sub.add_parser(
         "doctor",
         parents=[common],
         help="audit harnesses and projects (read-only)",
@@ -98,9 +160,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         cfg = config.load(Path(args.config).expanduser() if args.config else None)
         return args.func(args, cfg)
-    except ConfigError as e:
+    except (ConfigError, UsageError) as e:
         if args.json:
-            print(json.dumps({"error": "config", "message": str(e)}, indent=2))
+            kind = "config" if isinstance(e, ConfigError) else "usage"
+            print(json.dumps({"error": kind, "message": str(e)}, indent=2))
         else:
             print(f"tack: {e}", file=sys.stderr)
         return EXIT_USAGE
@@ -133,6 +196,7 @@ def _plural(n: int, word: str) -> str:
 
 _VERBS = {
     "pin": ("pin", "pinned"),
+    "update": ("update", "updated"),
     "clone": ("clone", "cloned"),
     "checkout": ("check out", "checked out"),
     "write": ("write", "wrote"),
@@ -140,19 +204,45 @@ _VERBS = {
     "relink": ("relink", "relinked"),
     "unlink": ("remove", "removed"),
     "adopt": ("adopt", "adopted"),
+    "delete": ("delete", "deleted"),
 }
 
 
 def cmd_sync(args: argparse.Namespace, cfg: Config) -> int:
-    result = sync.sync(cfg, dry_run=args.dry_run, adopt=args.adopt)
+    return _report(args, sync.sync(cfg, dry_run=args.dry_run, adopt=args.adopt))
+
+
+def cmd_update(args: argparse.Namespace, cfg: Config) -> int:
+    result = update.update(cfg, args.sources, dry_run=args.dry_run)
+    return _report(args, result, idle="already up to date")
+
+
+def cmd_add(args: argparse.Namespace, cfg: Config) -> int:
+    result = edit.add(
+        cfg,
+        args.spec,
+        name=args.name,
+        skills=args.skills,
+        ref=args.ref,
+        subdir=args.subdir,
+        dry_run=args.dry_run,
+    )
+    return _report(args, result)
+
+
+def cmd_remove(args: argparse.Namespace, cfg: Config) -> int:
+    return _report(args, edit.remove(cfg, args.source, dry_run=args.dry_run))
+
+
+def _report(args: argparse.Namespace, result: sync.Result, idle: str = "already in sync") -> int:
     if args.json:
         _print_json(result)
     else:
-        print(_sync_text(result))
+        print(_sync_text(result, idle))
     return EXIT_FINDINGS if result.problems else EXIT_OK
 
 
-def _sync_text(result: sync.Result) -> str:
+def _sync_text(result: sync.Result, idle: str) -> str:
     rows = [(c.harness or c.source or "", c) for c in result.changes]
     width = max((len(label) for label, _ in rows), default=0)
     lines = []
@@ -165,7 +255,7 @@ def _sync_text(result: sync.Result) -> str:
         lines.append(f"{p.kind}: {label + ': ' if label else ''}{p.message}")
     n = len(result.changes)
     if not n:
-        summary = "already in sync"
+        summary = idle
     else:
         summary = f"would make {_plural(n, 'change')}" if result.dry_run else _plural(n, "change")
     if result.problems:
@@ -231,6 +321,70 @@ def _status_text(st: status.Status, cfg: Config) -> str:
             )
             lines.append(f"{k.name:<{name_w}}  {k.source:<{src_w}}  {cells}".rstrip())
     return "\n".join(lines)
+
+
+# --- outdated --------------------------------------------------------------------
+
+_SHOWN_COMMITS = 10
+
+
+def cmd_outdated(args: argparse.Namespace, cfg: Config) -> int:
+    report = outdated.outdated(cfg, args.sources, diff=args.diff)
+    if args.json:
+        _print_json(report)
+    else:
+        print(_outdated_text(report))
+    return EXIT_FINDINGS if report.failed else EXIT_OK
+
+
+def _outdated_text(report: outdated.Report) -> str:
+    if not report.sources:
+        return "no git sources"
+    width = max(len(s.name) for s in report.sources)
+    pad = " " * (width + 2)
+    lines: list[str] = []
+    for s in report.sources:
+        on = f"on {s.ref}" if s.ref else "on the default branch"
+        if s.state == "current":
+            lines.append(f"{s.name:<{width}}  up to date {on} ({(s.pin or '')[:12]})")
+            continue
+        if s.state != "behind":
+            lines.append(f"{s.name:<{width}}  {s.message}")
+            continue
+        span = f"{(s.pin or '')[:12]} -> {(s.tip or '')[:12]}"
+        lines.append(f"{s.name:<{width}}  {_plural(s.behind, 'commit')} behind {on} ({span})")
+        if s.rewritten:
+            lines.append(f"{pad}upstream rewrote its history: the tip no longer contains the pin")
+        by_change = {
+            change: [k.name for k in s.skills if k.change == change]
+            for change in ("modified", "added", "removed")
+        }
+        lines += [
+            f"{pad}{change}: {', '.join(names)}" for change, names in by_change.items() if names
+        ]
+        if not s.skills:
+            lines.append(f"{pad}no selected skill changed")
+        lines += [f"{pad}{c.commit[:12]} {c.subject}" for c in s.commits[:_SHOWN_COMMITS]]
+        if len(s.commits) > _SHOWN_COMMITS:
+            lines.append(f"{pad}... and {len(s.commits) - _SHOWN_COMMITS} more")
+        if s.diff:
+            lines += ["", s.diff.rstrip("\n"), ""]
+    while lines and not lines[-1]:
+        lines.pop()
+
+    total = len(report.sources)
+    behind = sum(s.state == "behind" for s in report.sources)
+    unknown = sum(s.state not in ("current", "behind") for s in report.sources)
+    if not behind and not unknown:
+        summary = f"{_plural(total, 'git source')}, all up to date"
+    else:
+        parts = [f"{behind} of {_plural(total, 'git source')} behind"]
+        if unknown:
+            parts.append(f"{unknown} not compared")
+        summary = ", ".join(parts)
+        if behind:
+            summary += "; `tack update` moves the pins"
+    return "\n".join([*lines, "", summary])
 
 
 # --- doctor ----------------------------------------------------------------------

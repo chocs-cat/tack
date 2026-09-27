@@ -9,7 +9,7 @@ import pytest
 
 from tack import __version__
 from tack.cli import main
-from tests.helpers import git, link, repo, skill, write
+from tests.helpers import commit, git, link, repo, skill, upstream, write
 
 
 def run(capsys: pytest.CaptureFixture[str], *argv: str) -> tuple[int, str, str]:
@@ -166,6 +166,65 @@ def test_sync_and_status(home: Path, capsys: pytest.CaptureFixture[str]) -> None
         "source": "mine",
         "harnesses": {"claude-code": "linked", "codex": "linked"},
     }
+
+
+def test_tracking(home: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    up = upstream(tmp_path / "up", "a")
+    pin = git(up, "rev-parse", "HEAD").strip()
+    code, out, _ = run(capsys, "add", f"file://{up}", "--json")
+    assert code == 0
+    assert [c["action"] for c in json.loads(out)["changes"]] == [
+        "pin", "clone", "checkout", "write", "write", "link", "link",
+    ]  # fmt: skip
+
+    tip = commit(up, {"skills/a/SKILL.md": "changed\n"}, "Change a")
+    code, out, _ = run(capsys, "outdated")
+    assert code == 1
+    assert out.splitlines() == [
+        f"up  1 commit behind on the default branch ({pin[:12]} -> {tip[:12]})",
+        "    modified: a",
+        f"    {tip[:12]} Change a",
+        "",
+        "1 of 1 git source behind; `tack update` moves the pins",
+    ]
+    code, out, _ = run(capsys, "outdated", "up", "--diff", "--json")
+    (data,) = json.loads(out)["sources"]
+    assert (data["state"], data["skills"]) == ("behind", [{"name": "a", "change": "modified"}])
+    assert "+changed" in data["diff"]
+
+    code, out, _ = run(capsys, "update")
+    assert code == 0
+    assert out.splitlines()[0] == f"up  updated {pin[:12]} -> {tip[:12]} on the default branch"
+    code, out, _ = run(capsys, "update")
+    assert (code, out.strip()) == (0, "already up to date")
+    code, out, _ = run(capsys, "outdated")
+    assert (code, out.splitlines()[-1]) == (0, "1 git source, all up to date")
+
+    code, out, _ = run(capsys, "remove", "up")
+    assert code == 0
+    assert out.splitlines()[-1] == "5 changes"
+    code, out, _ = run(capsys, "outdated")
+    assert (code, out.strip()) == (0, "no git sources")
+
+
+def test_add_takes_skills_in_any_grouping(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    for name in ("a", "b", "c", "d"):
+        skill(home / "mine" / "skills", name)
+    code, _, _ = run(capsys, "add", str(home / "mine"), "--skill", "a", "b", "--skill", "c")
+    assert code == 0
+    assert sorted(p.name for p in (home / ".agents" / "skills").iterdir()) == ["a", "b", "c"]
+
+
+def test_usage_errors_exit_two(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    code, out, _ = run(capsys, "remove", "nope", "--json")
+    assert code == 2
+    assert json.loads(out) == {
+        "error": "usage",
+        "message": "no source named 'nope' in ~/.config/tack/tack.toml or its lockfile",
+    }
+    code, _, err = run(capsys, "outdated", "nope")
+    assert code == 2
+    assert err.strip() == "tack: no source named 'nope'"
 
 
 def test_status_without_sources(home: Path, capsys: pytest.CaptureFixture[str]) -> None:

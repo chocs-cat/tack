@@ -5,6 +5,9 @@ know yet), then each harness's links are created, repointed or removed. Only
 tack's own links are ever replaced or removed; anything else in the way is a
 conflict, which `adopt` takes over. A source that can't be brought up to date
 is *held*: its links are left exactly as they are.
+
+`update`, `add` and `remove` finish with a sync, handing it the pins they
+want in place of the lockfile's; the lockfile is written once, if they differ.
 """
 
 from __future__ import annotations
@@ -23,7 +26,9 @@ from tack.deploy import Plan, Record, Selected
 from tack.sources import SourceError
 from tack.text import tilde
 
-Action = Literal["pin", "clone", "checkout", "write", "link", "relink", "unlink", "adopt"]
+Action = Literal[
+    "pin", "update", "clone", "checkout", "write", "link", "relink", "unlink", "adopt", "delete"
+]
 ProblemKind = Literal["source", "conflict", "collision", "after-save", "error"]
 
 
@@ -51,13 +56,24 @@ class Result:
     changes: list[Change] = field(default_factory=list)
     problems: list[Problem] = field(default_factory=list)
 
+    def extend(self, other: Result) -> Result:
+        self.changes += other.changes
+        self.problems += other.problems
+        return self
+
 
 def sync(
-    cfg: Config, *, dry_run: bool = False, adopt: bool = False, now: datetime | None = None
+    cfg: Config,
+    *,
+    dry_run: bool = False,
+    adopt: bool = False,
+    now: datetime | None = None,
+    lock: dict[str, LockEntry] | None = None,
 ) -> Result:
+    """Sync; `lock`, when given, stands in for the lockfile's pins."""
     now = now or datetime.now(UTC)
     result = Result(dry_run)
-    held = _sources(cfg, result, dry_run=dry_run, now=now)
+    held = _sources(cfg, result, dry_run=dry_run, now=now, lock=lock)
     plan = deploy.plan(cfg)
     for name, (harnesses, srcs) in plan.collisions.items():
         result.problems.append(
@@ -79,11 +95,19 @@ def sync(
     return result
 
 
-def _sources(cfg: Config, result: Result, *, dry_run: bool, now: datetime) -> set[str]:
+def _sources(
+    cfg: Config,
+    result: Result,
+    *,
+    dry_run: bool,
+    now: datetime,
+    lock: dict[str, LockEntry] | None,
+) -> set[str]:
     """Bring git sources to their pins and write the lockfile; the names of the
     sources whose links must be left alone."""
     held: set[str] = set()
-    lock = config.load_lock(cfg.paths)
+    on_disk = config.load_lock(cfg.paths)
+    lock = on_disk if lock is None else lock
     pins: dict[str, LockEntry] = dict(lock)
     for src in cfg.sources:
         if src.git is None:
@@ -110,7 +134,7 @@ def _sources(cfg: Config, result: Result, *, dry_run: bool, now: datetime) -> se
         if dry_run and src.skills is None and not sources.root(src, cfg.paths).exists():
             held.add(src.name)  # which skills it has is unknown until it is fetched
 
-    if pins != lock:
+    if pins != on_disk:
         file = cfg.paths.lockfile
         result.changes.append(Change("write", tilde(file), path=file))
         written = not dry_run and config.save_lock(cfg.paths, pins)
