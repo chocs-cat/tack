@@ -563,12 +563,10 @@ Three tabs, each a list with a detail pane for the selected row:
   shows the message, the path, and the fix. Errors come first, then warnings,
   then info.
 
-It opens on the tab that needs attention: Doctor if it has an error or a
-warning, else Sources if a source is behind or has uncommitted or unpushed
-edits, else Skills. The audit and the upstream fetch (`outdated --diff`) run
-in the background, so the app opens at once on Skills and moves to that tab
-when both are done, unless you have picked a tab by then. `r` runs them
-again.
+It opens on Skills and stays there until you pick another tab: it never
+moves you, even when Doctor or Sources has something to show. The audit and
+the upstream fetch (`outdated --diff`) run in the background, so the app
+opens at once and fills each tab as they finish. `r` runs them again.
 
 **Sorting.** Click a column's header to sort the Skills table by it, and
 click it again to reverse; `o` moves the sort to the next column and `O`
