@@ -134,8 +134,6 @@ class TackApp(App[None]):
         self.upstream: outdated.Report | None = None
         self.fetching = False
         self.checkouts = threading.Lock()  # held by an action or a fetch, never both
-        self.auto_tab = True  # until you pick a tab, the app picks one
-        self._own_tab = "skills"  # the tab the app last chose: the first one, then its pick
         self.sort: tuple[str, bool] | None = None  # the Skills column, and whether reversed
         self.grouped = True  # set from the manifest's [tui] once it has been read
         self._grouping_set = False
@@ -210,26 +208,11 @@ class TackApp(App[None]):
             self._fill_skills()
             self._fill_sources()
             self._fill_doctor()
-            self._pick_tab()
 
     def _show_upstream(self, report: outdated.Report | None) -> None:
         self.upstream, self.fetching = report, False
         with contextlib.suppress(NoMatches):  # the app quit while this was fetching
             self._fill_sources()
-            self._pick_tab()
-
-    def _pick_tab(self) -> None:
-        """Open on the tab that needs attention, once everything has loaded."""
-        if not self.auto_tab or self.fetching or self.status is None or self.audit is None:
-            return
-        self.auto_tab = False
-        behind = self.upstream is not None and any(
-            s.state == "behind" for s in self.upstream.sources
-        )
-        edits = any(s.uncommitted or s.unpushed for s in self.status.sources)
-        tab = "doctor" if self.audit.failed else "sources" if behind or edits else "skills"
-        self._own_tab = tab
-        self._show_tab(tab)
 
     def _show_tab(self, tab: str) -> None:
         """Activate `tab` and focus its table. Focusing a table queues a
@@ -247,8 +230,6 @@ class TackApp(App[None]):
             # events would swap the tabs back and forth for good.
             if tab != self.query_one(TabbedContent).active:
                 return
-            if tab != self._own_tab:
-                self.auto_tab = False  # you picked one
             if tab in TABS:
                 self._table(tab).focus()
             self.refresh_bindings()
@@ -475,7 +456,6 @@ class TackApp(App[None]):
         return self.query_one(TabbedContent).active == tab
 
     def action_tab(self, tab: str) -> None:
-        self.auto_tab = False
         self._show_tab(tab)
 
     def _act(

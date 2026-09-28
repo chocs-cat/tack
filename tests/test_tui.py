@@ -184,11 +184,13 @@ def test_tui_group_by_source_false_opens_ungrouped(home: Path, tmp_path: Path) -
     drive(scenario)
 
 
-def test_opens_on_doctor_and_applies_a_fix(home: Path, tmp_path: Path) -> None:
+def test_stays_on_skills_and_applies_a_fix(home: Path, tmp_path: Path) -> None:
     machine(home, tmp_path, project={"CLAUDE.md": "Rules.\n"})
     project = home / "Code" / "p"
 
     async def scenario(app: TackApp, pilot: Pilot[None]) -> None:
+        assert tab(app) == "skills"  # though Doctor has an error
+        await pilot.press("3")
         assert tab(app) == "doctor"
         assert rows(app, "doctor") == [["error", "agents-md-missing", "~/Code/p", "agents-md"]]
         await pilot.press("f")
@@ -209,13 +211,14 @@ def test_opens_on_doctor_and_applies_a_fix(home: Path, tmp_path: Path) -> None:
 
 
 def test_late_tab_events_do_not_swap_the_tabs(home: Path, tmp_path: Path) -> None:
-    """On a slow machine the first tab's activation can arrive after the app
-    has moved to another tab. Acting on it would focus its table, which
+    """On a slow machine the first tab's activation can arrive after you
+    have moved to another tab. Acting on it would focus its table, which
     activates that tab again; with two such events in flight the tabs used
     to swap back and forth for good."""
-    machine(home, tmp_path, project={"CLAUDE.md": "Rules.\n"})
+    machine(home, tmp_path)
 
     async def scenario(app: TackApp, pilot: Pilot[None]) -> None:
+        await pilot.press("3")
         assert tab(app) == "doctor"
         tabbed = app.query_one(TabbedContent)
         tabs = tabbed.get_child_by_type(ContentTabs)
@@ -228,11 +231,13 @@ def test_late_tab_events_do_not_swap_the_tabs(home: Path, tmp_path: Path) -> Non
     drive(scenario)
 
 
-def test_opens_on_sources_and_updates_one(home: Path, tmp_path: Path) -> None:
+def test_stays_on_skills_and_updates_a_source(home: Path, tmp_path: Path) -> None:
     up = machine(home, tmp_path)
     tip = commit(up, {"skills/x/SKILL.md": skill_md("x") + "more\n"}, "improve x")
 
     async def scenario(app: TackApp, pilot: Pilot[None]) -> None:
+        assert tab(app) == "skills"  # though a source is behind
+        await pilot.press("2")
         assert tab(app) == "sources"
         assert rows(app, "sources")[1] == ["up", "git", "1 behind"]
         await pilot.press("down")
