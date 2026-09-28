@@ -36,7 +36,7 @@ build-backend = "hatchling.build"
 packages = ["src/tack"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src", "tests", "docs", "README.md", "LICENSE"]
+include = ["src", "tests", "skills", "docs", "README.md", "LICENSE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
