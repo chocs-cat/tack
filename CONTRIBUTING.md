@@ -40,13 +40,15 @@ Releases are automated with
    then builds the package and uploads it to PyPI, and the `formula` workflow
    writes the Homebrew formula, pushes it to
    [chocs-cat/homebrew-tap](https://github.com/chocs-cat/homebrew-tap), and
-   installs it from there on macOS to check it.
+   audits it and installs it from there on macOS to check it.
 
 Don't edit versions or `CHANGELOG.md` by hand. To force a version, add a
 `Release-As: X.Y.Z` footer to a commit. Never move or delete a pushed release
 tag; fix a bad release forward. To redo a version's formula, run the
-**Formula** workflow by hand with that version, or locally:
-`uv run --script scripts/formula.py X.Y.Z > tack.rb`.
+**Formula** workflow by hand with that version. The formula's resources are
+the versions the release's `uv.lock` pins, so locally, point `--root` at a
+checkout of its tag:
+`uv run --script scripts/formula.py X.Y.Z --root ../tack-vX.Y.Z > tack.rb`.
 
 ### One-time setup
 

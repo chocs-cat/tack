@@ -4,14 +4,18 @@
 # ///
 """Write tack's Homebrew formula for a version published on PyPI.
 
-    uv run scripts/formula.py 0.1.0 > Formula/tack.rb
+    git worktree add --detach ../tack-v0.1.0 v0.1.0
+    uv run --script scripts/formula.py 0.1.0 --root ../tack-v0.1.0 > tack.rb
 
-The formula builds from the PyPI sdist, with a `resource` for each dependency:
-`tack-agents==VERSION` is resolved for every platform (`uv pip compile
---universal`) for the formula's Python, and each pin's sdist URL and hash come
-from PyPI. A dependency whose markers hold on neither macOS nor Linux is left
-out. The release workflow runs this after publishing; `--wait` retries while
-PyPI doesn't have the version yet.
+The formula builds from the PyPI sdist, with a `resource` for each runtime
+dependency at the version `uv.lock` pins, so Homebrew installs what CI tested.
+`--root` is a checkout of the release's tag (default: the checkout this script
+is in): the lock comes from there, and the script refuses when its
+`pyproject.toml` has another version. The template is this script's own, so a
+fix to it applies when an older version's formula is redone. Each pin's sdist
+URL and hash come from PyPI. A dependency whose markers hold on neither macOS
+nor Linux is left out. The release workflow runs this after publishing;
+`--wait` retries while PyPI doesn't have the version yet.
 """
 
 from __future__ import annotations
@@ -21,9 +25,11 @@ import json
 import subprocess
 import sys
 import time
+import tomllib
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from pathlib import Path
 
 from packaging.markers import Marker
 from packaging.requirements import Requirement
@@ -32,6 +38,7 @@ from packaging.utils import canonicalize_name
 PACKAGE = "tack-agents"
 PYTHON = "3.14"  # Homebrew's newest; the formula depends on python@PYTHON
 PYPI = "https://pypi.org/pypi"
+ROOT = Path(__file__).resolve().parent.parent
 
 TEMPLATE = """\
 class Tack < Formula
@@ -99,15 +106,21 @@ def sdist(name: str, version: str, *, wait: float = 0) -> Sdist:
     raise SystemExit(f"formula.py: {name} {version} has no sdist on PyPI")
 
 
-def pins(version: str, python: str) -> list[Requirement]:
-    """tack's dependencies at `version`, resolved for every platform."""
+def checkout_version(root: Path = ROOT) -> str:
+    """The version in the checkout's pyproject.toml."""
+    with (root / "pyproject.toml").open("rb") as f:
+        return tomllib.load(f)["project"]["version"]
+
+
+def pins(root: Path = ROOT) -> list[Requirement]:
+    """The runtime dependencies the checkout's `uv.lock` pins, for every platform."""
     r = subprocess.run(
-        ["uv", "pip", "compile", "--universal", "--python-version", python,
-         "--no-header", "--no-annotate", "--quiet", "-"],
-        input=f"{PACKAGE}=={version}\n", capture_output=True, text=True, check=False,
+        ["uv", "export", "--frozen", "--no-dev", "--no-emit-project", "--no-hashes",
+         "--no-header", "--no-annotate"],
+        cwd=root, capture_output=True, text=True, check=False,
     )  # fmt: skip
     if r.returncode != 0:
-        raise SystemExit(f"formula.py: can't resolve {PACKAGE}=={version}:\n{r.stderr}")
+        raise SystemExit(f"formula.py: can't read the pins from uv.lock:\n{r.stderr}")
     return [Requirement(line) for line in r.stdout.splitlines() if line.strip()]
 
 
@@ -133,12 +146,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("version", help="a version of tack-agents published on PyPI")
     parser.add_argument("--python", default=PYTHON, help=f"the formula's Python (default {PYTHON})")
     parser.add_argument("--wait", type=float, default=0, help="seconds to wait for PyPI")
+    parser.add_argument(
+        "--root", type=Path, default=ROOT, help="a checkout of the release's tag (default: this)"
+    )
     args = parser.parse_args(argv)
 
+    if (here := checkout_version(args.root)) != args.version:
+        raise SystemExit(f"formula.py: {args.root} is {here}, not {args.version}")
     package = sdist(PACKAGE, args.version, wait=args.wait)
     resources = []
-    for req in pins(args.version, args.python):
-        if canonicalize_name(req.name) == PACKAGE or not needed(req, args.python):
+    for req in pins(args.root):
+        if not needed(req, args.python):
             continue
         (spec,) = req.specifier
         resources.append(sdist(req.name, spec.version))
