@@ -1,8 +1,8 @@
 # tack — design
 
-Status: **approved** (2026-09-27); every phase is done, and tack 0.1.0 is
-released on PyPI and Homebrew. This document
-is the spec. Decisions below were settled with the maintainer in an
+Status: **approved** (2026-09-27); phases 1 to 8 are done, and tack 0.1.0
+is released on PyPI and Homebrew. Phase 9, refinements to the TUI, was
+approved on 2026-09-28 and is under way. This document is the spec. Decisions below were settled with the maintainer in an
 interview; where one is still open it says so, in
 [Open questions](#open-questions).
 
@@ -208,15 +208,29 @@ whether the harness follows `@path` imports in its instruction files.
 touches them and `doctor` does not report them as unmanaged. For a built-in
 harness it adds to the built-in list rather than replacing it.
 
+### TUI fields
+
+`[tui]` holds the TUI's defaults; the CLI ignores it.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `group_by_source` | `true` | Whether the Skills tab opens grouped by source (see [The TUI](#the-tui)). |
+
 ### Writing the manifest
 
-tack edits `tack.toml` only through `add`/`remove` (and the TUI), and as
-text, so comments and layout survive: it appends one `[[source]]` table after
-the last, or cuts one out together with the comment lines directly above its
-header, and leaves every other line alone. The edit is kept only if the new
-text parses to the old manifest with exactly that source added or removed;
-otherwise tack writes nothing and asks for the change to be made by hand
-(exit `2`). (A TOML round-trip library was the first plan, but tomlkit keeps a
+tack edits `tack.toml` only through `add`/`remove` and the TUI's Settings,
+and as text, so comments and layout survive: it appends one `[[source]]`
+table after the last, or cuts one out together with the comment lines
+directly above its header, and leaves every other line alone. Settings
+changes values the same way: it replaces a key's lines (from the key through
+the end of its value), inserts a missing key after the last key of its
+table, deletes a key it clears, and adds a missing table before the first
+`[[source]]` table (or at the end). A key that is absent and set to its
+default stays absent. The edit is kept only if the new text parses to the
+old manifest with exactly those changes; otherwise tack writes nothing and
+asks for the change to be made by hand (exit `2`). A manifest that sets
+these keys another way (a dotted key, an inline table) is left alone the
+same way. (A TOML round-trip library was the first plan, but tomlkit keeps a
 table's leading comments in the table before it, so cutting a table moves its
 neighbours' comments.) After writing either file it runs `after_save` once per file changed,
 with `{path}` replaced by the absolute path (shell-quoted; the command runs
@@ -537,9 +551,9 @@ version and that manifest's path.
 Three tabs, each a list with a detail pane for the selected row:
 
 - **Skills** — each selected skill, its source, and its state in each
-  harness (linked, missing, stale, conflict, collision). The detail shows
-  where it comes from and its `SKILL.md` description, or what is wrong with
-  it.
+  harness (linked, missing, stale, conflict, collision), grouped by source
+  and sortable by any column (below). The detail shows where it comes from
+  and its `SKILL.md` description, or what is wrong with it.
 - **Sources** — each source's state: how far behind upstream a git source
   is, or that it isn't pinned or checked out; a path source's uncommitted and
   unpushed skill edits. The detail shows the pin, the commits since, the
@@ -555,7 +569,49 @@ in the background, so the app opens at once on Skills and moves to that tab
 when both are done, unless you have picked a tab by then. `r` runs them
 again.
 
-It changes nothing the CLI can't. `s` syncs; on Sources, `u` updates the
+**Sorting.** Click a column's header to sort the Skills table by it, and
+click it again to reverse; `o` moves the sort to the next column and `O`
+reverses it. The sorted column's header shows ▲ or ▼. Names sort
+alphabetically, ignoring case. A harness column puts problems first:
+conflict and collision, then stale, then missing, then linked, then skills
+that don't go to that harness. Ties keep the default order, by name and then
+source. The sort holds through refreshes for as long as the app is open.
+
+**Grouping.** The Skills tab groups skills by source, in the manifest's
+order: a row for each source shows its name and how many skills it selects,
+and under each harness how many of them aren't linked there (`1 missing`),
+colored like the states; its skills are indented beneath it, sorted within
+the group. While grouped, the source column is hidden, so the sort cycles
+through the other columns, and the groups keep the manifest's order, as on
+the Sources tab. `space` folds or unfolds the group under the cursor, `←`
+(or `h`) folds it and `→` (or `l`) unfolds it; a folded group shows only its
+row, and folds hold through refreshes. A source's row shows that source's
+detail, as on Sources. `g` turns grouping off or on until the app closes;
+`[tui] group_by_source` (default `true`) sets how the app opens, and
+Settings changes it.
+
+**Settings.** `,` opens a Settings screen over the manifest, in tabs:
+
+- **General** — `after_save`, and the TUI's defaults (`group_by_source`).
+- **Projects** — `roots`, `exclude` and `owners`, one entry per line.
+- **Harnesses** — each harness's `ignore` list: what it adds to the built-in
+  one, which the screen shows beside it.
+- **Sources** — for each source: `ref` (git), `subdir`, `harnesses` (a
+  checkbox per harness; all checked means the default, every harness), and
+  `autocommit` and `autopush` (path; `autopush` needs `autocommit`).
+
+Adding and removing sources stays on the Sources tab. Per-skill selections
+(`skills`), harness paths and new harnesses are edited by hand, and the
+screen says so. Saving (`ctrl+s`) goes through the same preview as any other
+action: its dry run shows the manifest's diff, and nothing is written until
+you confirm; then `after_save` runs and the tabs refresh. Cancelling
+(`escape`) asks before discarding changes. A change to what gets deployed (a
+source's `subdir` or `harnesses`, an `ignore` list) takes effect at the next
+`s`; a git source whose `ref` changed shows `manifest changed` until `u`
+updates it. Settings writes only what could be written by hand, so the TUI
+is still never the only way to do something (principle 6).
+
+Apart from Settings, it changes nothing the CLI can't. `s` syncs; on Sources, `u` updates the
 selected source, `a` adds one (a form taking what `tack add` takes) and `x`
 removes the selected one; on Doctor, `f` applies the selected finding's fix,
 first asking which harness wins a `hook-mismatch`. Every action first shows
@@ -681,6 +737,9 @@ Each phase ends usable and reviewed before the next begins.
    see [The TUI](#the-tui).
 8. **Release** — PyPI `tack-agents`, Homebrew formula in
    `chocs-cat/homebrew-tap`; see [Releasing](#releasing).
+9. **TUI refinements** — the header (tack's version and the manifest's
+   path, one line when clicked), sorting and grouping on Skills, and
+   Settings; see [The TUI](#the-tui).
 
 ## Migrating the maintainer's setup
 
