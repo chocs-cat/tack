@@ -16,17 +16,30 @@ and `tack remove` edit the manifest, `tack doctor` audits, and
 pushed, whenever a command that changes things runs. A bare `tack` opens a
 TUI over all of it: Skills (grouped by source, and sortable), Sources and
 Doctor tabs, and a Settings screen for the manifest, with every action
-previewed before it runs. [The design](docs/design.md) has the details.
+previewed before it runs.
 
 ## Install
 
+tack runs on macOS and Linux and needs git. Install it one of two ways;
+either gives you the `tack` command.
+
+### Homebrew
+
 ```sh
 brew install chocs-cat/tap/tack
-# or
-uv tool install tack-agents     # or: pipx install tack-agents
 ```
 
-macOS and Linux, Python 3.11 or later, and git.
+The formula lives in the `chocs-cat/tap` tap and brings its own Python.
+
+### PyPI
+
+```sh
+uv tool install tack-agents
+```
+
+This installs the `tack-agents` package from PyPI (`tack` is taken there)
+into its own environment. It needs Python 3.11 or later;
+`pipx install tack-agents` works the same way.
 
 ## Use
 
