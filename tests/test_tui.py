@@ -11,11 +11,12 @@ from pathlib import Path
 from rich.text import Text
 from textual.pilot import Pilot
 from textual.widgets import DataTable, Input, Static, TabbedContent
+from textual.widgets._header import HeaderTitle
 
 from tack import config, outdated, sync
 from tack.status import SourceStatus
 from tack.tui import render
-from tack.tui.app import TackApp
+from tack.tui.app import FixedHeader, TackApp
 from tack.tui.dialogs import ActionScreen, AddScreen
 from tests.helpers import commit, load, repo, skill, skill_md, upstream, write
 
@@ -205,6 +206,17 @@ def test_actions_belong_to_their_tabs(home: Path, tmp_path: Path) -> None:
         await pilot.press("u")  # `mine` is a path source
         await settle(pilot)
         assert not isinstance(app.screen, ActionScreen)
+
+    drive(scenario)
+
+
+def test_header_stays_one_line(home: Path, tmp_path: Path) -> None:
+    machine(home, tmp_path)
+
+    async def scenario(app: TackApp, pilot: Pilot[None]) -> None:
+        await pilot.click(HeaderTitle)
+        await pilot.pause()
+        assert not app.query_one(FixedHeader).has_class("-tall")
 
     drive(scenario)
 

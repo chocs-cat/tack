@@ -17,6 +17,7 @@ from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, VerticalScroll
+from textual.events import Click
 from textual.widgets import DataTable, Footer, Header, Static, TabbedContent, TabPane
 
 from tack import commit, config, doctor, edit, outdated, scaffold, status, sync, update
@@ -35,6 +36,13 @@ _TAB_ACTIONS = {
     "pager": "sources",
     "fix": "doctor",
 }
+
+
+class FixedHeader(Header):
+    """A Header that stays one line: Textual's grows taller on click."""
+
+    def on_click(self, event: Click) -> None:
+        event.prevent_default()  # stops Header's own handler, later in the MRO
 
 
 class TackApp(App[None]):
@@ -82,7 +90,7 @@ class TackApp(App[None]):
         self._picking = False
 
     def compose(self) -> ComposeResult:
-        yield Header()
+        yield FixedHeader()
         with TabbedContent(initial="skills"):
             for tab in TABS:
                 with TabPane(tab.capitalize(), id=tab), Horizontal(classes="pane"):
