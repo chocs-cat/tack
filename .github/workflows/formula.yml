@@ -3,8 +3,9 @@ name: Formula
 # Write the Homebrew formula for a version on PyPI, push it to
 # chocs-cat/homebrew-tap, then audit it, install it from the tap on macOS and
 # run it. The release workflow calls this after publishing; run it by hand to
-# redo a version's formula. Pushing needs the TAP_TOKEN secret: a fine-grained
-# token with Contents read/write on chocs-cat/homebrew-tap alone.
+# redo a version's formula. Pushing needs the TAP_TOKEN secret (an organization
+# secret): a fine-grained token with Contents read/write on
+# chocs-cat/homebrew-tap alone.
 
 on:
   workflow_call:
