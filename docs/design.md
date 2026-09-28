@@ -1,8 +1,8 @@
 # tack — design
 
-Status: **approved** (2026-09-27); phases 1 to 8 are done, and tack 0.1.0
-is released on PyPI and Homebrew. Phase 9, refinements to the TUI, was
-approved on 2026-09-28 and is under way. This document is the spec. Decisions below were settled with the maintainer in an
+Status: **approved** (2026-09-27); every phase is done, and tack 0.1.0 is
+released on PyPI and Homebrew. Phase 9, refinements to the TUI, was approved
+on 2026-09-28. This document is the spec. Decisions below were settled with the maintainer in an
 interview; where one is still open it says so, in
 [Open questions](#open-questions).
 

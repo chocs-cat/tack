@@ -14,7 +14,8 @@ and `tack remove` edit the manifest, `tack doctor` audits, and
 `tack scaffold` applies the fixes it suggests. A `path` source with
 `autocommit = true` (and `autopush`) has its skill edits committed, and
 pushed, whenever a command that changes things runs. A bare `tack` opens a
-TUI over all of it: Skills, Sources and Doctor tabs, with every action
+TUI over all of it: Skills (grouped by source, and sortable), Sources and
+Doctor tabs, and a Settings screen for the manifest, with every action
 previewed before it runs. [The design](docs/design.md) has the details.
 
 ## Install
