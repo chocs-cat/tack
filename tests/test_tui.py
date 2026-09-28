@@ -12,6 +12,7 @@ from rich.text import Text
 from textual.pilot import Pilot
 from textual.widgets import DataTable, Input, Static, TabbedContent
 from textual.widgets._header import HeaderTitle
+from textual.widgets._tabbed_content import ContentTabs
 
 from tack import __version__, config, outdated, sync
 from tack.status import SourceStatus
@@ -145,6 +146,26 @@ def test_opens_on_doctor_and_applies_a_fix(home: Path, tmp_path: Path) -> None:
         await settle(pilot)
         assert not isinstance(app.screen, ActionScreen)
         assert rows(app, "doctor") == []
+
+    drive(scenario)
+
+
+def test_late_tab_events_do_not_swap_the_tabs(home: Path, tmp_path: Path) -> None:
+    """On a slow machine the first tab's activation can arrive after the app
+    has moved to another tab. Acting on it would focus its table, which
+    activates that tab again; with two such events in flight the tabs used
+    to swap back and forth for good."""
+    machine(home, tmp_path, project={"CLAUDE.md": "Rules.\n"})
+
+    async def scenario(app: TackApp, pilot: Pilot[None]) -> None:
+        assert tab(app) == "doctor"
+        tabbed = app.query_one(TabbedContent)
+        tabs = tabbed.get_child_by_type(ContentTabs)
+        for name in ("skills", "doctor"):
+            tabbed.post_message(TabbedContent.TabActivated(tabbed, tabs.get_content_tab(name)))
+        await asyncio.wait_for(pilot.pause(0.2), timeout=5)
+        assert tab(app) == "doctor"
+        assert app.focused is app.query_one("#doctor-table")
 
     drive(scenario)
 

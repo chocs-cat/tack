@@ -8,6 +8,7 @@ one checkout at once.
 
 from __future__ import annotations
 
+import contextlib
 import threading
 from pathlib import Path
 from typing import Any, ClassVar
@@ -18,6 +19,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, VerticalScroll
 from textual.content import Content
+from textual.css.query import NoMatches
 from textual.events import Click
 from textual.widgets import DataTable, Footer, Header, Static, TabbedContent, TabPane
 
@@ -95,7 +97,7 @@ class TackApp(App[None]):
         self.fetching = False
         self.checkouts = threading.Lock()  # held by an action or a fetch, never both
         self.auto_tab = True  # until you pick a tab, the app picks one
-        self._picking = False
+        self._own_tab = "skills"  # the tab the app last chose: the first one, then its pick
         self.sort: tuple[str, bool] | None = None  # the Skills column, and whether reversed
 
     def format_title(self, title: str, sub_title: str) -> Content:
@@ -160,15 +162,17 @@ class TackApp(App[None]):
         order = {s: i for i, s in enumerate(SEVERITIES)}
         audit.findings.sort(key=lambda f: (order[f.severity], str(f.project or "")))
         self.status, self.audit = st, audit
-        self._fill_skills()
-        self._fill_sources()
-        self._fill_doctor()
-        self._pick_tab()
+        with contextlib.suppress(NoMatches):  # the app quit while this was loading
+            self._fill_skills()
+            self._fill_sources()
+            self._fill_doctor()
+            self._pick_tab()
 
     def _show_upstream(self, report: outdated.Report | None) -> None:
         self.upstream, self.fetching = report, False
-        self._fill_sources()
-        self._pick_tab()
+        with contextlib.suppress(NoMatches):  # the app quit while this was fetching
+            self._fill_sources()
+            self._pick_tab()
 
     def _pick_tab(self) -> None:
         """Open on the tab that needs attention, once everything has loaded."""
@@ -180,19 +184,30 @@ class TackApp(App[None]):
         )
         edits = any(s.uncommitted or s.unpushed for s in self.status.sources)
         tab = "doctor" if self.audit.failed else "sources" if behind or edits else "skills"
-        self._picking = True
+        self._own_tab = tab
+        self._show_tab(tab)
+
+    def _show_tab(self, tab: str) -> None:
+        """Activate `tab` and focus its table. Focusing a table queues a
+        message that activates the tab it's in; one still queued from earlier
+        would undo a tab set directly, but not this, which queues after it."""
         self.query_one(TabbedContent).active = tab
+        self._table(tab).focus()
 
     @on(TabbedContent.TabActivated)
     def _tab_activated(self, event: TabbedContent.TabActivated) -> None:
-        if self._picking:
-            self._picking = False
-        elif self.status is not None:
-            self.auto_tab = False  # you picked one
         tab = event.pane.id or ""
-        if tab in TABS:
-            self._table(tab).focus()
-        self.refresh_bindings()
+        with contextlib.suppress(NoMatches):  # the app is closing
+            # A late event for a tab that is no longer active is ignored:
+            # focusing its table would activate that tab again, and two such
+            # events would swap the tabs back and forth for good.
+            if tab != self.query_one(TabbedContent).active:
+                return
+            if tab != self._own_tab:
+                self.auto_tab = False  # you picked one
+            if tab in TABS:
+                self._table(tab).focus()
+            self.refresh_bindings()
 
     # --- the tabs -------------------------------------------------------------
 
@@ -347,7 +362,8 @@ class TackApp(App[None]):
         return self.query_one(TabbedContent).active == tab
 
     def action_tab(self, tab: str) -> None:
-        self.query_one(TabbedContent).active = tab
+        self.auto_tab = False
+        self._show_tab(tab)
 
     def _act(self, title: str, run: Action, idle: str = "nothing to do") -> None:
         """Preview an action, run it once confirmed, then auto-commit as the CLI
