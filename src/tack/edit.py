@@ -1,16 +1,19 @@
-"""`tack add` and `tack remove`, and the manifest edits they make.
+"""`tack add` and `tack remove`, the TUI's Settings, and the manifest edits
+they make.
 
 The manifest is edited as text so that its comments and layout survive: a new
 `[[source]]` table goes after the last one, and a removed table is cut out
 together with the comment lines directly above its header (the comments
-directly above the next header are the next table's). An edit is kept only if
-the new text parses to the old manifest with exactly that source added or
-removed.
+directly above the next header are the next table's). Settings replaces a
+key's lines, inserts a missing key after the last key of its table, and adds
+a missing table before the first `[[source]]`. An edit is kept only if the new
+text parses to the old manifest with exactly those changes.
 """
 
 from __future__ import annotations
 
 import copy
+import difflib
 import os
 import re
 import shutil
@@ -189,8 +192,48 @@ def _delete(checkout: Path, name: str, result: Result) -> None:
         result.changes.append(Change("delete", where, name, path=checkout))
 
 
-def _write(cfg: Config, file: Path, text: str, result: Result) -> None:
-    result.changes.append(Change("write", tilde(file), path=file))
+Key = tuple[str | int, ...]  # a value's place: ("after_save",), ("source", 0, "ref")
+
+
+def settings(cfg: Config, changes: dict[Key, Any], *, dry_run: bool = False) -> Result:
+    """Set values in the manifest, or remove them (a value of None): what the
+    TUI's Settings saves. The change is shown as a diff; nothing is synced."""
+    file = cfg.manifest or cfg.paths.manifest
+    text = file.read_text(encoding="utf-8") if cfg.manifest else ""
+    old = tomllib.loads(text)
+    expected = copy.deepcopy(old)
+    for key, value in changes.items():
+        _put(expected, key, value)
+    result = Result(dry_run)
+    if expected == old:
+        return result
+    new_cfg = config.parse(expected, file, cfg.paths)
+    new_text = _checked(set_values(text, changes), expected, file)
+    diff = "".join(
+        difflib.unified_diff(
+            text.splitlines(keepends=True),
+            new_text.splitlines(keepends=True),
+            f"a/{file.name}" if text else "/dev/null",
+            f"b/{file.name}",
+        )
+    )
+    _write(new_cfg, file, new_text, result, diff=diff)
+    return result
+
+
+def _put(data: dict[str, Any], key: Key, value: Any) -> None:
+    *parents, last = key
+    node: Any = data
+    for part in parents:
+        node = node[part] if isinstance(part, int) else node.setdefault(part, {})
+    if value is None:
+        node.pop(last, None)
+    else:
+        node[last] = value
+
+
+def _write(cfg: Config, file: Path, text: str, result: Result, diff: str | None = None) -> None:
+    result.changes.append(Change("write", tilde(file), path=file, diff=diff))
     if result.dry_run:
         return
     config.write_atomic(file, text)
@@ -227,15 +270,24 @@ _SOURCE_HEADER = re.compile(r"[ \t]*\[\[[ \t]*source[ \t]*\]\][ \t]*(#.*)?")
 
 
 def _table(fields: dict[str, Any]) -> str:
-    lines = ["[[source]]"]
-    for key, value in fields.items():
-        if not isinstance(value, list):
-            lines.append(f"{key} = {config.toml_str(value)}")
-            continue
-        items = [config.toml_str(v) for v in value]
-        one = f"{key} = [{', '.join(items)}]"
-        lines += [one] if len(one) <= 100 else [f"{key} = [", *(f"  {i}," for i in items), "]"]
-    return "\n".join(lines) + "\n"
+    return "[[source]]\n" + "".join(line for k, v in fields.items() for line in _field(k, v))
+
+
+def _field(key: str, value: Any) -> list[str]:
+    """`key = value` as lines; a long list gets one item per line."""
+    if not isinstance(value, list):
+        return [f"{key} = {_toml(value)}\n"]
+    items = [_toml(v) for v in value]
+    one = f"{key} = [{', '.join(items)}]"
+    return (
+        [one + "\n"] if len(one) <= 100 else [f"{key} = [\n", *(f"  {i},\n" for i in items), "]\n"]
+    )
+
+
+def _toml(value: str | bool) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return config.toml_str(value)
 
 
 def append_source(text: str, table: str) -> str:
@@ -271,6 +323,148 @@ def cut_source(text: str, index: int) -> str | None:
         while kept and _blank(kept[-1]):
             kept.pop()
     return "".join(kept)
+
+
+def set_values(text: str, changes: dict[Key, Any]) -> str | None:
+    """`text` with each key set to its value, or removed for None; None if an
+    array table isn't there. Keys set another way (a dotted key, an inline
+    table) come out wrong, which the caller's parse check catches."""
+    lines = text.splitlines(keepends=True)
+    if lines and not lines[-1].endswith("\n"):
+        lines[-1] += "\n"
+    for key, value in changes.items():
+        edited = _set_value(lines, key, value)
+        if edited is None:
+            return None
+        lines = edited
+    return "".join(lines)
+
+
+def _set_value(lines: list[str], key: Key, value: Any) -> list[str] | None:
+    *path, name = key
+    assert isinstance(name, str)
+    table = tuple(path)
+    region = _region(lines, table)
+    if region is None:
+        if value is None:
+            return lines
+        if any(isinstance(p, int) for p in table):
+            return None  # an array table that isn't there
+        return _add_table(lines, table, _field(name, value))
+    start, end = region
+    keys = _keys(lines, start, end)
+    if keys is None:
+        return None
+    found = keys.get(name)
+    if value is None:
+        return lines if found is None else lines[: found[0]] + lines[found[1] :]
+    new = _field(name, value)
+    if found is not None:
+        i, j = found
+        indent = lines[i][: len(lines[i]) - len(lines[i].lstrip())]
+        new = [indent + line for line in new]
+        if j == i + 1 and len(new) == 1 and (comment := _trailing_comment(lines[i])):
+            new = [new[0].rstrip("\n") + comment + "\n"]
+        return lines[:i] + new + lines[j:]
+    if keys:
+        at = max(j for _, j in keys.values())
+    elif table:
+        at = start  # right below the header
+    else:  # the top level: above the first table and the comments that lead it
+        headers = _headers(lines)
+        at = _span(lines, headers[0][0], len(lines))[0] if headers else len(lines)
+        if at < len(lines):
+            new = [*new, "\n"]
+    return lines[:at] + new + lines[at:]
+
+
+def _headers(lines: list[str]) -> list[tuple[int, Key]]:
+    """Each table header's line and the table it opens (array tables are
+    numbered in order)."""
+    out: list[tuple[int, Key]] = []
+    counts: dict[Key, int] = {}
+    for i, line in enumerate(lines):
+        if not _HEADER.match(line):
+            continue
+        try:
+            node: Any = tomllib.loads(line)
+        except tomllib.TOMLDecodeError:
+            continue  # a line of a multi-line array, say
+        path: list[str | int] = []
+        while isinstance(node, dict) and len(node) == 1:
+            ((part, node),) = node.items()
+            path.append(part)
+            if isinstance(node, list):
+                n = counts[tuple(path)] = counts.get(tuple(path), -1) + 1
+                path.append(n)
+                node = node[0]
+            if not node:
+                break
+        out.append((i, tuple(path)))
+    return out
+
+
+def _region(lines: list[str], table: Key) -> tuple[int, int] | None:
+    """The lines of `table`'s body: from below its header to the next header.
+    The top level's is everything above the first header."""
+    headers = _headers(lines)
+    if not table:
+        return 0, headers[0][0] if headers else len(lines)
+    for n, (i, path) in enumerate(headers):
+        if path == table:
+            return i + 1, headers[n + 1][0] if n + 1 < len(headers) else len(lines)
+    return None
+
+
+def _keys(lines: list[str], start: int, end: int) -> dict[str, tuple[int, int]] | None:
+    """Each key in lines[start:end] and the lines its value takes; None if
+    one doesn't parse on its own."""
+    out: dict[str, tuple[int, int]] = {}
+    i = start
+    while i < end:
+        if _blank(lines[i]) or _comment(lines[i]):
+            i += 1
+            continue
+        for j in range(i + 1, end + 1):
+            try:
+                parsed = tomllib.loads("".join(lines[i:j]))
+            except tomllib.TOMLDecodeError:
+                continue
+            break
+        else:
+            return None
+        (key,) = parsed
+        out[key] = (i, j)
+        i = j
+    return out
+
+
+def _trailing_comment(line: str) -> str | None:
+    """The comment after a one-line key's value, with the space before it."""
+    body = line.rstrip("\n")
+    for at in (k for k, c in enumerate(body) if c == "#"):
+        try:
+            if tomllib.loads(body[:at]) == tomllib.loads(body):
+                value = body[:at].rstrip()
+                return body[len(value) :]
+        except tomllib.TOMLDecodeError:
+            continue
+    return None
+
+
+def _add_table(lines: list[str], table: Key, body: list[str]) -> list[str]:
+    """`lines` with a new table, before the first `[[source]]` table and the
+    comments above it (or at the end), set off by blank lines."""
+    parts = [p if isinstance(p, str) and re.fullmatch(r"[A-Za-z0-9_-]+", p) else
+             config.toml_str(str(p)) for p in table]  # fmt: skip
+    new = [f"[{'.'.join(parts)}]\n", *body]
+    sources = _tables(lines)
+    at = _span(lines, *sources[0])[0] if sources else len(lines)
+    if at > 0 and not _blank(lines[at - 1]):
+        new.insert(0, "\n")
+    if at < len(lines) and not _blank(lines[at]):
+        new.append("\n")
+    return lines[:at] + new + lines[at:]
 
 
 def _checked(text: str | None, expected: dict[str, Any], file: Path) -> str:

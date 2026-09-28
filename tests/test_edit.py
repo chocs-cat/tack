@@ -343,3 +343,110 @@ def test_remove_a_name_only_the_lockfile_has(home: Path, tmp_path: Path) -> None
 
     with pytest.raises(UsageError, match=r"no source named 'up' in ~/\.config/tack/tack\.toml"):
         edit.remove(cfg, "up")
+
+
+# --- settings ---------------------------------------------------------------------
+
+SETTINGS = """\
+# My skills.
+after_save = "chezmoi re-add {path}"
+
+[projects]
+roots = ["~/Code"]
+owners = [
+  "me",
+  "you",
+]
+
+# Built-in harnesses need no table.
+[harness.claude-code]
+ignore = ["codebase-memory"]   # owned by its installer
+
+# Mine.
+[[source]]
+name = "mine"
+path = "~/mine"
+
+[[source]]
+name = "up"
+git = "https://example.com/up.git"
+"""
+
+
+def _set(changes: dict[edit.Key, object], text: str = SETTINGS) -> str:
+    new = edit.set_values(text, changes)
+    assert new is not None
+    expected = tomllib.loads(text)
+    for key, value in changes.items():
+        edit._put(expected, key, value)
+    assert tomllib.loads(new) == expected
+    return new
+
+
+def test_set_replaces_a_value_in_place() -> None:
+    new = _set({("projects", "owners"): ["me"], ("after_save",): "true"})
+    assert new == SETTINGS.replace('"chezmoi re-add {path}"', '"true"').replace(
+        'owners = [\n  "me",\n  "you",\n]', 'owners = ["me"]'
+    )
+
+
+def test_set_keeps_a_comment_on_the_same_line() -> None:
+    new = _set({("harness", "claude-code", "ignore"): ["a", "b"]})
+    assert 'ignore = ["a", "b"]   # owned by its installer\n' in new
+
+
+def test_set_adds_a_key_after_the_last_in_its_table() -> None:
+    new = _set({("projects", "exclude"): ["~/Code/old"], ("source", 1, "ref"): "main"})
+    assert 'owners = [\n  "me",\n  "you",\n]\nexclude = ["~/Code/old"]\n\n# Built-in' in new
+    assert new.endswith('git = "https://example.com/up.git"\nref = "main"\n')
+
+
+def test_set_removes_a_key() -> None:
+    new = _set({("after_save",): None, ("projects", "owners"): None})
+    assert new == SETTINGS.replace('after_save = "chezmoi re-add {path}"\n', "").replace(
+        'owners = [\n  "me",\n  "you",\n]\n', ""
+    )
+
+
+def test_set_adds_a_table_before_the_sources() -> None:
+    new = _set({("tui", "group_by_source"): False, ("harness", "codex", "ignore"): ["x"]})
+    tables = '\n[tui]\ngroup_by_source = false\n\n[harness.codex]\nignore = ["x"]\n\n# Mine.\n'
+    assert tables in new
+
+
+def test_set_top_level_keys_go_above_the_first_table() -> None:
+    text = "# Header.\n\n# Projects.\n[projects]\nroots = []\n"
+    assert _set({("after_save",): "x"}, text) == (
+        '# Header.\n\nafter_save = "x"\n\n# Projects.\n[projects]\nroots = []\n'
+    )
+    assert _set({("after_save",): "x"}, "") == 'after_save = "x"\n'
+    assert _set({("tui", "group_by_source"): False}, "") == "[tui]\ngroup_by_source = false\n"
+
+
+def test_set_refuses_what_it_cant_edit_as_text(home: Path) -> None:
+    assert edit.set_values("", {("source", 0, "ref"): "main"}) is None
+    cfg = load(home, "projects.roots = ['~/a']\n")  # a dotted key, not a [projects] table
+    with pytest.raises(UsageError, match="edit it by hand"):
+        edit.settings(cfg, {("projects", "roots"): ["~/b"]})
+
+
+def test_settings_writes_with_a_diff_and_runs_after_save(home: Path) -> None:
+    cfg = load(home, SETTINGS.replace("chezmoi re-add {path}", "touch {path}.saved"))
+    file = home / ".config" / "tack" / "tack.toml"
+    before = file.read_text()
+    dry = edit.settings(cfg, {("tui", "group_by_source"): False}, dry_run=True)
+    assert file.read_text() == before
+    (change,) = dry.changes
+    assert change.diff is not None
+    assert "+[tui]\n+group_by_source = false\n" in change.diff
+    result = edit.settings(cfg, {("tui", "group_by_source"): False})
+    assert not result.problems
+    assert not config.load().tui.group_by_source
+    assert (file.parent / "tack.toml.saved").exists()
+    assert edit.settings(config.load(), {("tui", "group_by_source"): False}).changes == []
+
+
+def test_settings_refuses_an_invalid_manifest(home: Path) -> None:
+    cfg = load(home, SETTINGS)
+    with pytest.raises(ConfigError, match="autopush"):
+        edit.settings(cfg, {("source", 0, "autopush"): True})

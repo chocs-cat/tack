@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import threading
 from collections import Counter
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, ClassVar, cast
 
@@ -31,6 +32,7 @@ from tack.sync import Result
 from tack.text import tilde
 from tack.tui import render
 from tack.tui.dialogs import Action, ActionScreen, AddScreen, ChooseScreen, page
+from tack.tui.settings import SettingsScreen
 
 TABS = ("skills", "sources", "doctor")
 _TAB_ACTIONS = {
@@ -116,6 +118,7 @@ class TackApp(App[None]):
         Binding("O", "sort_reverse", "Reverse sort", show=False),
         Binding("g", "group", "Group"),
         Binding("r", "refresh", "Refresh"),
+        Binding("comma", "settings", "Settings"),
         Binding("1", "tab('skills')", "Skills", show=False),
         Binding("2", "tab('sources')", "Sources", show=False),
         Binding("3", "tab('doctor')", "Doctor", show=False),
@@ -475,9 +478,15 @@ class TackApp(App[None]):
         self.auto_tab = False
         self._show_tab(tab)
 
-    def _act(self, title: str, run: Action, idle: str = "nothing to do") -> None:
+    def _act(
+        self,
+        title: str,
+        run: Action,
+        idle: str = "nothing to do",
+        then: Callable[[bool], None] | None = None,
+    ) -> None:
         """Preview an action, run it once confirmed, then auto-commit as the CLI
-        does, and refresh the tabs."""
+        does, and refresh the tabs; `then` hears whether it ran."""
         cfg = self.cfg
         if cfg is None:
             self.notify("fix tack.toml first", severity="error")
@@ -492,6 +501,8 @@ class TackApp(App[None]):
         def done(ran: bool | None) -> None:
             if ran:
                 self.action_refresh()
+            if then is not None:
+                then(bool(ran))
 
         self.push_screen(ActionScreen(title, with_commit, self.checkouts, idle=idle), done)
 
@@ -557,6 +568,30 @@ class TackApp(App[None]):
             )
         else:
             fixed(None)
+
+    def action_settings(self) -> None:
+        cfg = self.cfg
+        if cfg is None:
+            self.notify("fix tack.toml first", severity="error")
+            return
+
+        def save(changes: dict[edit.Key, Any], then: Callable[[bool], None]) -> None:
+            def saved(ran: bool) -> None:
+                # A new default for grouping applies at once; otherwise g's
+                # choice for this session stands.
+                if ran and ("tui", "group_by_source") in changes and self.cfg is not None:
+                    self.grouped = self.cfg.tui.group_by_source
+                    self._fill_skills()
+                then(ran)
+
+            self._act(
+                "Save settings",
+                lambda dry: edit.settings(cfg, changes, dry_run=dry),
+                idle="nothing to change",
+                then=saved,
+            )
+
+        self.push_screen(SettingsScreen(cfg, save))
 
     def action_pager(self) -> None:
         if self.query_one(TabbedContent).active != "sources":
