@@ -592,16 +592,17 @@ repository and the tap are public.
   projects' releases push to the same tap, so the push rebases and retries
   when it is rejected. A job on macOS then audits the formula
   (`brew audit --strict`), installs it from the tap and runs
-  `tack --version`. Pushing needs a `TAP_TOKEN` secret, a fine-grained token
-  with Contents read/write on the tap alone.
+  `tack --version`. Pushing needs a `TAP_TOKEN` organization secret, a
+  fine-grained token with Contents read/write on the tap alone.
 - The formula uses Homebrew's newest Python (`python@3.14`), so CI tests 3.11
   through 3.14.
 
 Setup no file can do is listed in `CONTRIBUTING.md`: the PyPI pending
 publisher (project `tack-agents`, owner `chocs-cat`, repository `tack`,
 workflow `release.yml`, environment `pypi`), the `pypi` environment, letting
-Actions create pull requests, the `TAP_TOKEN` secret, and optionally a
-`RELEASE_PLEASE_TOKEN` so release pull requests run CI without approval.
+Actions create pull requests, the `TAP_TOKEN` organization secret, and
+optionally a `RELEASE_PLEASE_TOKEN` so release pull requests run CI without
+approval.
 
 ## Harness facts tack relies on
 

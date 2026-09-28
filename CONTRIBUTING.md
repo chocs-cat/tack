@@ -27,6 +27,11 @@ version and the changelog are generated from them:
 Pull request titles are checked for this format in CI, because a squash merge
 makes the title the commit release-please reads.
 
+Dependabot opens grouped update pull requests weekly: `ci(deps)` for GitHub
+Actions and `build(deps)` for `uv.lock`. Neither releases on its own; a
+dependency bump ships with the next `feat` or `fix` release, and reaches the
+Homebrew formula then, since the formula pins what `uv.lock` pins.
+
 ## Releasing
 
 Releases are automated with
@@ -59,8 +64,9 @@ checkout of its tag:
   settings. Optionally require approval there.
 - **Actions permissions:** in the repository's (and the organization's)
   Settings → Actions → General, allow GitHub Actions to create pull requests.
-- **Homebrew tap:** a `TAP_TOKEN` secret, a fine-grained personal access token
-  for `chocs-cat/homebrew-tap` only, with **Contents** read/write.
+- **Homebrew tap:** a `TAP_TOKEN` organization secret (shared with the other
+  projects that publish to the tap), a fine-grained personal access token for
+  `chocs-cat/homebrew-tap` only, with **Contents** read/write.
 - **CI on release pull requests (optional):** a pull request opened with the
   built-in `GITHUB_TOKEN` waits for a maintainer to approve its CI run. The
   release workflow uses a `RELEASE_PLEASE_TOKEN` secret instead when it
