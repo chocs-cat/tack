@@ -583,9 +583,10 @@ and under each harness how many of them aren't linked there (`1 missing`),
 colored like the states; its skills are indented beneath it, sorted within
 the group. While grouped, the source column is hidden, so the sort cycles
 through the other columns, and the groups keep the manifest's order, as on
-the Sources tab. `space` folds or unfolds the group under the cursor, `←`
-(or `h`) folds it and `→` (or `l`) unfolds it; a folded group shows only its
-row, and folds hold through refreshes. A source's row shows that source's
+the Sources tab. `space` or `enter` folds or unfolds the group under the
+cursor (so does clicking its row once it is selected), `←` (or `h`) folds it,
+from any of its rows, and `→` (or `l`) unfolds it; a folded group shows only
+its row, and folds hold through refreshes. A source's row shows that source's
 detail, as on Sources. `g` turns grouping off or on until the app closes;
 `[tui] group_by_source` (default `true`) sets how the app opens, and
 Settings changes it.

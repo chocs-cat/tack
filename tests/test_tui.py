@@ -77,10 +77,14 @@ def test_opens_on_skills_when_all_is_well(home: Path, tmp_path: Path) -> None:
     async def scenario(app: TackApp, pilot: Pilot[None]) -> None:
         assert tab(app) == "skills"
         assert rows(app, "skills") == [
-            ["a", "mine", "linked", "linked"],
-            ["x", "up", "linked", "linked"],
+            ["▾ mine (1)", "", ""],
+            ["  a", "linked", "linked"],
+            ["▾ up (1)", "", ""],
+            ["  x", "linked", "linked"],
         ]
         assert rows(app, "sources") == [["mine", "path", "clean"], ["up", "git", "current"]]
+        assert "mine  ~/mine" in str(app.query_one("#skills-detail", Static).render())
+        await pilot.press("down")
         assert "from mine" in str(app.query_one("#skills-detail", Static).render())
 
     drive(scenario)
@@ -99,7 +103,7 @@ def test_sorts_skills_by_any_column(home: Path, tmp_path: Path) -> None:
         return [str(c.label) for c in app.query_one("#skills-table", DataTable).columns.values()]
 
     async def scenario(app: TackApp, pilot: Pilot[None]) -> None:
-        await pilot.press("1")  # it opens on Doctor, for the missing link
+        await pilot.press("1", "g")  # it opens on Doctor, for the missing link; ungroup
         assert names(app) == ["B", "a", "x"]  # by name, as status orders them
         await pilot.press("o")
         assert names(app) == ["a", "B", "x"]  # ignoring case
@@ -120,8 +124,62 @@ def test_sorts_skills_by_any_column(home: Path, tmp_path: Path) -> None:
         await settle(pilot)
         assert names(app) == ["x", "B", "a"]
         assert labels(app)[0] == "skill ▼"
+        await pilot.press("g")  # grouped: sorted within each source
+        assert names(app) == ["▾ mine (2)", "  B", "  a", "▾ up (1)", "  x"]
+        assert labels(app) == ["skill ▼", "claude-code", "codex"]
+        await pilot.press("o")  # no source column: on to the first harness
+        assert labels(app) == ["skill", "claude-code ▲", "codex"]
         await pilot.press("2")
         assert app.check_action("sort_next", ()) is False
+
+    drive(scenario)
+
+
+def test_groups_skills_by_source(home: Path, tmp_path: Path) -> None:
+    machine(home, tmp_path)
+    skill(home / "mine" / "skills", "b")
+    sync.sync(config.load())
+    (home / ".claude" / "skills" / "a").unlink()  # a: missing in claude-code
+
+    async def scenario(app: TackApp, pilot: Pilot[None]) -> None:
+        await pilot.press("1")
+        assert rows(app, "skills") == [
+            ["▾ mine (2)", "1 missing", ""],
+            ["  a", "missing", "linked"],
+            ["  b", "linked", "linked"],
+            ["▾ up (1)", "", ""],
+            ["  x", "linked", "linked"],
+        ]
+        await pilot.press("down", "down", "left")  # from b: folds mine, onto its row
+        assert rows(app, "skills")[:2] == [["▸ mine (2)", "1 missing", ""], ["▾ up (1)", "", ""]]
+        assert app._selected("skills") == "mine"
+        await pilot.press("right")
+        assert len(rows(app, "skills")) == 5
+        await pilot.press("space")
+        assert len(rows(app, "skills")) == 3
+        await pilot.press("enter")
+        assert len(rows(app, "skills")) == 5
+        await pilot.press("space", "r")
+        await settle(pilot)
+        assert len(rows(app, "skills")) == 3  # folds hold through a refresh
+        await pilot.press("g")  # ungrouped: the cursor goes to mine's first skill
+        assert rows(app, "skills")[0] == ["a", "mine", "missing", "linked"]
+        assert app._selected("skills") == "mine/a"
+        await pilot.press("g")  # grouped again, still folded: onto mine's row
+        assert len(rows(app, "skills")) == 3
+        assert app._selected("skills") == "mine"
+
+    drive(scenario)
+
+
+def test_tui_group_by_source_false_opens_ungrouped(home: Path, tmp_path: Path) -> None:
+    machine(home, tmp_path)
+    manifest = home / ".config" / "tack" / "tack.toml"
+    manifest.write_text("[tui]\ngroup_by_source = false\n" + manifest.read_text())
+
+    async def scenario(app: TackApp, pilot: Pilot[None]) -> None:
+        assert rows(app, "skills")[0] == ["a", "mine", "linked", "linked"]
+        assert app.check_action("group", ()) is True
 
     drive(scenario)
 
@@ -249,7 +307,7 @@ def test_adds_a_source(home: Path, tmp_path: Path) -> None:
         await pilot.press("n")
         await settle(pilot)
         assert [s.name for s in config.load().sources] == ["mine", "up", "more"]
-        assert ["b", "more", "linked", "linked"] in rows(app, "skills")
+        assert rows(app, "skills")[-2:] == [["▾ more (1)", "", ""], ["  b", "linked", "linked"]]
 
     drive(scenario)
 
