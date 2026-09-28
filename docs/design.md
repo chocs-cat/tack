@@ -1,8 +1,8 @@
 # tack — design
 
 Status: **approved** (2026-09-27); every phase is done, and tack 0.1.0 is
-released on PyPI and Homebrew. Phase 9, refinements to the TUI, was approved
-on 2026-09-28. This document is the spec. Decisions below were settled with the maintainer in an
+released on PyPI and Homebrew. Phase 9, refinements to the TUI, and phase
+10, the agent skill, were approved on 2026-09-28. This document is the spec. Decisions below were settled with the maintainer in an
 interview; where one is still open it says so, in
 [Open questions](#open-questions).
 
@@ -20,12 +20,13 @@ interview; where one is still open it says so, in
 10. [`doctor` checks](#doctor-checks)
 11. [Scaffolding](#scaffolding)
 12. [The TUI](#the-tui)
-13. [Releasing](#releasing)
-14. [Harness facts tack relies on](#harness-facts-tack-relies-on)
-15. [Implementation](#implementation)
-16. [Phases](#phases)
-17. [Migrating the maintainer's setup](#migrating-the-maintainers-setup)
-18. [Open questions](#open-questions)
+13. [The agent skill](#the-agent-skill)
+14. [Releasing](#releasing)
+15. [Harness facts tack relies on](#harness-facts-tack-relies-on)
+16. [Implementation](#implementation)
+17. [Phases](#phases)
+18. [Migrating the maintainer's setup](#migrating-the-maintainers-setup)
+19. [Open questions](#open-questions)
 
 ## What tack is
 
@@ -624,6 +625,25 @@ a running fetch to finish, so the two never work in one checkout at once.
 Diffs show colored in the detail pane and in an action's preview; `p`
 suspends the app and opens the diff in git's pager (`git var GIT_PAGER`).
 
+## The agent skill
+
+tack ships a skill of its own, `skills/tack/SKILL.md`, that teaches coding
+agents to run tack for the user: the `--json` CLI rather than the TUI, a dry
+run shown before every change, the manifest's fields, auto-commit and
+`--no-commit`, and `doctor`'s findings and their `scaffold` fixes. It is
+generic, like tack, and versions with the code.
+
+The repository is itself a source, so tack deploys the skill like any other:
+`tack add https://github.com/chocs-cat/tack.git` adds a source named `tack`
+that links it into every harness, and `tack update tack` takes in a newer
+one. Anyone else copies `skills/tack` into their agents' skills directories.
+The skill isn't deployed without a manifest entry: tack deploys only what
+the manifest selects (principle 4).
+
+A test keeps the skill honest: it must pass `bad-skill`, and every `tack`
+command in its shell blocks must parse with tack's own argument parser, so a
+renamed command or flag fails CI until the skill follows.
+
 ## Releasing
 
 tack is published to PyPI as `tack-agents` and to Homebrew as `tack`, from the
@@ -713,7 +733,8 @@ changes one means a check changes.
   `commit.py` (auto-commit), `doctor/` (one module per check group),
   `scaffold/` (one module per fix), `cli.py`, and `tui/` (the app, its
   views and its dialogs, over the same functions the CLI calls). Outside
-  the package, `scripts/formula.py` writes the Homebrew formula.
+  the package, `scripts/formula.py` writes the Homebrew formula, and
+  `skills/tack/` is the agent skill.
 - Tests build throwaway harness directories, projects and git remotes in a
   temporary directory; nothing in the test suite touches the real home
   directory. The TUI is driven through Textual's test pilot.
@@ -741,6 +762,8 @@ Each phase ends usable and reviewed before the next begins.
 9. **TUI refinements** — the header (tack's version and the manifest's
    path, one line when clicked), sorting and grouping on Skills, and
    Settings; see [The TUI](#the-tui).
+10. **Agent skill** — `skills/tack/SKILL.md`, deployable with `tack add`;
+    see [The agent skill](#the-agent-skill).
 
 ## Migrating the maintainer's setup
 

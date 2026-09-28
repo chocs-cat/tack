@@ -44,6 +44,18 @@ tack doctor --json        # for scripts; exit 1 when there is an error or warnin
 tack scaffold hooks ~/Code/app --dry-run   # the diff a doctor fix would make
 ```
 
+## Agent skill
+
+[`skills/tack/SKILL.md`](skills/tack/SKILL.md) teaches coding agents to run
+tack for you through its `--json` CLI. Deploy it with tack itself:
+
+```sh
+tack add https://github.com/chocs-cat/tack.git   # a source named tack, linked into every harness
+tack update tack                                  # later: take in a newer version
+```
+
+Or copy `skills/tack` into your agents' skills directories.
+
 ## Development
 
 ```sh
