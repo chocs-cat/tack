@@ -37,9 +37,9 @@ The formula lives in the `chocs-cat/tap` tap and brings its own Python.
 uv tool install tack-agents
 ```
 
-This installs the `tack-agents` package from PyPI into its own environment
-(`tack` is taken on PyPI). It needs Python 3.11 or later; `pipx install tack-agents`
-works the same way.
+This installs the `tack-agents` package from PyPI (`tack` is taken there)
+into its own environment. It needs Python 3.11 or later;
+`pipx install tack-agents` works the same way.
 
 ## Use
 
