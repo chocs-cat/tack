@@ -1,6 +1,6 @@
 [project]
 name = "tack-agents"
-version = "0.1.0"
+version = "0.2.0"
 description = "Keep your agent skills deployed identically to Claude Code and Codex from one manifest, and audit projects so either agent sees the same instructions, skills and hooks."
 readme = "README.md"
 license = "MIT"
