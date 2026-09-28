@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.0](https://github.com/chocs-cat/tack/compare/v0.2.0...v0.3.0) (2026-09-28)
+
+
+### Features
+
+* ship an agent skill for tack ([#19](https://github.com/chocs-cat/tack/issues/19)) ([615f7e6](https://github.com/chocs-cat/tack/commit/615f7e6c7b244c5b7048ea5b820c2b883794b273))
+* **tui:** open on the Skills tab and stay there ([#18](https://github.com/chocs-cat/tack/issues/18)) ([ba1f298](https://github.com/chocs-cat/tack/commit/ba1f298eaa83e77c03c9c08f008b7331439686ea))
+
 ## [0.2.0](https://github.com/chocs-cat/tack/compare/v0.1.0...v0.2.0) (2026-09-28)
 
 
