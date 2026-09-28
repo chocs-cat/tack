@@ -5,12 +5,17 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
+import pytest
 from packaging.requirements import Requirement
+
+from tack import __version__
+
+ROOT = Path(__file__).parent.parent
+PYPROJECT_0_0_1 = '[project]\nname = "tack-agents"\nversion = "0.0.1"\n'
 
 
 def _load() -> ModuleType:
-    path = Path(__file__).parent.parent / "scripts" / "formula.py"
-    spec = importlib.util.spec_from_file_location("formula", path)
+    spec = importlib.util.spec_from_file_location("formula", ROOT / "scripts" / "formula.py")
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -48,3 +53,22 @@ def test_platform_markers() -> None:
     assert needed("appnope==0.1.4 ; sys_platform == 'darwin'")
     assert not needed("colorama==0.4.6 ; sys_platform == 'win32'")
     assert not needed("tomli==2.2.1 ; python_full_version < '3.11'")
+
+
+def test_pins_are_the_locked_runtime_dependencies() -> None:
+    pins = {r.name: str(r.specifier) for r in formula.pins()}
+    assert pins["textual"].startswith("==")
+    assert "pytest" not in pins  # dev dependencies stay out
+    assert "tack-agents" not in pins
+
+
+def test_checkout_version(tmp_path: Path) -> None:
+    assert formula.checkout_version() == __version__
+    (tmp_path / "pyproject.toml").write_text(PYPROJECT_0_0_1)
+    assert formula.checkout_version(tmp_path) == "0.0.1"
+
+
+def test_refuses_another_versions_checkout(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(PYPROJECT_0_0_1)
+    with pytest.raises(SystemExit, match=r"is 0\.0\.1, not 0\.1\.0"):
+        formula.main(["0.1.0", "--root", str(tmp_path)])

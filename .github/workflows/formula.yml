@@ -1,10 +1,10 @@
 name: Formula
 
 # Write the Homebrew formula for a version on PyPI, push it to
-# chocs-cat/homebrew-tap, then install it from the tap on macOS and run it.
-# The release workflow calls this after publishing; run it by hand to redo a
-# version's formula. Pushing needs the TAP_TOKEN secret: a fine-grained token
-# with Contents read/write on chocs-cat/homebrew-tap alone.
+# chocs-cat/homebrew-tap, then audit it, install it from the tap on macOS and
+# run it. The release workflow calls this after publishing; run it by hand to
+# redo a version's formula. Pushing needs the TAP_TOKEN secret: a fine-grained
+# token with Contents read/write on chocs-cat/homebrew-tap alone.
 
 on:
   workflow_call:
@@ -26,11 +26,19 @@ jobs:
   tap:
     runs-on: ubuntu-latest
     steps:
+      # The script from this workflow's commit; the resources from the
+      # release's uv.lock, so its tag goes alongside.
       - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          ref: v${{ inputs.version }}
+          path: release
       - uses: astral-sh/setup-uv@v7
       - name: Write the formula
         # PyPI can take a little while to serve a new upload.
-        run: uv run --script scripts/formula.py "$VERSION" --wait 600 > "$RUNNER_TEMP/tack.rb"
+        run: >-
+          uv run --script scripts/formula.py "$VERSION" --root release --wait 600
+          > "$RUNNER_TEMP/tack.rb"
         env:
           VERSION: ${{ inputs.version }}
       - uses: actions/checkout@v7
@@ -54,18 +62,24 @@ jobs:
             exit 0
           fi
           git commit -q -m "tack $VERSION"
-          git push -q
+          # Other repos' releases push to the tap too; rebase over them.
+          for _ in 1 2 3; do
+            git pull -q --rebase && git push -q && exit 0
+            sleep 10
+          done
+          exit 1
 
   install:
     needs: tap
     runs-on: macos-latest
     steps:
-      - name: Install from the tap and run it
+      - name: Audit it, install it from the tap and run it
         env:
           VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
           brew tap chocs-cat/tap
+          brew audit --strict chocs-cat/tap/tack
           brew install chocs-cat/tap/tack
           test "$(tack --version)" = "tack $VERSION"
           brew test chocs-cat/tap/tack

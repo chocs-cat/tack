@@ -585,10 +585,13 @@ repository and the tap are public.
   attaches them to the GitHub release.
 - **Homebrew.** Then it writes the formula and pushes it to the tap as one
   commit, `tack X.Y.Z`. The formula builds from the PyPI sdist, with a
-  `resource` for each dependency: `scripts/formula.py` resolves
-  `tack-agents==X.Y.Z` for every platform (`uv pip compile --universal`) and
-  takes each sdist's URL and hash from PyPI; it runs the same way by hand.
-  A job on macOS then installs the formula from the tap and runs
+  `resource` for each runtime dependency at the version the release tag's
+  `uv.lock` pins, so Homebrew installs what CI tested: `scripts/formula.py`
+  reads the pins from a checkout of the tag (`uv export --frozen`) and takes
+  each sdist's URL and hash from PyPI; it runs the same way by hand. Other
+  projects' releases push to the same tap, so the push rebases and retries
+  when it is rejected. A job on macOS then audits the formula
+  (`brew audit --strict`), installs it from the tap and runs
   `tack --version`. Pushing needs a `TAP_TOKEN` secret, a fine-grained token
   with Contents read/write on the tap alone.
 - The formula uses Homebrew's newest Python (`python@3.14`), so CI tests 3.11
