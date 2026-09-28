@@ -85,6 +85,46 @@ def test_opens_on_skills_when_all_is_well(home: Path, tmp_path: Path) -> None:
     drive(scenario)
 
 
+def test_sorts_skills_by_any_column(home: Path, tmp_path: Path) -> None:
+    machine(home, tmp_path)
+    skill(home / "mine" / "skills", "B")
+    sync.sync(config.load())
+    (home / ".claude" / "skills" / "a").unlink()  # a: missing in claude-code
+
+    def names(app: TackApp) -> list[str]:
+        return [r[0] for r in rows(app, "skills")]
+
+    def labels(app: TackApp) -> list[str]:
+        return [str(c.label) for c in app.query_one("#skills-table", DataTable).columns.values()]
+
+    async def scenario(app: TackApp, pilot: Pilot[None]) -> None:
+        await pilot.press("1")  # it opens on Doctor, for the missing link
+        assert names(app) == ["B", "a", "x"]  # by name, as status orders them
+        await pilot.press("o")
+        assert names(app) == ["a", "B", "x"]  # ignoring case
+        assert labels(app) == ["skill ▲", "source", "claude-code", "codex"]
+        await pilot.press("o")
+        assert names(app) == ["B", "a", "x"]  # by source; ties in the default order
+        await pilot.press("o")
+        assert names(app) == ["a", "B", "x"]  # problems first
+        await pilot.press("O")
+        assert names(app) == ["B", "x", "a"]
+        assert labels(app)[2] == "claude-code ▼"
+        await pilot.click("#skills-table", offset=(2, 0))  # the skill column's header
+        assert names(app) == ["a", "B", "x"]
+        await pilot.click("#skills-table", offset=(2, 0))
+        assert names(app) == ["x", "B", "a"]
+        assert app._selected("skills") == "mine/B"  # the cursor stays on its skill
+        await pilot.press("r")
+        await settle(pilot)
+        assert names(app) == ["x", "B", "a"]
+        assert labels(app)[0] == "skill ▼"
+        await pilot.press("2")
+        assert app.check_action("sort_next", ()) is False
+
+    drive(scenario)
+
+
 def test_opens_on_doctor_and_applies_a_fix(home: Path, tmp_path: Path) -> None:
     machine(home, tmp_path, project={"CLAUDE.md": "Rules.\n"})
     project = home / "Code" / "p"

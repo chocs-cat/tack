@@ -36,7 +36,12 @@ _TAB_ACTIONS = {
     "remove": "sources",
     "pager": "sources",
     "fix": "doctor",
+    "sort_next": "skills",
+    "sort_reverse": "skills",
 }
+# A harness column sorts problems first; a skill that doesn't go to the
+# harness comes last.
+_LINK_ORDER = {"conflict": 0, "collision": 0, "stale": 1, "missing": 2, "linked": 3}
 
 
 class FixedHeader(Header):
@@ -71,6 +76,8 @@ class TackApp(App[None]):
         Binding("x", "remove", "Remove"),
         Binding("f", "fix", "Fix"),
         Binding("p", "pager", "Pager"),
+        Binding("o", "sort_next", "Sort"),
+        Binding("O", "sort_reverse", "Reverse sort", show=False),
         Binding("r", "refresh", "Refresh"),
         Binding("1", "tab('skills')", "Skills", show=False),
         Binding("2", "tab('sources')", "Sources", show=False),
@@ -89,6 +96,7 @@ class TackApp(App[None]):
         self.checkouts = threading.Lock()  # held by an action or a fetch, never both
         self.auto_tab = True  # until you pick a tab, the app picks one
         self._picking = False
+        self.sort: tuple[str, bool] | None = None  # the Skills column, and whether reversed
 
     def format_title(self, title: str, sub_title: str) -> Content:
         if not sub_title:
@@ -200,12 +208,20 @@ class TackApp(App[None]):
             return None
         return table.coordinate_to_cell_key(table.cursor_coordinate).row_key.value
 
-    def _refill(self, tab: str, columns: list[str], rows: list[tuple[str, list[Any]]]) -> None:
-        """Replace a table's rows, keeping the cursor on the same key."""
+    def _refill(
+        self,
+        tab: str,
+        columns: list[str],
+        rows: list[tuple[str, list[Any]]],
+        labels: list[str] | None = None,
+    ) -> None:
+        """Replace a table's rows, keeping the cursor on the same key. Each
+        column's key is its name in `columns`, and its label that or `labels`'."""
         table = self._table(tab)
         keep = self._selected(tab)
         table.clear(columns=True)
-        table.add_columns(*columns)
+        for key, label in zip(columns, labels or columns, strict=True):
+            table.add_column(label, key=key)
         for key, cells in rows:
             table.add_row(*cells, key=key)
         keys = [k for k, _ in rows]
@@ -213,18 +229,66 @@ class TackApp(App[None]):
             table.move_cursor(row=keys.index(keep))
         self._show_detail(tab)
 
+    def _skill_columns(self) -> list[str]:
+        return ["skill", "source", *(self.cfg.harnesses if self.cfg is not None else ())]
+
     def _fill_skills(self) -> None:
         if self.status is None or self.cfg is None:
             return
         harnesses = list(self.cfg.harnesses)
         rows = []
-        for k in self.status.skills:
+        for k in self._sorted(self.status.skills):
             cells: list[Any] = [k.name, k.source]
             for h in harnesses:
                 state = k.harnesses.get(h)
                 cells.append(Text(state, style=render.LINK_STYLE[state]) if state else "-")
             rows.append((f"{k.source}/{k.name}", cells))
-        self._refill("skills", ["skill", "source", *harnesses], rows)
+        columns = self._skill_columns()
+        labels = list(columns)
+        if self.sort is not None and self.sort[0] in columns:
+            column, reverse = self.sort
+            labels[columns.index(column)] += " ▼" if reverse else " ▲"
+        self._refill("skills", columns, rows, labels)
+
+    def _sorted(self, skills: list[status.SkillStatus]) -> list[status.SkillStatus]:
+        """`skills` in the chosen sort; ties, like the unsorted table, by name
+        and then source (the order status gives them)."""
+        if self.sort is None:
+            return skills
+        column, reverse = self.sort
+
+        def key(k: status.SkillStatus) -> str | int:
+            if column == "skill":
+                return k.name.casefold()
+            if column == "source":
+                return k.source.casefold()
+            state = k.harnesses.get(column)
+            return _LINK_ORDER[state] if state else len(_LINK_ORDER)
+
+        return sorted(skills, key=key, reverse=reverse)  # stable, reversed or not
+
+    def _sort_by(self, column: str) -> None:
+        """Sort Skills by `column`; if it already is, reverse it."""
+        if self.sort is not None and self.sort[0] == column:
+            self.sort = (column, not self.sort[1])
+        else:
+            self.sort = (column, False)
+        self._fill_skills()
+
+    @on(DataTable.HeaderSelected, "#skills-table")
+    def _header_selected(self, event: DataTable.HeaderSelected) -> None:
+        self._sort_by(str(event.column_key.value))
+
+    def action_sort_next(self) -> None:
+        columns = self._skill_columns()
+        at = columns.index(self.sort[0]) + 1 if self.sort and self.sort[0] in columns else 0
+        self.sort = None
+        self._sort_by(columns[at % len(columns)])
+
+    def action_sort_reverse(self) -> None:
+        if self.sort is None:  # the default order is by name
+            self.sort = (self._skill_columns()[0], False)
+        self._sort_by(self.sort[0])
 
     def _fill_sources(self) -> None:
         if self.status is None:
