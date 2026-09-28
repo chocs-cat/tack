@@ -17,6 +17,7 @@ def test_no_manifest_means_builtin_harnesses_and_nothing_else(home: Path) -> Non
     assert cfg.manifest is None
     assert cfg.sources == ()
     assert cfg.roots == ()
+    assert cfg.tui.group_by_source
     assert list(cfg.harnesses) == ["claude-code", "codex"]
     claude, codex = cfg.harnesses["claude-code"], cfg.harnesses["codex"]
     assert claude.skills_dir == home / ".claude" / "skills"
@@ -164,12 +165,19 @@ def test_builtin_harness_override(home: Path) -> None:
         ("[harness.codex]\nproject_skills_dir = '/abs'", "relative to a project"),
         ("[harness.codex]\nskill_dir = '~/x'", "unknown key 'skill_dir'"),
         ("[harness.codex]\nignore = 'synced'", "ignore must be a list"),
+        ("[tui]\ngroup_by_source = 'yes'", "group_by_source must be true or false"),
+        ("[tui]\ngroup = true", "unknown key 'group' in \\[tui\\]"),
         ("[[source]\n", "tack.toml"),  # invalid TOML
     ],
 )
 def test_manifest_errors(home: Path, manifest: str, message: str) -> None:
     with pytest.raises(ConfigError, match=message):
         load(home, manifest)
+
+
+def test_tui_defaults(home: Path) -> None:
+    assert load(home, "[tui]\n").tui.group_by_source
+    assert not load(home, "[tui]\ngroup_by_source = false\n").tui.group_by_source
 
 
 def test_config_dir_argument(home: Path, tmp_path: Path) -> None:

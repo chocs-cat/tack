@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import contextlib
 import threading
+from collections import Counter
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 from rich.text import Text
 from textual import on, work
@@ -40,6 +41,7 @@ _TAB_ACTIONS = {
     "fix": "doctor",
     "sort_next": "skills",
     "sort_reverse": "skills",
+    "group": "skills",
 }
 # A harness column sorts problems first; a skill that doesn't go to the
 # harness comes last.
@@ -51,6 +53,38 @@ class FixedHeader(Header):
 
     def on_click(self, event: Click) -> None:
         event.prevent_default()  # stops Header's own handler, later in the MRO
+
+
+class SkillTable(DataTable[Any]):
+    """The Skills table, whose source rows fold while it is grouped."""
+
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("space", "toggle_fold", "Fold"),
+        Binding("left,h", "fold", "Fold", show=False),
+        Binding("right,l", "unfold", "Unfold", show=False),
+    ]
+
+    @property
+    def tack(self) -> TackApp:
+        return cast("TackApp", self.app)
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        return self.tack.grouped or action != "toggle_fold"
+
+    def action_toggle_fold(self) -> None:
+        self.tack.fold(None)
+
+    def action_fold(self) -> None:
+        if self.tack.grouped:
+            self.tack.fold(True)
+        else:
+            self.action_cursor_left()
+
+    def action_unfold(self) -> None:
+        if self.tack.grouped:
+            self.tack.fold(False)
+        else:
+            self.action_cursor_right()
 
 
 class TackApp(App[None]):
@@ -80,6 +114,7 @@ class TackApp(App[None]):
         Binding("p", "pager", "Pager"),
         Binding("o", "sort_next", "Sort"),
         Binding("O", "sort_reverse", "Reverse sort", show=False),
+        Binding("g", "group", "Group"),
         Binding("r", "refresh", "Refresh"),
         Binding("1", "tab('skills')", "Skills", show=False),
         Binding("2", "tab('sources')", "Sources", show=False),
@@ -99,6 +134,9 @@ class TackApp(App[None]):
         self.auto_tab = True  # until you pick a tab, the app picks one
         self._own_tab = "skills"  # the tab the app last chose: the first one, then its pick
         self.sort: tuple[str, bool] | None = None  # the Skills column, and whether reversed
+        self.grouped = True  # set from the manifest's [tui] once it has been read
+        self._grouping_set = False
+        self.folded: set[str] = set()  # sources whose Skills rows are folded
 
     def format_title(self, title: str, sub_title: str) -> Content:
         if not sub_title:
@@ -110,7 +148,8 @@ class TackApp(App[None]):
         with TabbedContent(initial="skills"):
             for tab in TABS:
                 with TabPane(tab.capitalize(), id=tab), Horizontal(classes="pane"):
-                    table: DataTable[Any] = DataTable(id=f"{tab}-table", cursor_type="row")
+                    kind = SkillTable if tab == "skills" else DataTable
+                    table: DataTable[Any] = kind(id=f"{tab}-table", cursor_type="row")
                     table.zebra_stripes = True
                     yield table
                     with VerticalScroll(classes="detail"):
@@ -134,6 +173,8 @@ class TackApp(App[None]):
             for tab in TABS:
                 self._detail(tab, Text(str(e), style="red"))
             return
+        if not self._grouping_set:  # g changes it from then on
+            self.grouped, self._grouping_set = self.cfg.tui.group_by_source, True
         self.fetching = True
         self._load_local(self.cfg)
         self._load_upstream(self.cfg)
@@ -229,11 +270,13 @@ class TackApp(App[None]):
         columns: list[str],
         rows: list[tuple[str, list[Any]]],
         labels: list[str] | None = None,
+        keep: str | None = None,
     ) -> None:
-        """Replace a table's rows, keeping the cursor on the same key. Each
-        column's key is its name in `columns`, and its label that or `labels`'."""
+        """Replace a table's rows, keeping the cursor on the same key (or on
+        `keep`). Each column's key is its name in `columns`, and its label that
+        or `labels`'."""
         table = self._table(tab)
-        keep = self._selected(tab)
+        keep = keep or self._selected(tab)
         table.clear(columns=True)
         for key, label in zip(columns, labels or columns, strict=True):
             table.add_column(label, key=key)
@@ -245,25 +288,67 @@ class TackApp(App[None]):
         self._show_detail(tab)
 
     def _skill_columns(self) -> list[str]:
-        return ["skill", "source", *(self.cfg.harnesses if self.cfg is not None else ())]
+        harnesses = list(self.cfg.harnesses) if self.cfg is not None else []
+        return ["skill", *([] if self.grouped else ["source"]), *harnesses]
 
-    def _fill_skills(self) -> None:
+    def _fill_skills(self, keep: str | None = None) -> None:
+        """Fill Skills: grouped, a row per source (in the manifest's order)
+        with its skills beneath unless it is folded. Row keys are
+        `source/skill` for a skill and the bare name for a source, which
+        can't contain a slash."""
         if self.status is None or self.cfg is None:
             return
         harnesses = list(self.cfg.harnesses)
-        rows = []
-        for k in self._sorted(self.status.skills):
-            cells: list[Any] = [k.name, k.source]
-            for h in harnesses:
-                state = k.harnesses.get(h)
-                cells.append(Text(state, style=render.LINK_STYLE[state]) if state else "-")
-            rows.append((f"{k.source}/{k.name}", cells))
+        skills = self._sorted(self.status.skills)
+        rows: list[tuple[str, list[Any]]] = []
+        if self.grouped:
+            for s in self.status.sources:
+                group = [k for k in skills if k.source == s.name]
+                rows.append((s.name, self._group_cells(s.name, group, harnesses)))
+                if s.name not in self.folded:
+                    rows += [(f"{s.name}/{k.name}", self._skill_cells(k, harnesses)) for k in group]
+        else:
+            rows = [(f"{k.source}/{k.name}", self._skill_cells(k, harnesses)) for k in skills]
+        # The cursor stays on its row; when that row is gone (folded away,
+        # or a source row after ungrouping), it goes to the nearest one.
+        keys = [key for key, _ in rows]
+        keep = keep or self._selected("skills")
+        if keep is not None and keep not in keys:
+            source = keep.split("/")[0]
+            keep = (
+                source
+                if source in keys
+                else next((key for key in keys if key.startswith(f"{source}/")), None)
+            )
         columns = self._skill_columns()
         labels = list(columns)
         if self.sort is not None and self.sort[0] in columns:
             column, reverse = self.sort
             labels[columns.index(column)] += " ▼" if reverse else " ▲"
-        self._refill("skills", columns, rows, labels)
+        self._refill("skills", columns, rows, labels, keep)
+
+    def _skill_cells(self, k: status.SkillStatus, harnesses: list[str]) -> list[Any]:
+        cells: list[Any] = [f"  {k.name}"] if self.grouped else [k.name, k.source]
+        for h in harnesses:
+            state = k.harnesses.get(h)
+            cells.append(Text(state, style=render.LINK_STYLE[state]) if state else "-")
+        return cells
+
+    def _group_cells(
+        self, name: str, group: list[status.SkillStatus], harnesses: list[str]
+    ) -> list[Any]:
+        """A source's row: its name and skill count, and per harness how many
+        of its skills aren't linked there, worst first."""
+        arrow = "▸" if name in self.folded else "▾"
+        cells: list[Any] = [Text.assemble(f"{arrow} ", (name, "bold"), f" ({len(group)})")]
+        for h in harnesses:
+            states = Counter(
+                st for k in group if (st := k.harnesses.get(h)) is not None and st != "linked"
+            )
+            order = sorted(states, key=lambda st: (_LINK_ORDER[st], st))
+            summary = ", ".join(f"{states[st]} {st}" for st in order)
+            cells.append(Text(summary, style=render.LINK_STYLE[order[0]]) if order else "")
+        return cells
 
     def _sorted(self, skills: list[status.SkillStatus]) -> list[status.SkillStatus]:
         """`skills` in the chosen sort; ties, like the unsorted table, by name
@@ -288,6 +373,31 @@ class TackApp(App[None]):
             self.sort = (column, not self.sort[1])
         else:
             self.sort = (column, False)
+        self._fill_skills()
+
+    def fold(self, fold: bool | None) -> None:
+        """Fold (True), unfold (False) or toggle (None) the source group under
+        the cursor; folding from a skill row moves the cursor to its source."""
+        key = self._selected("skills")
+        if not self.grouped or key is None:
+            return
+        source, on_source = key.split("/")[0], "/" not in key
+        fold = source not in self.folded if fold is None else fold
+        if not fold and not on_source:
+            return
+        if fold:
+            self.folded.add(source)
+        else:
+            self.folded.discard(source)
+        self._fill_skills(keep=source)
+
+    @on(DataTable.RowSelected, "#skills-table")
+    def _row_selected(self, event: DataTable.RowSelected) -> None:
+        if "/" not in str(event.row_key.value):  # enter, or a click on the selected row
+            self.fold(None)
+
+    def action_group(self) -> None:
+        self.grouped = not self.grouped
         self._fill_skills()
 
     @on(DataTable.HeaderSelected, "#skills-table")
@@ -343,10 +453,10 @@ class TackApp(App[None]):
         key = self._selected(tab)
         if key is None or self.status is None:
             return
-        if tab == "skills":
+        if tab == "skills" and "/" in key:
             skill = next(k for k in self.status.skills if f"{k.source}/{k.name}" == key)
             self._detail(tab, render.skill_detail(skill))
-        elif tab == "sources":
+        elif tab in ("skills", "sources"):
             source = next(s for s in self.status.sources if s.name == key)
             self._detail(tab, render.source_detail(source, self._upstream(key)))
         elif tab == "doctor" and (f := self._finding()) is not None:

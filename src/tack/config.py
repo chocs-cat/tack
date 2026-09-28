@@ -72,7 +72,7 @@ _SOURCE_KEYS = {
     "autocommit",
     "autopush",
 }
-_TOP_KEYS = {"after_save", "projects", "harness", "source"}
+_TOP_KEYS = {"after_save", "projects", "harness", "source", "tui"}
 _NAME = re.compile(r"[A-Za-z0-9_][A-Za-z0-9._-]*")
 
 
@@ -157,6 +157,13 @@ class Source:
 
 
 @dataclass(frozen=True)
+class Tui:
+    """The TUI's defaults, from `[tui]`; the CLI ignores them."""
+
+    group_by_source: bool = True
+
+
+@dataclass(frozen=True)
 class Config:
     paths: Paths
     manifest: Path | None  # None when there is no manifest file
@@ -166,6 +173,7 @@ class Config:
     exclude: tuple[Path, ...] = ()
     owners: tuple[str, ...] = ()  # empty: every repository is yours
     after_save: str | None = None
+    tui: Tui = Tui()
 
 
 def load(config_dir: Path | None = None) -> Config:
@@ -194,6 +202,11 @@ def parse(data: dict[str, Any], file: Path, paths: Paths) -> Config:
     after_save = data.get("after_save")
     if after_save is not None and not isinstance(after_save, str):
         raise ConfigError(f"{file}: after_save must be a string")
+    tui = _table(data, "tui", file, "the top level")
+    _no_unknown(tui, {"group_by_source"}, file, "[tui]")
+    group = tui.get("group_by_source", True)
+    if not isinstance(group, bool):
+        raise ConfigError(f"{file}: [tui] group_by_source must be true or false")
 
     raw_sources = data.get("source", [])
     if not isinstance(raw_sources, list):
@@ -214,6 +227,7 @@ def parse(data: dict[str, Any], file: Path, paths: Paths) -> Config:
         exclude=tuple(_path(e, base) for e in exclude),
         owners=tuple(owners),
         after_save=after_save,
+        tui=Tui(group_by_source=group),
     )
 
 
