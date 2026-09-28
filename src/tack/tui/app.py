@@ -17,10 +17,11 @@ from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, VerticalScroll
+from textual.content import Content
 from textual.events import Click
 from textual.widgets import DataTable, Footer, Header, Static, TabbedContent, TabPane
 
-from tack import commit, config, doctor, edit, outdated, scaffold, status, sync, update
+from tack import __version__, commit, config, doctor, edit, outdated, scaffold, status, sync, update
 from tack.config import Config, ConfigError
 from tack.doctor.findings import SEVERITIES, Finding
 from tack.sync import Result
@@ -89,6 +90,11 @@ class TackApp(App[None]):
         self.auto_tab = True  # until you pick a tab, the app picks one
         self._picking = False
 
+    def format_title(self, title: str, sub_title: str) -> Content:
+        if not sub_title:
+            return Content(title)
+        return Content.assemble(title, (" • ", "dim"), (sub_title, "dim"))
+
     def compose(self) -> ComposeResult:
         yield FixedHeader()
         with TabbedContent(initial="skills"):
@@ -102,11 +108,14 @@ class TackApp(App[None]):
         yield Footer()
 
     def on_mount(self) -> None:
+        self.title = f"tack {__version__}"
         self.action_refresh()
 
     # --- loading --------------------------------------------------------------
 
     def action_refresh(self) -> None:
+        manifest = config.Paths.from_env(self.config_dir and self.config_dir.absolute()).manifest
+        self.sub_title = tilde(manifest) + ("" if manifest.is_file() else " (no file yet)")
         try:
             self.cfg = config.load(self.config_dir)
         except ConfigError as e:

@@ -13,7 +13,7 @@ from textual.pilot import Pilot
 from textual.widgets import DataTable, Input, Static, TabbedContent
 from textual.widgets._header import HeaderTitle
 
-from tack import config, outdated, sync
+from tack import __version__, config, outdated, sync
 from tack.status import SourceStatus
 from tack.tui import render
 from tack.tui.app import FixedHeader, TackApp
@@ -210,13 +210,24 @@ def test_actions_belong_to_their_tabs(home: Path, tmp_path: Path) -> None:
     drive(scenario)
 
 
-def test_header_stays_one_line(home: Path, tmp_path: Path) -> None:
+def test_header_shows_the_version_and_manifest_and_stays_one_line(
+    home: Path, tmp_path: Path
+) -> None:
     machine(home, tmp_path)
 
     async def scenario(app: TackApp, pilot: Pilot[None]) -> None:
+        title = app.format_title(app.title, app.sub_title).plain
+        assert title == f"tack {__version__} • ~/.config/tack/tack.toml"
         await pilot.click(HeaderTitle)
         await pilot.pause()
         assert not app.query_one(FixedHeader).has_class("-tall")
+
+    drive(scenario)
+
+
+def test_header_says_when_there_is_no_manifest(home: Path) -> None:
+    async def scenario(app: TackApp, pilot: Pilot[None]) -> None:
+        assert app.sub_title == "~/.config/tack/tack.toml (no file yet)"
 
     drive(scenario)
 
@@ -226,6 +237,7 @@ def test_a_bad_manifest_is_shown(home: Path) -> None:
 
     async def scenario(app: TackApp, pilot: Pilot[None]) -> None:
         assert "unknown key 'nonsense'" in str(app.query_one("#skills-detail", Static).render())
+        assert app.sub_title == "~/.config/tack/tack.toml"
         await pilot.press("s")  # nothing to act on
         await settle(pilot)
         assert not isinstance(app.screen, ActionScreen)
