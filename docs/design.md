@@ -531,7 +531,8 @@ harness.
 `tack` with no arguments, in a terminal, opens a Textual app over the same
 operations as the CLI. Piped or scripted, it prints the usage and exits `2`
 as before, so nothing waits on a screen no one sees. The app takes its
-manifest from `TACK_CONFIG` or the default location.
+manifest from `TACK_CONFIG` or the default location; the header shows tack's
+version and that manifest's path.
 
 Three tabs, each a list with a detail pane for the selected row:
 
