@@ -18,6 +18,25 @@ tack is meant to be publishable: nothing in it may assume the maintainer's
 setup (a dotfiles tool, a home-directory path, a particular agent beyond the
 built-in harness defaults).
 
+## Roadmap: GitHub Issues
+
+Planned features are phases in the design; everything else on the roadmap is
+the issue list on `chocs-cat/tack`. Check it (`gh issue list`) before starting
+work, and keep it current:
+
+- **File ideas as issues, don't just mention them.** When you or the user
+  come up with a feature, a follow-up, a bug, or a loose end you won't handle
+  now, create an issue without asking first. Unplanned thoughts get the
+  `idea` label; add an area label (`cli`, `tui`, `doctor`, `sources`,
+  `config`, `release`, `documentation`) and a type label (`bug`,
+  `enhancement`, `question`) where one fits.
+- **The repo is public, and so are its issues.** Write them for any reader:
+  no private paths, hostnames, or personal details.
+- Before starting work, look for an existing issue and reference it. Close
+  issues from the pull request that resolves them (`Fixes #12` in its body).
+- Comment on an issue when you learn something that matters to whoever picks
+  it up next.
+
 ## Releases
 
 Releases are automated with release-please, from Conventional Commits;
