@@ -187,7 +187,8 @@ def test_two_sources_selecting_one_name_collide(home: Path) -> None:
     assert [names(s) for s in plan.sources] == [["x", "a"], ["x", "b"]]
 
 
-def test_plugins_for_different_harnesses_do_not_collide(home: Path) -> None:
+def test_plugins_for_different_harnesses_collide(home: Path) -> None:
+    # DEC-11: tack's marketplace holds one `x` for every harness.
     market(home / "one", "x")
     market(home / "two", "x")
     plan = plugins.plan(
@@ -195,22 +196,41 @@ def test_plugins_for_different_harnesses_do_not_collide(home: Path) -> None:
             home,
             "one",
             "two",
-            one=[{"name": "x", "harnesses": ["claude-code"]}],
-            two=[{"name": "x", "harnesses": ["codex"]}],
+            one=[{"name": "x", "harnesses": ["codex"]}],
+            two=[{"name": "x", "harnesses": ["claude-code"]}],
         )
     )
-    assert not plan.collisions
-    assert plan.plugins["claude-code"]["x"].source.name == "one"
-    assert plan.plugins["codex"]["x"].source.name == "two"
+    assert plan.collisions == {"x": (["claude-code", "codex"], ["one", "two"])}
+    assert plan.plugins == {"claude-code": {}, "codex": {}}
 
 
-def test_collisions_only_where_harnesses_overlap(home: Path) -> None:
+def test_collisions_take_every_harness_either_source_targets(home: Path) -> None:
     market(home / "one", "x")
     market(home / "two", "x")
     plan = plugins.plan(configure(home, "one", "two:codex", one="*", two="*"))
+    assert plan.collisions == {"x": (["claude-code", "codex"], ["one", "two"])}
+    assert plan.plugins == {"claude-code": {}, "codex": {}}
+
+    # Both limited to codex: a collision there only.
+    plan = plugins.plan(configure(home, "one:codex", "two:codex", one="*", two="*"))
     assert plan.collisions == {"x": (["codex"], ["one", "two"])}
-    assert plan.plugins["claude-code"]["x"].source.name == "one"
-    assert "x" not in plan.plugins["codex"]
+
+
+def test_different_names_for_different_harnesses_do_not_collide(home: Path) -> None:
+    market(home / "one", "x")
+    market(home / "two", "y")
+    plan = plugins.plan(
+        configure(
+            home,
+            "one",
+            "two",
+            one=[{"name": "x", "harnesses": ["claude-code"]}],
+            two=[{"name": "y", "harnesses": ["codex"]}],
+        )
+    )
+    assert not plan.collisions
+    assert list(plan.plugins["claude-code"]) == ["x"]
+    assert list(plan.plugins["codex"]) == ["y"]
 
 
 def test_an_undeployable_plugin_collides_too(home: Path) -> None:

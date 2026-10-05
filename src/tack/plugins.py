@@ -340,7 +340,8 @@ class Plan:
     # that takes plugins; collided names and undeployable plugins left out
     plugins: dict[str, dict[str, Selected]]
     # plugin -> (harnesses, sources) where two or more sources select it,
-    # deployable or not
+    # deployable or not, whatever harnesses each targets (DEC-11): every
+    # harness any of them targets, in config.PLUGIN_HARNESSES order
     collisions: dict[str, tuple[list[str], list[str]]] = field(default_factory=dict)
 
 
@@ -350,23 +351,25 @@ def plan(cfg: Config) -> Plan:
     nothing else: it copies nothing, runs no agent and writes nothing."""
     states = [_source_state(src, cfg) for src in cfg.sources if src.plugins != ()]
 
-    by_harness: dict[str, dict[str, list[Selected]]] = defaultdict(lambda: defaultdict(list))
+    by_name: dict[str, list[Selected]] = defaultdict(list)
     for state in states:
         for sel in state.selected:
-            for h in sel.harnesses:
-                by_harness[h][sel.name].append(sel)
+            by_name[sel.name].append(sel)
 
+    # A name two sources select collides whatever harnesses each targets:
+    # tack's marketplace holds one plugin per name for every harness (DEC-11).
     wanted: dict[str, dict[str, Selected]] = {h: {} for h in config.PLUGIN_HARNESSES}
     collisions: dict[str, tuple[list[str], list[str]]] = {}
-    for h in config.PLUGIN_HARNESSES:
-        for name, sels in by_harness[h].items():
-            if len(sels) == 1:  # a source selects each name once
-                if sels[0].deployable:
-                    wanted[h][name] = sels[0]
-                continue
-            hs, srcs = collisions.setdefault(name, ([], []))
-            hs.append(h)
-            srcs.extend(s.source.name for s in sels if s.source.name not in srcs)
+    for name, sels in by_name.items():
+        if len(sels) > 1:  # a source selects each name once
+            targeted = {h for s in sels for h in s.harnesses}
+            hs = [h for h in config.PLUGIN_HARNESSES if h in targeted]
+            collisions[name] = (hs, [s.source.name for s in sels])
+            continue
+        (sel,) = sels
+        if sel.deployable:
+            for h in sel.harnesses:
+                wanted[h][name] = sel
     return Plan(states, wanted, collisions)
 
 
