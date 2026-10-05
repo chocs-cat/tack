@@ -23,7 +23,7 @@ import tomllib
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 MANIFEST = "tack.toml"
 LOCKFILE = "tack.lock"
@@ -51,6 +51,9 @@ BUILTIN_HARNESSES: dict[str, dict[str, Any]] = {
         "ignore": [],
     },
 }
+# The harnesses that take plugins: the built-in ones, whose CLIs tack drives
+# (DEC-8). `agents.CLIS` names the CLI of each.
+PLUGIN_HARNESSES = tuple(BUILTIN_HARNESSES)
 
 _HARNESS_REQUIRED = (
     "skills_dir",
@@ -144,6 +147,8 @@ class Harness:
 
 @dataclass(frozen=True)
 class SkillSpec:
+    """An entry of a source's `skills` or `plugins`."""
+
     name: str
     harnesses: tuple[str, ...] | None = None
 
@@ -156,6 +161,7 @@ class Source:
     ref: str | None = None
     subdir: str = "skills"
     skills: tuple[SkillSpec, ...] | None = None  # None: every skill ("*")
+    plugins: tuple[SkillSpec, ...] | None = ()  # None: every plugin ("*"); (): none (DEC-3)
     harnesses: tuple[str, ...] | None = None  # None: every harness
     autocommit: bool = False
     autopush: bool = False
@@ -329,33 +335,67 @@ def _source(raw: Any, i: int, file: Path, base: Path, harnesses: dict[str, Harne
         git=git,
         ref=raw.get("ref"),
         subdir=subdir,
-        skills=_skills(raw.get("skills", "*"), source_harnesses, harnesses, file, where),
+        skills=_specs("skill", raw.get("skills", "*"), source_harnesses, harnesses, file, where),
         harnesses=source_harnesses,
         autocommit=raw.get("autocommit", False),
         autopush=raw.get("autopush", False),
     )
 
 
-def _skills(
+def parse_plugins(
     value: Any,
     source_harnesses: tuple[str, ...] | None,
     harnesses: dict[str, Harness],
     file: Path,
     where: str,
 ) -> tuple[SkillSpec, ...] | None:
+    """A source's `plugins` (design.md *Selecting plugins*): read as `skills`
+    is, and only the harnesses that take plugins may be named (DEC-8). A
+    source that selects any must target one of them (DEC-10).
+
+    Nothing calls it yet: `plugins` stays an unknown key until `sync` deploys
+    plugins (P0001)."""
+    specs = _specs("plugin", value, source_harnesses, harnesses, file, where)
+    for spec in specs or ():
+        if others := [h for h in spec.harnesses or () if h not in PLUGIN_HARNESSES]:
+            label = f"{where} plugin {spec.name!r} harnesses"
+            raise ConfigError(
+                f"{file}: {label}: only {' and '.join(PLUGIN_HARNESSES)} take plugins, "
+                f"not {', '.join(map(repr, others))}"
+            )
+    selects = specs is None or bool(specs)
+    if selects and source_harnesses and not set(source_harnesses) & set(PLUGIN_HARNESSES):
+        raise ConfigError(
+            f"{file}: {where} selects plugins but targets neither "
+            f"{' nor '.join(PLUGIN_HARNESSES)}, the harnesses that take them"
+        )
+    return specs
+
+
+def _specs(
+    kind: Literal["skill", "plugin"],
+    value: Any,
+    source_harnesses: tuple[str, ...] | None,
+    harnesses: dict[str, Harness],
+    file: Path,
+    where: str,
+) -> tuple[SkillSpec, ...] | None:
+    """A source's `skills` or `plugins`, as `kind` ("skill", "plugin") says:
+    "*" (None), or a list of names and `{ name, harnesses }` tables."""
+    key = f"{kind}s"
     if value == "*":
         return None
     if not isinstance(value, list):
-        raise ConfigError(f'{file}: {where} skills must be "*" or a list')
+        raise ConfigError(f'{file}: {where} {key} must be "*" or a list')
     specs: list[SkillSpec] = []
     for item in value:
         if isinstance(item, str):
             spec = SkillSpec(item)
         elif isinstance(item, dict):
-            _no_unknown(item, {"name", "harnesses"}, file, f"{where} skills")
+            _no_unknown(item, {"name", "harnesses"}, file, f"{where} {key}")
             if not isinstance(item.get("name"), str):
-                raise ConfigError(f"{file}: {where} skills: a table entry needs a `name`")
-            label = f"{where} skill {item['name']!r} harnesses"
+                raise ConfigError(f"{file}: {where} {key}: a table entry needs a `name`")
+            label = f"{where} {kind} {item['name']!r} harnesses"
             names = _harness_names(item.get("harnesses"), harnesses, file, label)
             outside = [h for h in names or () if source_harnesses and h not in source_harnesses]
             if outside:
@@ -364,11 +404,11 @@ def _skills(
                 )
             spec = SkillSpec(item["name"], names)
         else:
-            raise ConfigError(f"{file}: {where} skills entries are names or tables")
+            raise ConfigError(f"{file}: {where} {key} entries are names or tables")
         if not _NAME.fullmatch(spec.name):
-            raise ConfigError(f"{file}: {where} skills: {spec.name!r} isn't a skill name")
+            raise ConfigError(f"{file}: {where} {key}: {spec.name!r} isn't a {kind} name")
         if any(s.name == spec.name for s in specs):
-            raise ConfigError(f"{file}: {where} lists skill {spec.name!r} twice")
+            raise ConfigError(f"{file}: {where} lists {kind} {spec.name!r} twice")
         specs.append(spec)
     return tuple(specs)
 

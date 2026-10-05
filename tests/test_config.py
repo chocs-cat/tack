@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from tack import config
-from tack.config import ConfigError, Paths, SkillSpec
+from tack import agents, config
+from tack.config import ConfigError, Harness, Paths, SkillSpec, Source
 from tests.helpers import load, write
 
 DESIGN = Path(__file__).parent.parent / "docs" / "design.md"
@@ -185,3 +185,112 @@ def test_config_dir_argument(home: Path, tmp_path: Path) -> None:
     cfg = config.load(tmp_path / "cfg")
     assert cfg.manifest == tmp_path / "cfg" / "tack.toml"
     assert cfg.roots == (home / "src",)
+
+
+# --- the `plugins` field, not yet accepted (P0001) -----------------------------------
+
+PI = """
+[harness.pi]
+skills_dir = "~/.pi/skills"
+project_skills_dir = ".pi/skills"
+instructions = "~/.pi/AGENTS.md"
+project_instructions = "AGENTS.md"
+hooks = ["~/.pi/hooks.json"]
+project_hooks = [".pi/hooks.json"]
+"""
+
+
+@pytest.fixture
+def harnesses(home: Path) -> dict[str, Harness]:
+    """The built-in harnesses and `pi`, one the manifest defines."""
+    return load(home, PI).harnesses
+
+
+def plugins(
+    harnesses: dict[str, Harness], value: object, source: tuple[str, ...] | None = None
+) -> tuple[SkillSpec, ...] | None:
+    return config.parse_plugins(value, source, harnesses, Path("tack.toml"), "source 'x'")
+
+
+def test_plugins_values(harnesses: dict[str, Harness]) -> None:
+    assert plugins(harnesses, "*") is None
+    assert plugins(harnesses, []) == ()
+    assert plugins(harnesses, ["a", "b"]) == (SkillSpec("a"), SkillSpec("b"))
+    value = ["a", {"name": "b", "harnesses": ["codex"]}]
+    assert plugins(harnesses, value) == (SkillSpec("a"), SkillSpec("b", ("codex",)))
+    value = [{"name": "b", "harnesses": ["claude-code"]}]
+    assert plugins(harnesses, value, ("claude-code", "pi")) == (SkillSpec("b", ("claude-code",)),)
+
+
+@pytest.mark.parametrize(
+    ("value", "source", "message"),
+    [
+        ("all", None, "source 'x' plugins must be \"\\*\" or a list"),
+        ({"name": "a"}, None, 'plugins must be "\\*" or a list'),
+        ([1], None, "plugins entries are names or tables"),
+        ([{"harnesses": ["codex"]}], None, "plugins: a table entry needs a `name`"),
+        ([{"name": "a", "version": "1"}], None, "unknown key 'version' in source 'x' plugins"),
+        (["../a"], None, "plugins: '../a' isn't a plugin name"),
+        (["a", {"name": "a"}], None, "lists plugin 'a' twice"),
+        ([{"name": "a", "harnesses": ["nope"]}], None, "plugin 'a' harnesses: no harness named"),
+        ([{"name": "a", "harnesses": "codex"}], None, "harnesses must be a list"),
+        # A harness the manifest defines takes no plugins (DEC-8), even
+        # where the source targets it.
+        (
+            [{"name": "a", "harnesses": ["pi"]}],
+            None,
+            "plugin 'a' harnesses: only claude-code and codex take plugins, not 'pi'",
+        ),
+        ([{"name": "a", "harnesses": ["codex", "pi"]}], ("pi", "codex"), "not 'pi'"),
+        (
+            [{"name": "a", "harnesses": ["claude-code"]}],
+            ("codex",),
+            "plugin 'a' harnesses: claude-code isn't among the source's harnesses",
+        ),
+    ],
+)
+def test_plugins_errors(
+    harnesses: dict[str, Harness], value: object, source: tuple[str, ...] | None, message: str
+) -> None:
+    with pytest.raises(ConfigError, match=message):
+        plugins(harnesses, value, source)
+
+
+def test_a_source_selecting_plugins_targets_a_harness_that_takes_them(
+    harnesses: dict[str, Harness],
+) -> None:
+    # DEC-10: selecting plugins for `pi` alone is an error ...
+    for value in ("*", ["x"]):
+        with pytest.raises(ConfigError, match="selects plugins but targets neither claude-code"):
+            plugins(harnesses, value, ("pi",))
+    # ... selecting none isn't, and a source that also targets a built-in is fine.
+    assert plugins(harnesses, [], ("pi",)) == ()
+    assert plugins(harnesses, "*", ("pi", "codex")) is None
+    assert plugins(harnesses, ["x"], ("pi", "codex")) == (SkillSpec("x"),)
+    # A source with no `harnesses` targets every harness, built-ins included.
+    assert plugins(harnesses, ["x"]) == (SkillSpec("x"),)
+
+
+def test_skills_and_plugins_messages_name_their_own_field(
+    home: Path, harnesses: dict[str, Harness]
+) -> None:
+    with pytest.raises(ConfigError, match="lists plugin 'a' twice"):
+        plugins(harnesses, ["a", "a"])
+    with pytest.raises(ConfigError, match="lists skill 'a' twice"):
+        load(home, "[[source]]\nname = 'x'\npath = '/x'\nskills = ['a', 'a']")
+
+
+def test_a_source_selects_no_plugins_by_default() -> None:
+    assert Source("x").plugins == ()  # DEC-3
+    assert Source("x").skills is None
+
+
+@pytest.mark.parametrize("value", ["'*'", "[]", "['a']"])
+def test_the_manifest_does_not_accept_plugins_yet(home: Path, value: str) -> None:
+    with pytest.raises(ConfigError, match="unknown key 'plugins' in source 'x'"):
+        load(home, f"[[source]]\nname = 'x'\npath = '/x'\nplugins = {value}\n")
+
+
+def test_the_harnesses_that_take_plugins_are_those_with_a_cli() -> None:
+    assert set(config.PLUGIN_HARNESSES) == set(agents.CLIS)
+    assert set(config.PLUGIN_HARNESSES) == set(config.BUILTIN_HARNESSES)  # DEC-8
