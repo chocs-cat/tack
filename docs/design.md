@@ -584,9 +584,11 @@ takes plugins:
 5. **Unregister** the marketplace from a harness no selected plugin targets
    any more, after step 4 (removing a marketplace from Codex leaves its
    plugins installed): `claude plugin marketplace remove tack --scope user`,
-   `codex plugin marketplace remove tack`. With no plugins selected anywhere,
-   the directory goes too, once every harness whose CLI is on `PATH` has it
-   unregistered and the record lists no plugin.
+   `codex plugin marketplace remove tack`. Removing it from Claude Code
+   uninstalls its plugins, so there it stays registered while a plugin tack
+   keeps as it is (DEC-12) is installed (DEC-13). With no plugins selected
+   anywhere, the directory goes too, once every harness whose CLI is on
+   `PATH` has it unregistered and the record lists no plugin.
 
 The result lists these as changes `copy` (into tack's marketplace),
 `register`, `install`, `reinstall`, `uninstall` and `unregister`, with the

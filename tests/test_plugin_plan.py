@@ -1,16 +1,13 @@
 from __future__ import annotations
 
-import dataclasses
 import json
 from pathlib import Path
-from typing import Any
 
 import pytest
 
-from tack import catalog, config, plugins
+from tack import catalog, plugins
 from tack.catalog import Ignored, InRepository, InSource
-from tack.config import Config
-from tests.helpers import load, tree, write
+from tests.helpers import configure, market, tree, write
 from tests.standin import Standins
 
 SHA = "0123456789abcdef0123456789abcdef01234567"
@@ -24,37 +21,6 @@ project_instructions = "AGENTS.md"
 hooks = ["~/.pi/hooks.json"]
 project_hooks = [".pi/hooks.json"]
 """
-
-
-def market(root: Path, *entries: Any, **doc: Any) -> Path:
-    """A source at `root` whose catalog lists `entries`: a name `n` is
-    `{"name": n, "source": "./plugins/n"}`, anything else is the entry itself."""
-    listed = [{"name": e, "source": f"./plugins/{e}"} if isinstance(e, str) else e for e in entries]
-    write(root / ".claude-plugin" / "marketplace.json", json.dumps({**doc, "plugins": listed}))
-    return root
-
-
-def configure(home: Path, *sources: str, manifest: str = "", **selections: Any) -> Config:
-    """A Config whose `path` sources are `~/<name>`, each selecting the
-    plugins `selections` gives it (none by default), as `parse_plugins` reads
-    them: the manifest doesn't take `plugins` yet. A source written
-    `name:h1,h2` targets those harnesses."""
-    tables = []
-    for s in sources:
-        name, _, hs = s.partition(":")
-        table = f'[[source]]\nname = "{name}"\npath = "~/{name}"\n'
-        if hs:
-            table += f"harnesses = {json.dumps(hs.split(','))}\n"
-        tables.append(table)
-    cfg = load(home, manifest + "\n" + "\n".join(tables))
-    assert cfg.manifest is not None
-    out = []
-    for src in cfg.sources:
-        value = selections.get(src.name, [])
-        where = f"source {src.name!r}"
-        specs = config.parse_plugins(value, src.harnesses, cfg.harnesses, cfg.manifest, where)
-        out.append(dataclasses.replace(src, plugins=specs))
-    return dataclasses.replace(cfg, sources=tuple(out))
 
 
 def names(state: plugins.SourceState) -> list[str]:
