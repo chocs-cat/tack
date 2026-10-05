@@ -47,3 +47,24 @@ recipe only as a suggestion in *Notes for the executor*.
 the agents installed by Homebrew that dropped every other program there, and
 asdf's `uv` shim, which looks further down `PATH`, failed; the executor
 replaced it with mirrors of those directories (DEC-9).
+
+### §2 A rule borrowed "as for skills" whose premise doesn't carry over
+
+The brief (or the design it cites) gives a new feature an existing feature's
+rule by analogy ("as in `deploy.Plan`", "like a listed skill") without
+checking the fact that made the rule right for the original. The executor
+builds it faithfully and tests pin it, so nothing fails until a later chunk
+needs the premise. Before committing a brief, find each rule it borrows from
+another feature and name the premise that rule rests on (a directory per
+harness, a link per name, a checkout per source); confirm the new feature has
+the same one, or write the rule it needs instead.
+
+*Provenance:* P0001-C02-c. The brief told the plan to compute plugin
+collisions per harness, "as in `deploy.Plan`", and to test that per-plugin
+harnesses that don't overlap don't collide. Skills collide per harness
+because each harness has its own skills directory; every plugin goes through
+tack's one marketplace, one copy per name (DEC-1), so the same name from two
+sources can't be deployed even to different harnesses. Found while cutting
+P0001-C03, whose `sync` needs one copy per name (DEC-11). The sweep found the
+same per-harness rule in `add`'s plugin refusal and `doctor`'s
+`name-collision`, both fixed in that review.

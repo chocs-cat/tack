@@ -30,7 +30,7 @@ from typing import Any, Literal
 from tack import deploy, plugins
 from tack.config import Paths
 
-# The harnesses that take plugins, and their CLIs (DEC-8).
+# The harnesses that take plugins, and their CLIs (DEC-8): config.PLUGIN_HARNESSES.
 CLIS = {"claude-code": "claude", "codex": "codex"}
 # How each agent says a marketplace is a local directory.
 _LOCAL = {"claude-code": "directory", "codex": "local"}

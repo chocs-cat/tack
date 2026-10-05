@@ -367,7 +367,7 @@ same `git` and `ref`), a source with no skills in its `subdir`, a `--skill`
 the source doesn't have, and a skill another source already deploys to the
 same harness. *(P0001)* It refuses the same way a `--plugin` the catalog
 doesn't have or tack can't deploy (see [Catalogs](#catalogs)), and a plugin
-another source already deploys to the same harness. With `--plugin`, a
+another source already selects (DEC-11). With `--plugin`, a
 source with no skills in its `subdir` is accepted; without it, the refusal
 lists the plugins in the source's catalog, if it has one. Otherwise it
 appends the table and syncs. A git source it can't
@@ -500,15 +500,17 @@ and a plugin's `harnesses` may name only those. A source that selects plugins
 (`"*"` or a non-empty list) but targets neither of them is a configuration
 error too (DEC-10). A listed plugin the catalog
 doesn't have is reported like a listed skill the source doesn't have
-(`not-synced`). Two sources selecting the same plugin name for the same
-harness is a manifest error: tack deploys neither, says which sources
-collide, and leaves that name's copy and installs as they are
+(`not-synced`). Two sources selecting the same plugin name is a manifest
+error, even for different harnesses, since tack's marketplace holds one
+plugin per name (DEC-11): tack deploys neither in any harness, says which
+sources collide, and leaves that name's copy and installs as they are
 (`name-collision`).
 
 A source's catalog is read only when the source selects plugins, so a
 manifest without them reads none. A source *selects* each plugin its
 selection names that its catalog has, deployable or not, and a selected
-plugin counts toward a collision either way. A source with no catalog file
+plugin counts toward a collision either way. A name its catalog lists twice
+is one plugin, which can't be deployed. A source with no catalog file
 selects nothing under `"*"`, and lacks every name it lists. A source whose
 root isn't there (a missing `path`, a git source a dry run hasn't cloned)
 and a source whose catalog is broken select nothing and lack nothing, as a
@@ -535,7 +537,8 @@ tack keeps one marketplace of its own, named `tack`, in
   from the plugin's (by the hash in [Plugin ownership](#plugin-ownership));
   it is built beside the old one and swapped in, so an agent starting a
   session meanwhile never reads half a copy. A plugin that fails keeps the
-  copy it had, if any.
+  copy it had, if any, and its installs: `sync` installs, reinstalls and
+  uninstalls nothing for it (DEC-12).
 - `.claude-plugin/marketplace.json` is tack's catalog: `name` `tack`,
   `owner` `{"name": "tack"}`, and an entry for each plugin with a copy, by
   name. Each entry is the plugin's upstream catalog entry with its `source`
@@ -563,35 +566,55 @@ takes plugins:
    and it has no conflicting `tack` (see [Plugin ownership](#plugin-ownership)):
    `claude plugin marketplace add <dir> --scope user`, `codex plugin
    marketplace add <dir>`. Registering it again is a no-op for both.
-2. **Install** each selected plugin that isn't installed: `claude plugin
-   install <name>@tack --scope user`, `codex plugin add <name>@tack`.
+2. **Install** each selected plugin that isn't installed (the agent's `plugin
+   list` doesn't show it from tack's marketplace; a disabled one is
+   installed): `claude plugin install <name>@tack --scope user`, `codex
+   plugin add <name>@tack`.
 3. **Reinstall** in Codex each plugin whose files changed since tack
    installed it there (an `update`, an edit in a `path` source): Codex
    installs a copy of a plugin in its own cache and doesn't refresh it, so
    `sync` runs `codex plugin add` again. Claude Code loads a plugin from a
    local marketplace in place, so the change reaches it with nothing to run.
    Either agent picks up a change at its next session.
-4. **Uninstall** each tack plugin no longer selected for the harness, and its
-   copy: `claude plugin uninstall <name>@tack --scope user`, `codex plugin
-   remove <name>@tack`.
+4. **Uninstall** each of tack's plugins in the harness (those the agent lists
+   from tack's marketplace, and those the record lists) that is no longer
+   selected for it: `claude plugin uninstall <name>@tack --scope user`,
+   `codex plugin remove <name>@tack`. A copy no selected plugin needs is
+   deleted once no harness has it installed.
 5. **Unregister** the marketplace from a harness no selected plugin targets
    any more, after step 4 (removing a marketplace from Codex leaves its
    plugins installed): `claude plugin marketplace remove tack --scope user`,
    `codex plugin marketplace remove tack`. With no plugins selected anywhere,
-   the directory goes too.
+   the directory goes too, once every harness whose CLI is on `PATH` has it
+   unregistered and the record lists no plugin.
 
 The result lists these as changes `copy` (into tack's marketplace),
 `register`, `install`, `reinstall`, `uninstall` and `unregister`, with the
-harness each applies to.
+harness each applies to. The detail of each of the last five is the command
+line it runs, so a dry run lists the commands; a `copy` names the plugin and
+the directory it is copied from. Writing tack's catalog is a `write` change,
+and deleting a plugin's copy or tack's marketplace directory a `delete`.
 
-`sync` runs an agent's CLI only when the manifest selects a plugin or tack's
-marketplace directory exists, so a manifest without plugins never needs
-either agent installed. A harness whose CLI isn't on `PATH` gets no plugins:
-that is a problem of kind `agent` (exit `1`), and its skills still deploy. A
+`sync` deploys skills first, then plugins. It runs a harness's CLI only when
+a selected plugin targets that harness, the record lists a plugin tack
+installed there, or tack's marketplace directory exists, so a manifest
+without plugins never needs either agent installed (DEC-3). A harness a
+selected plugin targets whose CLI isn't on `PATH` gets no plugins: that is a
+problem of kind `agent` (exit `1`), and its skills still deploy. Elsewhere a
+missing CLI is passed over, and the record keeps that harness's entries. A
 command that fails is reported the same way, with the agent's message, and
-the other plugins carry on. `--dry-run` runs only the `list` commands, lists
+the other plugins carry on; a `list` command that fails stops that harness's
+steps. A selected plugin tack can't deploy, a broken catalog, and a plugin
+whose copy fails are problems of kind `source`; a plugin name two sources
+select is a `collision`. `--dry-run` runs only the `list` commands, lists
 the commands it would run, and writes nothing. `--adopt` doesn't apply to
 plugins.
+
+A source `sync` holds (a missing `path`, a failed fetch, a refused checkout;
+see [Ownership and conflicts](#ownership-and-conflicts)) and a source whose
+catalog is broken keep their plugins as they are: `sync` copies, installs,
+reinstalls and uninstalls none of the plugins the record says came from
+them, and keeps their copies and their entries in tack's catalog (DEC-12).
 
 tack installs and uninstalls plugins but never enables or disables one
 (DEC-5). Turning a tack plugin off in an agent (`/plugin`) is the user's
@@ -611,12 +634,18 @@ marketplace's registration. A marketplace named `tack` registered from
 anywhere else is a **conflict**: `sync` runs none of the steps in
 [Deploying](#deploying) in that harness, not even registering (Claude Code
 would repoint the name at tack's directory; see
-[Harness facts](#harness-facts-tack-relies-on)), reports it, and exits `1`;
+[Harness facts](#harness-facts-tack-relies-on)), and, where a selected plugin
+targets the harness or the record lists one there, reports it and exits `1`;
 removing or renaming that marketplace clears it.
 
 The ownership record, `state.json`, also lists the plugins tack installed in
-each harness, each with a hash of the files it was installed from, so `sync`
-knows when Codex's copy is stale (DEC-6). The record is also how tack knows
+each harness, each with the source it came from and a hash of the files it
+was installed from (tack's copy when tack installed it there, or in Codex
+last reinstalled it), so `sync` knows when Codex's copy is stale (DEC-6) and
+which plugins a held source keeps (DEC-12). It is a `plugins` key beside
+`links`, harness → plugin name → `{"source": …, "hash": …}`, left out when
+it lists no plugin, so a record without plugins is the one an older tack
+writes. The record is also how tack knows
 which Codex plugins it installed: Codex's `plugin list` leaves out a plugin
 whose marketplace entry is gone, though it is still installed.
 
@@ -639,7 +668,7 @@ harness it targets:
 | `stale` | tack's copy, or Codex's, predates the plugin's files: `sync` fixes it. |
 | `disabled` | Installed but turned off in the agent. |
 | `conflict` | The harness has a foreign marketplace named `tack`. |
-| `collision` | Two sources select the name for this harness. |
+| `collision` | Two sources select the name, for this harness or another (DEC-11). |
 | `unavailable` | The agent's CLI isn't on `PATH`. |
 
 `status --json` adds `plugins`, one object per selected plugin: `name`,
@@ -725,7 +754,7 @@ read wrong), **warn** (will drift or break later), **info**.
 | `unmanaged-skill` | warn | An entry in a harness skills directory that tack doesn't own and isn't in `ignore` — e.g. installed by hand or by another manager. |
 | `dangling-link` | error | A skill link whose target is gone. |
 | `not-synced` | warn | A selected skill missing from a harness it targets, or a link pointing somewhere other than the manifest says — including a tack link to a skill no longer selected, a listed skill its source doesn't have, and a source that isn't there (a missing `path`, a git source not yet checked out). *(P0001)* Also a selected plugin that isn't `installed` in a harness it targets (any other [state](#plugin-states)), a tack plugin no longer selected, and a listed or selected plugin its source's catalog doesn't have or tack can't deploy (DEC-7). |
-| `name-collision` | error | Two sources select the same skill name (or plugin name, *P0001*) for the same harness. |
+| `name-collision` | error | Two sources select the same skill name for the same harness, or *(P0001)* the same plugin name for any harnesses (DEC-11). |
 | `unmanaged-plugin` *(P0001)* | info | A plugin installed in a harness at user scope from a marketplace other than tack's and not in `ignore_marketplaces`: installed by hand or by another manager, so nothing keeps it the same across agents and machines. Selecting it from its source does. |
 | `duplicate-plugin` *(P0001)* | warn | A plugin tack deploys to a harness is also installed there, under the same name, from another marketplace: the agent loads both. |
 | `bad-skill` | warn | `SKILL.md` missing, without frontmatter, without a `description`, or with a `name` that differs from its directory. |
@@ -1069,8 +1098,10 @@ codex-cli 0.157.1, in a scratch `HOME`, and their documentation:
   `anthropics`, so a local copy of an official catalog can't be registered
   under its own name. One marketplace per name may be registered.
 - **Codex plugins** are managed by `codex plugin` (`marketplace
-  add|list|upgrade|remove`, `add`, `remove`, `list`), each taking `--json`;
-  there is no command to enable or disable a plugin. `marketplace add <dir>`
+  add|list|upgrade|remove`, `add`, `remove`, `list`), each taking `--json`
+  and none taking `--scope` (their `--help`, re-checked 2026-10-05 against
+  codex-cli 0.157.1); there is no command to enable or
+  disable a plugin. `marketplace add <dir>`
   reads a Claude Code catalog (`.claude-plugin/marketplace.json`) as well as
   its own (`.agents/plugins/marketplace.json`), its own first when there are
   both, and records `[marketplaces.<name>]` with `source_type = "local"` in

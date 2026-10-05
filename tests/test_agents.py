@@ -523,3 +523,13 @@ def test_stand_ins_answer_only_plugin_json_commands(standins: Standins) -> None:
         assert r.returncode == 2
         assert "stand-in" in r.stderr
     assert len(standins.calls("claude")) == 2
+
+
+def test_codex_commands_take_no_scope(paths: Paths, standins: Standins) -> None:
+    mkt = marketplace(paths, "x")
+    raw("codex", "marketplace", "add", str(mkt))
+    before = standins.state()
+    code, out, err = raw("codex", "add", "x@tack", "--scope", "user")
+    assert (code, out) == (2, None)
+    assert "doesn't know" in err
+    assert standins.state() == before

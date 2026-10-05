@@ -4,7 +4,7 @@
 - **Created:** 2026-10-05
 - **Ready:** 2026-10-05
 - **Completed:** —
-- **Decisions:** DEC-1 – DEC-10
+- **Decisions:** DEC-1 – DEC-12
 
 ## 1. Problem and outcome
 
@@ -113,6 +113,9 @@ skills and gain plugin cases (DEC-7).
 | design.md, *Implementation*; decisions.md (P0001-C01 execution) | Other `PATH` directories holding an agent are mirrored without it (DEC-9). | The brief's rule broke version-manager shims. |
 | design.md, *Plugin ownership*, *Deploying* step 1 (P0001-C01 review) | A foreign `tack` stops every step in that harness, registering included. | Registering would repoint the user's marketplace in Claude Code. |
 | design.md, *Selecting plugins*; decisions.md (P0001-C01 review) | A source selecting plugins must target `claude-code` or `codex` (DEC-10); which plugins a source selects, and what a missing catalog, a missing root and a broken catalog mean. | The rules P0001-C02's plan implements. |
+| design.md, *Selecting plugins*, *Plugin states*, *Adding and removing sources*, *`doctor` checks*; decisions.md (P0001-C02 review) | Plugin names collide across harnesses (DEC-11); a name a catalog lists twice is one plugin. | tack's one marketplace holds one copy per name; the per-harness rule was copied from skills (brief-checklist §2). |
+| design.md, *Deploying*, *Plugin ownership*; decisions.md (P0001-C02 review) | Which harnesses run a CLI and when a missing one is a problem; what "installed" means; step 4's candidates and when a copy is deleted; when the directory goes; change details and problem kinds; a foreign `tack` reported only where it matters; the record's `plugins` shape with each plugin's source; held sources, broken catalogs and failed copies keep their plugins (DEC-12). | The D2 note "to pin at the cut", and what P0001-C03's `sync` would otherwise invent. |
+| design.md, *Harness facts tack relies on* (P0001-C02 review) | No `codex plugin` command takes `--scope`. | Checked against codex-cli 0.157.1's `--help`; the stand-in enforces it. |
 
 ## 5. Delivery plan
 
@@ -171,9 +174,8 @@ moves into the manifest example under *The manifest*, and
 
 Notes from the P0001-C01 review: with no plugin selected, `sync` removes
 tack's marketplace (step 5) and must not call `plugins.update`, which would
-create it. To pin at the cut: what a held source (a failed fetch, a missing
-`path`) or one with a broken catalog does to its plugins' copies, installs
-and records. Skills hold a held source's links as they are.
+create it. What a held source or a broken catalog does to its plugins was
+pinned at the P0001-C02 review (DEC-12).
 
 **Depends on:** D1.
 
@@ -239,7 +241,7 @@ limited to the plugin, the `--json` shape, and a Codex reinstall after
 
 **Build:** `--plugin P…`, writing `plugins` and (without `--skill`)
 `skills = []`, and its refusals: a plugin the catalog lacks, one tack can't
-deploy, one another source deploys to the same harness, and a source with
+deploy, one another source already selects (DEC-11), and a source with
 neither skills nor `--plugin`, whose message lists the catalog's plugins
 (*Adding and removing sources*).
 
@@ -307,8 +309,9 @@ the diff between the two commits.
 
 | Chunk | Delivery items | State | Review | Integrated identity |
 |---|---|---|---|---|
-| [P0001-C01](../chunks/P0001-C01.md) | D1 (catalogs), D2 (tack's marketplace, the agents' CLIs, stand-ins): unwired groundwork | accepted with follow-ups (#29; C02-a) | 2026-10-05 | #28 |
-| [P0001-C02](../chunks/P0001-C02.md) | D1 (the `plugins` selection, unwired; the plan); C01 review follow-up | ready for an executor | — | — |
+| [P0001-C01](../chunks/P0001-C01.md) | D1 (catalogs), D2 (tack's marketplace, the agents' CLIs, stand-ins): unwired groundwork | accepted with follow-ups (#29; C02-a) | 2026-10-05 | #28, `4c3bcac` |
+| [P0001-C02](../chunks/P0001-C02.md) | D1 (the `plugins` selection, unwired; the plan); C01 review follow-up | accepted with follow-ups (DEC-11 as C03-a; #31) | 2026-10-05 | #30 |
+| [P0001-C03](../chunks/P0001-C03.md) | D2 (`sync`'s plugin steps and the record, not yet reachable); C02 review follow-up (DEC-11) | ready for an executor | — | — |
 
 ## 8. Closeout
 
