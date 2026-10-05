@@ -15,9 +15,10 @@ again succeeds; installing an installed plugin succeeds; installing a plugin
 the marketplace's catalog lacks fails; Claude Code's `uninstall` of a plugin
 that isn't installed fails, `codex plugin remove` always succeeds; Claude
 Code's `marketplace remove` uninstalls the marketplace's plugins, Codex's
-doesn't; removing an unregistered marketplace fails in both; and Codex's
+doesn't; removing an unregistered marketplace fails in both; Codex's
 `plugin list` hides a plugin whose marketplace isn't registered or whose
-catalog lacks it, where Claude Code's lists it.
+catalog lacks it, where Claude Code's lists it; and only Claude Code's
+commands take `--scope`.
 
 Outside pytest: `python tests/standin.py bin <dir>` writes the two
 executables into `<dir>`; set STANDIN_AGENTS_DIR and put `<dir>` first on
@@ -450,7 +451,9 @@ def main(argv: list[str]) -> int:
         print(f"stand-in {cli} only answers `plugin … --json`: {shlex.join(args)}", file=sys.stderr)
         return 2
     plain, scope = plain[1:], "user"
-    if "--scope" in plain:
+    # Only Claude Code's commands take `--scope`; Codex's take none, so a
+    # Codex command carrying it is one the stand-in doesn't know.
+    if cli == "claude" and "--scope" in plain:
         i = plain.index("--scope")
         scope = plain[i + 1]
         del plain[i : i + 2]
