@@ -154,3 +154,15 @@ agent to find. It is built once per test session, since a directory such as
 Homebrew's `bin` holds hundreds of programs.
 
 *Where:* design.md, *Implementation*; `tests/standin.py` (`isolate`).
+
+## DEC-10: A source that selects plugins must target a harness that takes them (2026-10)
+
+Added in the review of P0001-C01. A source that selects plugins (`plugins =
+"*"` or a non-empty list) whose `harnesses` name neither `claude-code` nor
+`codex` is a configuration error, as a plugin's own `harnesses` naming
+another harness already is (DEC-8). The alternative was to plan such
+plugins for no harness and say nothing: the manifest would ask for plugins
+that `sync` never installs and `status` never shows, with nothing to say
+why. `plugins = []` is fine anywhere.
+
+*Where:* design.md, *Plugins* (*Selecting plugins*).

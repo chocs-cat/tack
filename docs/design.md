@@ -496,12 +496,24 @@ plugins = ["skill-creator"]
 This table joins the manifest example above, and its test, once `sync`
 deploys plugins. A plugin goes to every harness its source
 targets that takes plugins — the built-in `claude-code` and `codex` (DEC-8) —
-and a plugin's `harnesses` may name only those. A listed plugin the catalog
+and a plugin's `harnesses` may name only those. A source that selects plugins
+(`"*"` or a non-empty list) but targets neither of them is a configuration
+error too (DEC-10). A listed plugin the catalog
 doesn't have is reported like a listed skill the source doesn't have
 (`not-synced`). Two sources selecting the same plugin name for the same
 harness is a manifest error: tack deploys neither, says which sources
 collide, and leaves that name's copy and installs as they are
 (`name-collision`).
+
+A source's catalog is read only when the source selects plugins, so a
+manifest without them reads none. A source *selects* each plugin its
+selection names that its catalog has, deployable or not, and a selected
+plugin counts toward a collision either way. A source with no catalog file
+selects nothing under `"*"`, and lacks every name it lists. A source whose
+root isn't there (a missing `path`, a git source a dry run hasn't cloned)
+and a source whose catalog is broken select nothing and lack nothing, as a
+source without its skills directory reports no missing skills; the broken
+catalog is reported.
 
 Many skill repositories ship a catalog whose one plugin is the whole
 repository (`"source": "./"`), holding the same skills the source offers.
@@ -547,7 +559,8 @@ its JSON, else the last line either agent wrote to stderr, without Codex's
 [Harness facts](#harness-facts-tack-relies-on)), then, for each harness that
 takes plugins:
 
-1. **Register** the marketplace, if a selected plugin targets the harness:
+1. **Register** the marketplace, if a selected plugin targets the harness
+   and it has no conflicting `tack` (see [Plugin ownership](#plugin-ownership)):
    `claude plugin marketplace add <dir> --scope user`, `codex plugin
    marketplace add <dir>`. Registering it again is a no-op for both.
 2. **Install** each selected plugin that isn't installed: `claude plugin
@@ -595,8 +608,11 @@ In a harness, a plugin is **tack's** when it was installed from a marketplace
 named `tack` whose directory is tack's marketplace. tack never installs,
 uninstalls, enables or disables any other plugin, and never touches another
 marketplace's registration. A marketplace named `tack` registered from
-anywhere else is a **conflict**: `sync` deploys no plugins to that harness,
-reports it, and exits `1`; removing or renaming that marketplace clears it.
+anywhere else is a **conflict**: `sync` runs none of the steps in
+[Deploying](#deploying) in that harness, not even registering (Claude Code
+would repoint the name at tack's directory; see
+[Harness facts](#harness-facts-tack-relies-on)), reports it, and exits `1`;
+removing or renaming that marketplace clears it.
 
 The ownership record, `state.json`, also lists the plugins tack installed in
 each harness, each with a hash of the files it was installed from, so `sync`

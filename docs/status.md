@@ -1,27 +1,30 @@
 # Status
 
 Last updated 2026-10-05 by `relay-next`.
-Last review: none yet.
+Last review: 2026-10-05 (P0001-C01).
 
 ## Where this stands
 
 - The relay workflow was set up on 2026-10-05. Design phases 1–10 are done.
 - Project [P0001](projects/P0001-plugins.md), plugins for Claude Code and
   Codex ([#22](https://github.com/chocs-cat/tack/issues/22)), is active:
-  its design is in design.md (marked *(P0001)*) and DEC-1 – DEC-8.
-- P0001-C01, in flight: catalogs, tack's marketplace and the agents' CLIs,
-  with stand-in CLIs for tests; groundwork for D1 and D2, not wired in.
-  Still to come in D1–D2: the `plugins` field and the plan, and `sync`
-  deploying them (the field is accepted only with `sync`).
-- **Do next:** `/relay-execute` to build P0001-C01.
+  its design is in design.md (marked *(P0001)*) and DEC-1 – DEC-10.
+- P0001-C01, accepted with follow-ups 2026-10-05 (#28): catalogs, tack's
+  marketplace and the agents' CLIs, with stand-in CLIs for tests; not wired
+  in.
+- P0001-C02, ready: the `plugins` field's parser (not wired in) and the
+  plan, and a stricter Codex stand-in.
+- Still to come in D1–D2: accepting `plugins` and `skills = []`, and `sync`
+  deploying plugins (the field is accepted only with `sync`).
+- **Do next:** `/relay-execute` to build P0001-C02.
 
 ## In flight
 
-- **Chunk:** P0001-C01
-- **State:** awaiting review
-- **Branch:** `chunk/p0001-c01`
-- **Pull request:** `#28` (ready)
-- **Units committed:** a, b, c
+- **Chunk:** P0001-C02
+- **State:** ready for an executor
+- **Branch:** —
+- **Pull request:** —
+- **Units committed:** —
 
 (Fixed shape. `State` ∈ `ready for an executor` · `executing` ·
 `awaiting review` · `none`; `Branch`, `Pull request`, and `Units committed` are
@@ -40,4 +43,6 @@ here.
 
 ## Decisions by chunk
 
-None yet. One line per chunk: the decision-log IDs it added.
+One line per chunk: the decision-log IDs it added.
+
+- P0001-C01: DEC-9; its review, DEC-10.

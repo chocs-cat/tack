@@ -4,7 +4,7 @@
 - **Created:** 2026-10-05
 - **Ready:** 2026-10-05
 - **Completed:** —
-- **Decisions:** DEC-1 – DEC-8
+- **Decisions:** DEC-1 – DEC-10
 
 ## 1. Problem and outcome
 
@@ -109,6 +109,10 @@ skills and gain plugin cases (DEC-7).
 | design.md, *Plugins* › *Plugin ownership*, *Plugin states* (P0001-C01 cut) | The plugin hash; Codex installs known from the record; `version` points at *Catalogs*. | Ownership and staleness rules. |
 | design.md, *Harness facts tack relies on* (P0001-C01 cut) | The agents' `--json` output and failure forms, stdin, Codex's `list` hiding orphaned plugins, Claude Code's `uninstall` without the entry. | Required for any new harness assumption; verified 2026-10-05 against Claude Code 2.1.289 and codex-cli 0.157.1. |
 | design.md, *Implementation* (P0001-C01 cut) | Stand-ins follow *Harness facts*; no real agent left on `PATH`. | The test rules. |
+| design.md, *Harness facts tack relies on* (P0001-C01 execution) | Claude Code's `marketplace add` repoints a same-named marketplace; Codex refuses one, and reads its own catalog first; installing from an unregistered marketplace fails in both. | Found by probing the real agents for the stand-ins. |
+| design.md, *Implementation*; decisions.md (P0001-C01 execution) | Other `PATH` directories holding an agent are mirrored without it (DEC-9). | The brief's rule broke version-manager shims. |
+| design.md, *Plugin ownership*, *Deploying* step 1 (P0001-C01 review) | A foreign `tack` stops every step in that harness, registering included. | Registering would repoint the user's marketplace in Claude Code. |
+| design.md, *Selecting plugins*; decisions.md (P0001-C01 review) | A source selecting plugins must target `claude-code` or `codex` (DEC-10); which plugins a source selects, and what a missing catalog, a missing root and a broken catalog mean. | The rules P0001-C02's plan implements. |
 
 ## 5. Delivery plan
 
@@ -126,9 +130,10 @@ or its chunk leaves the field rejected as an unknown key.
 
 **Build:** the `plugins` source field (`"*"`, names, `{ name, harnesses }`
 tables; a plugin's harnesses within the source's and among the built-in
-ones), `skills = []` needing no skills directory, and the
-`ignore_marketplaces` harness field with its built-in defaults (*Source
-fields*, *Harness fields*, *Selecting plugins*; DEC-3, DEC-8). `catalog.py`
+ones), and `skills = []` needing no skills directory (*Source fields*,
+*Selecting plugins*; DEC-3, DEC-8, DEC-10). `ignore_marketplaces` moved to
+D4 at the P0001-C01 review: `doctor` is its only reader, and accepting it
+sooner would accept a field that does nothing. `catalog.py`
 reads both catalog formats and classifies each entry: in the source (with its
 directory), in another repository (URL, optional path, commit), or not
 deployable (with the reason); and gives each plugin's version (*Catalogs*;
@@ -164,6 +169,12 @@ locations*; DEC-1, DEC-2, DEC-5, DEC-6). The stand-in CLIs in
 moves into the manifest example under *The manifest*, and
 `test_design_example_manifest_parses` asserts it.
 
+Notes from the P0001-C01 review: with no plugin selected, `sync` removes
+tack's marketplace (step 5) and must not call `plugins.update`, which would
+create it. To pin at the cut: what a held source (a failed fetch, a missing
+`path`) or one with a broken catalog does to its plugins' copies, installs
+and records. Skills hold a held source's links as they are.
+
 **Depends on:** D1.
 
 **Done when:** tests against the stand-ins show, per harness, the exact
@@ -196,8 +207,9 @@ through the agents' `list --json` commands, in the text output and `status
 ### D4 — `doctor` audits plugins
 
 **Build:** the plugin cases of `not-synced` and `name-collision`,
-`unmanaged-plugin`, `duplicate-plugin`, and `ignore_marketplaces`
-(*`doctor` checks*, *Harness fields*; DEC-7).
+`unmanaged-plugin`, `duplicate-plugin`, and the `ignore_marketplaces`
+harness field with its built-in defaults, which this item accepts in the
+manifest (*`doctor` checks*, *Harness fields*; DEC-7).
 
 **Depends on:** D3.
 
@@ -260,7 +272,9 @@ catalog's commit, `git-subdir`'s path, fetching a new commit after an
 `update`, refusing a clone with local changes, re-cloning a missing one,
 `remove` deleting a source's clones, `outdated --diff` between commits,
 `status` and the TUI detail naming repository and commit, and `add`
-accepting such plugins (*Plugins from other repositories*; DEC-4).
+accepting such plugins (*Plugins from other repositories*; DEC-4). The
+catalog fixes in [#29](https://github.com/chocs-cat/tack/issues/29) land
+here.
 
 **Depends on:** D2, D5, D6, D7.
 
@@ -293,7 +307,8 @@ the diff between the two commits.
 
 | Chunk | Delivery items | State | Review | Integrated identity |
 |---|---|---|---|---|
-| [P0001-C01](../chunks/P0001-C01.md) | D1 (catalogs), D2 (tack's marketplace, the agents' CLIs, stand-ins): unwired groundwork | ready for an executor | — | — |
+| [P0001-C01](../chunks/P0001-C01.md) | D1 (catalogs), D2 (tack's marketplace, the agents' CLIs, stand-ins): unwired groundwork | accepted with follow-ups (#29; C02-a) | 2026-10-05 | #28 |
+| [P0001-C02](../chunks/P0001-C02.md) | D1 (the `plugins` selection, unwired; the plan); C01 review follow-up | ready for an executor | — | — |
 
 ## 8. Closeout
 

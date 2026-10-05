@@ -22,4 +22,19 @@ stopped mattering is cheaper to skim than to re-derive after it bites again.
 
 ## The catalogue
 
-None yet.
+### §1 A test that holds because the test harness already provides the property
+
+A test asserts a property of how the code runs a process or touches the
+environment (stdin closed, a working directory, a variable unset, a program
+not on PATH), but the test runner or CI already gives the process that
+property, so the test passes with the code's own guarantee removed. Look for
+it wherever a test checks something the code *does to its environment*: make
+the environment hostile first (hold a pipe open on fd 0, start in another
+directory, set the variable, put the program on PATH), or the assertion
+checks pytest rather than tack. A mutation that deletes the guarantee is the
+quick proof.
+
+*Provenance:* P0001-C01-c. The tests that `agents.run` closes the agents'
+stdin passed with `stdin=subprocess.DEVNULL` removed, because fd 0 under
+pytest is already `/dev/null`; the executor's mutation check caught it, and
+`13c2ca4` made the tests hold a pipe open on fd 0.
