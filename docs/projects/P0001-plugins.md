@@ -104,6 +104,11 @@ skills and gain plugin cases (DEC-7).
 | design.md, *Implementation* | `catalog.py`, `plugins.py`, `agents.py`; stand-in CLIs in tests. | Layout and test rules. |
 | design.md, *Open questions* | MCP through plugins; plugins one agent can't fully load. | Where open questions live. |
 | decisions.md | DEC-1 – DEC-8. | Choices the spec left open. |
+| design.md, *Plugins* › *Catalogs* (P0001-C01 cut) | How both formats' paths, git sources and `sha` are read; broken catalogs, ignored and duplicate entries; directory existence checked at copy time; `version`'s three `plugin.json` locations. | The rules an executor would otherwise invent; the agents' docs, verified 2026-10-05. |
+| design.md, *Plugins* › *Deploying* (P0001-C01 cut) | `.git` at any depth, loops and missing directories fail a plugin; copies swapped in; tack's catalog's exact shape; CLIs run with stdin closed, in a temporary directory when the data directory is missing; what counts as a failure and the agent's message. | Where `sync`'s mechanics live. |
+| design.md, *Plugins* › *Plugin ownership*, *Plugin states* (P0001-C01 cut) | The plugin hash; Codex installs known from the record; `version` points at *Catalogs*. | Ownership and staleness rules. |
+| design.md, *Harness facts tack relies on* (P0001-C01 cut) | The agents' `--json` output and failure forms, stdin, Codex's `list` hiding orphaned plugins, Claude Code's `uninstall` without the entry. | Required for any new harness assumption; verified 2026-10-05 against Claude Code 2.1.289 and codex-cli 0.157.1. |
+| design.md, *Implementation* (P0001-C01 cut) | Stand-ins follow *Harness facts*; no real agent left on `PATH`. | The test rules. |
 
 ## 5. Delivery plan
 
@@ -288,7 +293,7 @@ the diff between the two commits.
 
 | Chunk | Delivery items | State | Review | Integrated identity |
 |---|---|---|---|---|
-| — | — | — | — | — |
+| [P0001-C01](../chunks/P0001-C01.md) | D1 (catalogs), D2 (tack's marketplace, the agents' CLIs, stand-ins): unwired groundwork | ready for an executor | — | — |
 
 ## 8. Closeout
 

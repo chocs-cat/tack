@@ -1,6 +1,6 @@
 # Status
 
-Last updated 2026-10-05 by `relay-project`.
+Last updated 2026-10-05 by `relay-next`.
 Last review: none yet.
 
 ## Where this stands
@@ -8,14 +8,17 @@ Last review: none yet.
 - The relay workflow was set up on 2026-10-05. Design phases 1–10 are done.
 - Project [P0001](projects/P0001-plugins.md), plugins for Claude Code and
   Codex ([#22](https://github.com/chocs-cat/tack/issues/22)), is active:
-  its design is in design.md (marked *(P0001)*) and DEC-1 – DEC-8. No chunk
-  is in flight.
-- **Do next:** `/relay-next` to cut P0001's first chunk, from D1 and D2.
+  its design is in design.md (marked *(P0001)*) and DEC-1 – DEC-8.
+- P0001-C01, in flight: catalogs, tack's marketplace and the agents' CLIs,
+  with stand-in CLIs for tests; groundwork for D1 and D2, not wired in.
+  Still to come in D1–D2: the `plugins` field and the plan, and `sync`
+  deploying them (the field is accepted only with `sync`).
+- **Do next:** `/relay-execute` to build P0001-C01.
 
 ## In flight
 
-- **Chunk:** —
-- **State:** none
+- **Chunk:** P0001-C01
+- **State:** ready for an executor
 - **Branch:** —
 - **Pull request:** —
 - **Units committed:** —

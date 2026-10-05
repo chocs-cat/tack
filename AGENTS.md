@@ -114,7 +114,9 @@ said it, and cite the entry at the code site.
 - **Brief checklist:** `docs/brief-checklist.md`
 - **Projects:** `docs/projects/` (`index.md`, `template.md`, one
   `P####-slug.md` per project)
-- **Tools:** `tools/`, review aids run by hand, outside the gate and the build
+- **Tools:** `tools/`, review aids run by hand, outside the gate and the build:
+  `agent_facts.py` checks design.md's plugin *Harness facts* against the real
+  `claude` and `codex` in a scratch `HOME`.
 - **Review extras:**
   - No test reaches the real home directory: everything builds under the
     temporary directory and scratch `HOME` of `tests/conftest.py`.
