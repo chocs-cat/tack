@@ -441,6 +441,38 @@ plugins. Each entry of the catalog's `plugins` array is a plugin, named by its
 - **Anything else** — a git source pinned only to a `ref`, `npm`, `archive`,
   `command` — can't be pinned by tack, so it can't be deployed.
 
+The two formats differ only in where the file is and in Codex's `local`
+source, so tack reads both the same way, following the agents' own rules:
+
+- A path is `"."`, `"./"`, a path starting with `./`, or a *bare name* (one
+  path component with no `/`) that resolves under `metadata.pluginRoot`,
+  itself a relative path inside the source (`"./plugins"` or `"plugins"`). A
+  bare name with no usable `pluginRoot`, any other string, and any path with
+  a `..` component can't be deployed. A `local` source's `path` follows the
+  same rules.
+- `github` takes `repo` as `owner/repo`, meaning
+  `https://github.com/<owner>/<repo>.git`; `url` takes a full git URL;
+  `git-subdir` takes `url` as either, and `path`, the plugin's directory
+  inside that repository (a leading `./` allowed, no `..`). Each is deployable
+  only with `sha`, 40 lowercase hexadecimal digits; a `ref` beside it is
+  ignored.
+- A source object of another type, or missing a field its type needs, can't
+  be deployed, and the reason names what is wrong.
+- A catalog file that isn't a JSON object with a `plugins` array is broken:
+  its source offers no plugins, and a source that selects plugins reports it.
+  The `.agents/plugins/` catalog isn't read in place of a broken
+  `.claude-plugin/` one. An entry that isn't an object, or whose `name` isn't
+  a valid name (as for skills), is ignored; a name listed twice can't be
+  deployed.
+
+Whether a plugin's directory exists is found when tack copies it, not when it
+reads the catalog, so the same reading serves a catalog taken from git at
+any commit (`outdated`). A plugin's **version** is the first string `version`
+in its `.claude-plugin/plugin.json`, `plugin.json` or `.codex-plugin/plugin.json`
+(Codex reads a root `plugin.json`, and `.codex-plugin/` as a fallback), else
+its entry's `version`, else none: both agents prefer `plugin.json` to the
+entry.
+
 A selected plugin that can't be deployed is reported: `sync` deploys the
 source's other plugins and exits `1`, and `add` refuses it. Both agents
 install plugins only from marketplaces, so a plugin published for either one
@@ -484,21 +516,36 @@ tack keeps one marketplace of its own, named `tack`, in
 
 - `plugins/<name>/` holds a copy of each selected plugin, taken from the
   source's checkout at its pin, or from a `path` source as it is: everything
-  but `.git`, with each symlink copied as the file or directory it points to
-  (DEC-2). A symlink that points nowhere fails that plugin.
-- `.claude-plugin/marketplace.json` is tack's catalog, with `owner` `tack`.
-  Each entry is the plugin's upstream catalog entry with its `source`
+  but `.git` (at any depth), with each symlink copied as the file or
+  directory it points to (DEC-2). A symlink that points nowhere, or to a
+  directory that contains it (a loop), fails that plugin, as does a plugin
+  directory that isn't there. A copy is refreshed only when its files differ
+  from the plugin's (by the hash in [Plugin ownership](#plugin-ownership));
+  it is built beside the old one and swapped in, so an agent starting a
+  session meanwhile never reads half a copy. A plugin that fails keeps the
+  copy it had, if any.
+- `.claude-plugin/marketplace.json` is tack's catalog: `name` `tack`,
+  `owner` `{"name": "tack"}`, and an entry for each plugin with a copy, by
+  name. Each entry is the plugin's upstream catalog entry with its `source`
   replaced by `"./plugins/<name>"` and `headers` and `headersHelper` dropped
   (they apply only to sources tack doesn't deploy). So the agents show the
   upstream description, author, homepage, version and category, and a plugin
   whose entry declares its components (it has no `plugin.json`) still loads.
+  tack writes the file only when its content changes. Codex reads this
+  catalog too, so there is no `.agents/plugins/` one.
 
 Only tack writes this directory. `sync` brings it up to date, then makes each
 harness match it by running that agent's own CLI, never by editing the
 agent's files (principle 5): `claude plugin …` and `codex plugin …`, found on
-`PATH`, with `--json`, run in tack's data directory so that no project's
-plugin settings apply. It reads what each agent has from `plugin list` and
-`plugin marketplace list`, then, for each harness that takes plugins:
+`PATH`, with `--json` and stdin closed, run in tack's data directory (or, if
+that doesn't exist yet, an empty temporary one) so that no project's plugin
+settings apply. A command fails when it exits non-zero or its output isn't
+the JSON it should be; the agent's message is Claude Code's `message` from
+its JSON, else the last line either agent wrote to stderr, without Codex's
+`Error: ` prefix. It reads what each agent has from `plugin list` and
+`plugin marketplace list` (their output is described in
+[Harness facts](#harness-facts-tack-relies-on)), then, for each harness that
+takes plugins:
 
 1. **Register** the marketplace, if a selected plugin targets the harness:
    `claude plugin marketplace add <dir> --scope user`, `codex plugin
@@ -553,7 +600,16 @@ reports it, and exits `1`; removing or renaming that marketplace clears it.
 
 The ownership record, `state.json`, also lists the plugins tack installed in
 each harness, each with a hash of the files it was installed from, so `sync`
-knows when Codex's copy is stale (DEC-6).
+knows when Codex's copy is stale (DEC-6). The record is also how tack knows
+which Codex plugins it installed: Codex's `plugin list` leaves out a plugin
+whose marketplace entry is gone, though it is still installed.
+
+A plugin's **hash** is a SHA-256 over its directory's files, in order of
+their paths relative to it: each file's path, whether it is executable, and
+its contents. Symlinks count as what they point to, `.git` is left out, and
+directories count only through their files. So a plugin's directory and
+tack's copy of it hash the same, and comparing the two says whether the copy
+is stale.
 
 ### Plugin states
 
@@ -572,7 +628,7 @@ harness it targets:
 
 `status --json` adds `plugins`, one object per selected plugin: `name`,
 `source`, `harnesses` (harness → state, for the harnesses it targets),
-`version` (its `plugin.json` `version`, else its entry's, else null) and
+`version` (as [Catalogs](#catalogs) says, or null) and
 `path` (its copy in tack's marketplace). Each source's object gains `plugins`,
 the names it selects, beside `skills`.
 
@@ -1012,6 +1068,40 @@ codex-cli 0.157.1, in a scratch `HOME`, and their documentation:
   Claude Code's `plugin validate` says it dereferences only symlinks that stay
   inside the marketplace; tack doesn't rely on it (DEC-2).
 
+*(P0001)* Their output, verified 2026-10-05 against the same versions, in a
+scratch `HOME`:
+
+- **stdin.** Run with stdin an open pipe, `claude` waits three seconds for
+  input and warns before it carries on; with stdin closed it doesn't.
+- **`claude plugin list --json`** prints an array, one object per installed
+  plugin: `id` (`<name>@<marketplace>`), `scope` (`user`, `project`, `local`,
+  or `synced` for claude.ai's), `enabled`, `version`, `installPath`, and for a
+  plugin loaded in place `readFromFolder`. A plugin stays listed after its
+  marketplace entry and directory are gone, and `uninstall` still removes it.
+- **`claude plugin marketplace list --json`** prints an array of `name`,
+  `source` (`directory`, `github`, `git`, …), `installLocation`, and for a
+  `directory` marketplace `path`.
+- **Claude Code's commands** (`marketplace add`, `install`, `uninstall`,
+  `marketplace remove`) print one JSON object with `outcome` `ok` or `failed`,
+  a `message`, and on failure a `failureCode`; a failure exits `1` and also
+  writes `✘ …` to stderr. `marketplace remove` of a marketplace that isn't
+  registered fails (`not_configured`), as `install` of a plugin the
+  marketplace lacks does (`not_found`).
+- **`codex plugin list --json`** prints `{"installed": […], "available": […]}`;
+  each installed plugin has `pluginId`, `name`, `marketplaceName`, `version`,
+  `installed` and `enabled`. It lists only plugins of registered marketplaces
+  whose catalog still has them: one left installed after its entry or its
+  marketplace was removed is missing from the list (though still in
+  `config.toml`), and `remove` still uninstalls it.
+- **`codex plugin marketplace list --json`** prints `{"marketplaces": […]}`,
+  each with `name`, `root`, and `marketplaceSource` (`sourceType` `local` or
+  `git`, and `source`, a path or URL).
+- **Codex's commands** print a JSON object on success (`marketplace add`:
+  `marketplaceName`, `installedRoot`, `alreadyAdded`; `add`: `pluginId`,
+  `version`, `installedPath`). A failure exits `1`, prints nothing on stdout,
+  and writes `Error: <message>` to stderr, as `add` of a plugin the
+  marketplace lacks and `marketplace remove` of one that isn't registered do.
+
 ## Implementation
 
 - Python ≥ 3.11 (`tomllib`), packaged with uv and hatchling, like corral.
@@ -1039,7 +1129,10 @@ codex-cli 0.157.1, in a scratch `HOME`, and their documentation:
   directory. The TUI is driven through Textual's test pilot. *(P0001)* No
   test runs a real agent: the suite puts stand-in `claude` and `codex`
   executables first on `PATH`, which answer from files in the temporary
-  directory and record how they were called.
+  directory, behave as [Harness facts](#harness-facts-tack-relies-on)
+  describes, and record how they were called. Every other `PATH` directory
+  holding a `claude` or `codex` is left out, so even a test that takes a
+  stand-in away can't reach a real agent.
 
 ## Phases
 
