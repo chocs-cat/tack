@@ -166,3 +166,36 @@ that `sync` never installs and `status` never shows, with nothing to say
 why. `plugins = []` is fine anywhere.
 
 *Where:* design.md, *Plugins* (*Selecting plugins*).
+
+## DEC-11: Plugin names collide across harnesses (2026-10)
+
+Added in the review of P0001-C02. Two sources selecting the same plugin name
+collide whatever harnesses each targets: tack deploys neither in any
+harness, and the collision is reported for every harness either targets.
+Skills collide per harness because each harness has a skills directory of
+its own, so two sources can fill the same name in two of them. Plugins have
+one directory for every harness, tack's marketplace (DEC-1), which holds one
+`plugins/<name>/` and one catalog entry per name, and both agents install
+`<name>@tack` from it, so one source's `x` for Claude Code and another's
+for Codex can't both be there. The alternative, letting one of them win in
+both harnesses, would install a plugin into a harness the manifest didn't
+ask for, with no rule to say which.
+
+*Where:* design.md, *Plugins* (*Selecting plugins*, *Plugin states*),
+*Adding and removing sources*, *`doctor` checks*.
+
+## DEC-12: A held source's plugins are left as they are (2026-10)
+
+Added in the review of P0001-C02. A source `sync` holds (a missing `path`, a
+failed fetch, a refused checkout), and a source whose catalog is broken,
+keep their plugins exactly as they are: `sync` copies, installs, reinstalls
+and uninstalls none of the plugins the record says came from them, and
+keeps their copies and their entries in tack's catalog. A plugin whose copy
+fails is kept the same way. This is what a held source's skills get, their
+links left alone. The plan selects nothing for such a source, so the
+alternative, treating its plugins as deselected, would uninstall them over
+an unreachable remote or a typo in an upstream catalog, and install them
+again once it is fixed. The record names each plugin's source, which is how
+`sync` tells which installed plugins a held source keeps.
+
+*Where:* design.md, *Plugins* (*Deploying*, *Plugin ownership*).
