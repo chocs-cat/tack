@@ -155,7 +155,9 @@ actions and `agent` problems; ownership and the foreign-`tack` conflict; the
 agent CLI run without plugins; `--dry-run` listing commands; `remove`
 uninstalling through `sync` (*Deploying*, *Plugin ownership*, *Files and
 locations*; DEC-1, DEC-2, DEC-5, DEC-6). The stand-in CLIs in
-`tests/conftest.py`.
+`tests/conftest.py`. The plugin-only source example in *Selecting plugins*
+moves into the manifest example under *The manifest*, and
+`test_design_example_manifest_parses` asserts it.
 
 **Depends on:** D1.
 

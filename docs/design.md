@@ -175,13 +175,6 @@ name = "corral"
 git = "https://github.com/chocs-cat/corral.git"
 ref = "master"
 skills = ["corral"]
-
-# P0001: a source that supplies only plugins, from its catalog.
-[[source]]
-name = "claude-plugins-official"
-git = "https://github.com/anthropics/claude-plugins-official.git"
-skills = []
-plugins = ["skill-creator"]
 ```
 
 ### Projects fields
@@ -458,7 +451,18 @@ plugin source.
 
 `plugins` in a `[[source]]` table selects plugins as `skills` selects skills:
 `"*"`, or a list of names and `{ name = "…", harnesses = [...] }` tables. It
-defaults to `[]`, none (DEC-3). A plugin goes to every harness its source
+defaults to `[]`, none (DEC-3). A source can supply only plugins:
+
+```toml
+[[source]]
+name = "claude-plugins-official"
+git = "https://github.com/anthropics/claude-plugins-official.git"
+skills = []
+plugins = ["skill-creator"]
+```
+
+This table joins the manifest example above, and its test, once `sync`
+deploys plugins. A plugin goes to every harness its source
 targets that takes plugins — the built-in `claude-code` and `codex` (DEC-8) —
 and a plugin's `harnesses` may name only those. A listed plugin the catalog
 doesn't have is reported like a listed skill the source doesn't have
