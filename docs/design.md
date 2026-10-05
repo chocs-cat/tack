@@ -1033,7 +1033,11 @@ codex-cli 0.157.1, in a scratch `HOME`, and their documentation:
   `update`), each taking `--json`. `marketplace add <dir>` registers a
   `directory` marketplace in `extraKnownMarketplaces` of
   `~/.claude/settings.json` and in `~/.claude/plugins/known_marketplaces.json`;
-  adding it again succeeds and changes nothing. `install <p>@<m> --scope user`
+  adding it again succeeds and changes nothing. Adding a directory whose
+  catalog has the name of a marketplace registered from elsewhere also
+  succeeds, and points that name at the new directory, so registering tack's
+  marketplace over a foreign `tack` would take it over; tack doesn't (see
+  [Plugin ownership](#plugin-ownership)). `install <p>@<m> --scope user`
   sets `enabledPlugins` in `settings.json` and records the install in
   `~/.claude/plugins/installed_plugins.json`; installing an installed plugin
   succeeds and changes nothing. `uninstall` of a plugin that isn't installed
@@ -1052,9 +1056,10 @@ codex-cli 0.157.1, in a scratch `HOME`, and their documentation:
   add|list|upgrade|remove`, `add`, `remove`, `list`), each taking `--json`;
   there is no command to enable or disable a plugin. `marketplace add <dir>`
   reads a Claude Code catalog (`.claude-plugin/marketplace.json`) as well as
-  its own (`.agents/plugins/marketplace.json`), and records
-  `[marketplaces.<name>]` with `source_type = "local"` in
-  `~/.codex/config.toml`; adding it again reports `alreadyAdded`.
+  its own (`.agents/plugins/marketplace.json`), its own first when there are
+  both, and records `[marketplaces.<name>]` with `source_type = "local"` in
+  `~/.codex/config.toml`; adding it again reports `alreadyAdded`, and adding
+  another directory under a registered name fails.
   `add <p>@<m>` copies the plugin into
   `~/.codex/plugins/cache/<m>/<p>/local/`, records `[plugins."<p>@<m>"]
   enabled = true`, and turns a Claude Code plugin's `commands/` into skills;
@@ -1086,7 +1091,8 @@ scratch `HOME`:
   a `message`, and on failure a `failureCode`; a failure exits `1` and also
   writes `✘ …` to stderr. `marketplace remove` of a marketplace that isn't
   registered fails (`not_configured`), as `install` of a plugin the
-  marketplace lacks does (`not_found`).
+  marketplace lacks, or from a marketplace that isn't registered, does
+  (`not_found`).
 - **`codex plugin list --json`** prints `{"installed": […], "available": […]}`;
   each installed plugin has `pluginId`, `name`, `marketplaceName`, `version`,
   `installed` and `enabled`. It lists only plugins of registered marketplaces
@@ -1100,7 +1106,8 @@ scratch `HOME`:
   `marketplaceName`, `installedRoot`, `alreadyAdded`; `add`: `pluginId`,
   `version`, `installedPath`). A failure exits `1`, prints nothing on stdout,
   and writes `Error: <message>` to stderr, as `add` of a plugin the
-  marketplace lacks and `marketplace remove` of one that isn't registered do.
+  marketplace lacks (or from a marketplace that isn't registered) and
+  `marketplace remove` of one that isn't registered do.
 
 ## Implementation
 
@@ -1131,8 +1138,9 @@ scratch `HOME`:
   executables first on `PATH`, which answer from files in the temporary
   directory, behave as [Harness facts](#harness-facts-tack-relies-on)
   describes, and record how they were called. Every other `PATH` directory
-  holding a `claude` or `codex` is left out, so even a test that takes a
-  stand-in away can't reach a real agent.
+  holding a `claude` or `codex` is replaced by a mirror of its other
+  programs (DEC-9), so even a test that takes a stand-in away can't reach a
+  real agent.
 
 ## Phases
 

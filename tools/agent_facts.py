@@ -8,7 +8,9 @@ uninstall, unregister, the failures in between) and checks each command's exit
 code and the JSON fields tack reads: list shapes, `enabled`, `scope`, the
 failure forms (Claude Code's JSON `message` and `failureCode`, Codex's
 `Error:` line), Claude Code's `marketplace remove` uninstalling and Codex's
-not, and Codex's `plugin list` hiding a plugin whose catalog entry is gone.
+not, Codex's `plugin list` hiding a plugin whose catalog entry is gone, a
+second directory under a registered name (Claude Code repoints the name,
+Codex refuses), and Codex reading its own catalog before Claude Code's.
 
 What it does not verify: anything about loading a plugin in a session, the
 plugin caches' layout, project scope, git marketplaces, or fields tack doesn't
@@ -17,12 +19,14 @@ stdin wait either (that takes a pipe held open); every command here runs with
 stdin closed, as tack runs them.
 
 How to run: `uv run python tools/agent_facts.py`, or with `--claude PATH`
-and `--codex PATH` to check other executables. Pointed at the test suite's
-stand-ins it fails the checks that read Codex's `config.toml`, which a
-stand-in doesn't write: teach it the stand-in's state file before relying on
-it there. It never touches the real HOME: it sets HOME to a temporary
-directory and removes it afterwards. Exit 0 when every fact holds, 1 when one
-doesn't, 2 when a CLI is missing.
+and `--codex PATH` to check other executables. To check the test suite's
+stand-ins, write them with `python tests/standin.py bin <dir>` and set
+STANDIN_AGENTS_DIR to an empty directory for their state; they fail only the
+checks that read Codex's `config.toml`, which a stand-in doesn't write (its
+state file says the same, and `tests/test_agents.py` checks it there). It
+never touches the real HOME: it sets HOME to a temporary directory and
+removes it afterwards. Exit 0 when every fact holds, 1 when one doesn't, 2
+when a CLI is missing.
 
 Why it isn't in the gate: it runs the real agents, which CI doesn't have and
 no test may start, and their behavior changes with their releases. Run it
@@ -145,6 +149,15 @@ def claude_facts(a: Agent, mkt: Path) -> None:
                 "installLocation": is_str,
             },
         )
+    # Another directory whose catalog is named `tack` takes the name over.
+    other = mkt.parent / "other"
+    marketplace(other, ["foo"])
+    out = a.json("add another tack", "marketplace", "add", str(other), "--scope", "user")
+    has("add another tack: outcome ok", out, {"outcome": lambda v: v == "ok"})
+    listed = a.json("marketplace list", "marketplace", "list")
+    paths = [Path(m.get("path", "")).resolve() for m in listed or [] if isinstance(m, dict)]
+    check("tack now points at the other directory", paths == [other.resolve()], listed)
+    a.json("marketplace add ours back", "marketplace", "add", str(mkt), "--scope", "user")
     for n in ("foo", "bar", "foo"):
         out = a.json(f"install {n}", "install", f"{n}@tack", "--scope", "user")
         has(f"install {n}: outcome ok", out, {"outcome": lambda v: v == "ok"})
@@ -186,6 +199,14 @@ def claude_facts(a: Agent, mkt: Path) -> None:
         {"failureCode": lambda v: v == "not_configured"})  # fmt: skip
 
 
+def codex_config(a: Agent) -> str:
+    """Codex's config.toml; empty when there is none, as with the stand-in."""
+    try:
+        return (a.home / ".codex" / "config.toml").read_text()
+    except FileNotFoundError:
+        return ""
+
+
 def codex_facts(a: Agent, mkt: Path) -> None:
     print("# codex")
     has("marketplace list is empty at first", a.json("marketplace list", "marketplace", "list"),
@@ -212,6 +233,18 @@ def codex_facts(a: Agent, mkt: Path) -> None:
                 ),
             },
         )
+    other = mkt.parent / "other"
+    marketplace(other, ["foo"])
+    a.fails_with_error_line("marketplace add another tack", "marketplace", "add", str(other))
+    # With both catalogs, Codex reads its own.
+    both = mkt.parent / "both"
+    for rel, name in ((".claude-plugin", "claude-format"), (".agents/plugins", "codex-format")):
+        (both / rel).mkdir(parents=True)
+        (both / rel / "marketplace.json").write_text(json.dumps({"name": name, "plugins": []}))
+    out = a.json("marketplace add with both catalogs", "marketplace", "add", str(both))
+    has("marketplace add with both catalogs: its own", out,
+        {"marketplaceName": lambda v: v == "codex-format"})  # fmt: skip
+    a.json("marketplace remove it", "marketplace", "remove", "codex-format")
     for n in ("foo", "bar", "foo"):
         out = a.json(f"add {n}", "add", f"{n}@tack")
         has(f"add {n}", out, {"pluginId": lambda v, n=n: v == f"{n}@tack", "version": is_str,
@@ -231,18 +264,18 @@ def codex_facts(a: Agent, mkt: Path) -> None:
     listed = a.json("list after bar's entry is gone", "list")
     ids = {p.get("pluginId") for p in (listed or {}).get("installed", [])}
     check("list hides bar@tack once its entry is gone", ids == {"foo@tack"}, ids)
-    config = (a.home / ".codex" / "config.toml").read_text()
+    config = codex_config(a)
     check("config.toml still has bar@tack", '[plugins."bar@tack"]' in config, config)
     for label, pid in (
         ("remove bar without its entry", "bar@tack"),
         ("remove a missing", "x@tack"),
     ):
         has(label, a.json(label, "remove", pid), {"pluginId": lambda v, p=pid: v == p})
-    config = (a.home / ".codex" / "config.toml").read_text()
+    config = codex_config(a)
     check("remove took bar@tack out of config.toml", "bar@tack" not in config, config)
     has("marketplace remove", a.json("marketplace remove", "marketplace", "remove", "tack"),
         {"marketplaceName": lambda v: v == "tack"})  # fmt: skip
-    config = (a.home / ".codex" / "config.toml").read_text()
+    config = codex_config(a)
     check("marketplace remove left foo@tack installed", '[plugins."foo@tack"]' in config, config)
     listed = a.json("list after marketplace remove", "list")
     check("list hides foo@tack once its marketplace is gone",

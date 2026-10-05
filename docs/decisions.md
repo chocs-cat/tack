@@ -138,3 +138,19 @@ plugins. A plugin's `harnesses` naming any other harness is a configuration
 error.
 
 *Where:* design.md, *Harness fields*, *Plugins* (*Selecting plugins*).
+
+## DEC-9: Tests hide the real agents by mirroring their PATH directories (2026-10)
+
+Added during P0001-C01-c. The test suite's PATH has each directory holding a
+real `claude` or `codex` replaced by a mirror of it: a directory of links to
+everything in it but the agents, in the same place on PATH. The brief had
+those directories dropped, with `git` linked back if that took it away. On a
+machine with the agents installed by Homebrew, that drops every other program
+in Homebrew's `bin`, and a version manager's shim that looks further down
+PATH for the real program (asdf's `uv`, which the formula test runs) then
+fails. Linking back only what PATH finds first misses those lookups too.
+The mirror keeps every other program where it was and still leaves no real
+agent to find. It is built once per test session, since a directory such as
+Homebrew's `bin` holds hundreds of programs.
+
+*Where:* design.md, *Implementation*; `tests/standin.py` (`isolate`).
