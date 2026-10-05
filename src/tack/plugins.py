@@ -1,6 +1,7 @@
-"""tack's marketplace: the one marketplace tack registers with each agent (DEC-1).
+"""Which plugins the manifest selects (`plan`), and tack's marketplace: the
+one marketplace tack registers with each agent (DEC-1).
 
-It lives in `<data>/marketplace`, and only tack writes it:
+The marketplace lives in `<data>/marketplace`, and only tack writes it:
 
 - `plugins/<name>/` is a copy of each selected plugin: everything but `.git`
   (at any depth), with each symlink copied as the file or directory it points
@@ -24,13 +25,14 @@ import os
 import shutil
 import stat
 import tempfile
+from collections import defaultdict
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
-from tack import config
-from tack.config import Paths
+from tack import catalog, config, sources
+from tack.config import Config, Paths, Source
 from tack.text import tilde
 
 NAME = "tack"
@@ -282,3 +284,126 @@ def _remove(path: Path) -> None:
 def _os_message(e: OSError) -> str:
     where = f"{tilde(e.filename)}: " if e.filename else ""
     return f"{where}{e.strerror or e}"
+
+
+# --- the plan ------------------------------------------------------------------------
+
+# What a source that selects plugins has for a catalog (design.md *Selecting
+# plugins*):
+#   found       its plugins can be selected
+#   no-catalog  no catalog file: it selects nothing, and lacks every name it lists
+#   no-root     its root isn't there (a missing `path`, a git source not cloned
+#               yet): it selects and lacks nothing
+#   broken      the catalog can't be read: it selects and lacks nothing
+CatalogState = Literal["found", "no-catalog", "no-root", "broken"]
+
+
+@dataclass(frozen=True)
+class Selected:
+    """One plugin a source selects, and the harnesses it targets."""
+
+    source: Source
+    plugin: catalog.Plugin
+    harnesses: tuple[str, ...]  # only harnesses that take plugins (DEC-8)
+    # An `InSource` plugin's files; None for any other (D8 gives an
+    # `InRepository` plugin its clone).
+    directory: Path | None
+
+    @property
+    def name(self) -> str:
+        return self.plugin.name
+
+    @property
+    def deployable(self) -> bool:
+        return not isinstance(self.plugin.where, catalog.Undeployable)
+
+
+@dataclass
+class SourceState:
+    """A source that selects plugins, and what its catalog gives it."""
+
+    source: Source
+    root: Path
+    catalog_state: CatalogState
+    error: str | None  # a broken catalog's CatalogError message
+    # One per name: under "*" in catalog order, else in the manifest's. A name
+    # the catalog lists twice is its first entry, undeployable as every one is.
+    selected: list[Selected]
+    missing: list[str]  # listed in the manifest but not in the catalog
+    ignored: tuple[catalog.Ignored, ...]  # catalog entries that name no plugin
+
+
+@dataclass
+class Plan:
+    sources: list[SourceState]  # the sources that select plugins
+    # harness -> plugin -> the one deployable plugin it gets, for each harness
+    # that takes plugins; collided names and undeployable plugins left out
+    plugins: dict[str, dict[str, Selected]]
+    # plugin -> (harnesses, sources) where two or more sources select it,
+    # deployable or not
+    collisions: dict[str, tuple[list[str], list[str]]] = field(default_factory=dict)
+
+
+def plan(cfg: Config) -> Plan:
+    """Which plugin each harness gets from which source (design.md *Selecting
+    plugins*). It reads the catalogs of the sources that select plugins and
+    nothing else: it copies nothing, runs no agent and writes nothing."""
+    states = [_source_state(src, cfg) for src in cfg.sources if src.plugins != ()]
+
+    by_harness: dict[str, dict[str, list[Selected]]] = defaultdict(lambda: defaultdict(list))
+    for state in states:
+        for sel in state.selected:
+            for h in sel.harnesses:
+                by_harness[h][sel.name].append(sel)
+
+    wanted: dict[str, dict[str, Selected]] = {h: {} for h in config.PLUGIN_HARNESSES}
+    collisions: dict[str, tuple[list[str], list[str]]] = {}
+    for h in config.PLUGIN_HARNESSES:
+        for name, sels in by_harness[h].items():
+            if len(sels) == 1:  # a source selects each name once
+                if sels[0].deployable:
+                    wanted[h][name] = sels[0]
+                continue
+            hs, srcs = collisions.setdefault(name, ([], []))
+            hs.append(h)
+            srcs.extend(s.source.name for s in sels if s.source.name not in srcs)
+    return Plan(states, wanted, collisions)
+
+
+def _source_state(src: Source, cfg: Config) -> SourceState:
+    root = sources.root(src, cfg.paths)
+    if not root.is_dir():
+        return SourceState(src, root, "no-root", None, [], [], ())
+    try:
+        found = catalog.read(root)
+    except catalog.CatalogError as e:
+        return SourceState(src, root, "broken", str(e), [], [], ())
+    listed = src.plugins or ()  # None ("*") lists no names
+    if found is None:
+        return SourceState(src, root, "no-catalog", None, [], [s.name for s in listed], ())
+
+    first: dict[str, catalog.Plugin] = {}
+    for p in found.plugins:
+        first.setdefault(p.name, p)
+    default = src.harnesses or tuple(cfg.harnesses)
+    if src.plugins is None:
+        chosen = [(p, default) for p in first.values()]
+    else:
+        chosen = [(first[s.name], s.harnesses or default) for s in listed if s.name in first]
+    selected = [
+        Selected(
+            src,
+            p,
+            tuple(h for h in hs if h in config.PLUGIN_HARNESSES),  # DEC-8
+            _directory(root, p.where),
+        )
+        for p, hs in chosen
+    ]
+    missing = [s.name for s in listed if s.name not in first]
+    return SourceState(src, root, "found", None, selected, missing, found.ignored)
+
+
+def _directory(root: Path, where: catalog.Where) -> Path | None:
+    if not isinstance(where, catalog.InSource):
+        return None
+    return root if where.path == "." else root / where.path
