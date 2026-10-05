@@ -496,12 +496,24 @@ plugins = ["skill-creator"]
 This table joins the manifest example above, and its test, once `sync`
 deploys plugins. A plugin goes to every harness its source
 targets that takes plugins — the built-in `claude-code` and `codex` (DEC-8) —
-and a plugin's `harnesses` may name only those. A listed plugin the catalog
+and a plugin's `harnesses` may name only those. A source that selects plugins
+(`"*"` or a non-empty list) but targets neither of them is a configuration
+error too (DEC-10). A listed plugin the catalog
 doesn't have is reported like a listed skill the source doesn't have
 (`not-synced`). Two sources selecting the same plugin name for the same
 harness is a manifest error: tack deploys neither, says which sources
 collide, and leaves that name's copy and installs as they are
 (`name-collision`).
+
+A source's catalog is read only when the source selects plugins, so a
+manifest without them reads none. A source *selects* each plugin its
+selection names that its catalog has, deployable or not, and a selected
+plugin counts toward a collision either way. A source with no catalog file
+selects nothing under `"*"`, and lacks every name it lists. A source whose
+root isn't there (a missing `path`, a git source a dry run hasn't cloned)
+and a source whose catalog is broken select nothing and lack nothing, as a
+source without its skills directory reports no missing skills; the broken
+catalog is reported.
 
 Many skill repositories ship a catalog whose one plugin is the whole
 repository (`"source": "./"`), holding the same skills the source offers.
@@ -547,7 +559,8 @@ its JSON, else the last line either agent wrote to stderr, without Codex's
 [Harness facts](#harness-facts-tack-relies-on)), then, for each harness that
 takes plugins:
 
-1. **Register** the marketplace, if a selected plugin targets the harness:
+1. **Register** the marketplace, if a selected plugin targets the harness
+   and it has no conflicting `tack` (see [Plugin ownership](#plugin-ownership)):
    `claude plugin marketplace add <dir> --scope user`, `codex plugin
    marketplace add <dir>`. Registering it again is a no-op for both.
 2. **Install** each selected plugin that isn't installed: `claude plugin
@@ -595,8 +608,11 @@ In a harness, a plugin is **tack's** when it was installed from a marketplace
 named `tack` whose directory is tack's marketplace. tack never installs,
 uninstalls, enables or disables any other plugin, and never touches another
 marketplace's registration. A marketplace named `tack` registered from
-anywhere else is a **conflict**: `sync` deploys no plugins to that harness,
-reports it, and exits `1`; removing or renaming that marketplace clears it.
+anywhere else is a **conflict**: `sync` runs none of the steps in
+[Deploying](#deploying) in that harness, not even registering (Claude Code
+would repoint the name at tack's directory; see
+[Harness facts](#harness-facts-tack-relies-on)), reports it, and exits `1`;
+removing or renaming that marketplace clears it.
 
 The ownership record, `state.json`, also lists the plugins tack installed in
 each harness, each with a hash of the files it was installed from, so `sync`
@@ -1033,7 +1049,11 @@ codex-cli 0.157.1, in a scratch `HOME`, and their documentation:
   `update`), each taking `--json`. `marketplace add <dir>` registers a
   `directory` marketplace in `extraKnownMarketplaces` of
   `~/.claude/settings.json` and in `~/.claude/plugins/known_marketplaces.json`;
-  adding it again succeeds and changes nothing. `install <p>@<m> --scope user`
+  adding it again succeeds and changes nothing. Adding a directory whose
+  catalog has the name of a marketplace registered from elsewhere also
+  succeeds, and points that name at the new directory, so registering tack's
+  marketplace over a foreign `tack` would take it over; tack doesn't (see
+  [Plugin ownership](#plugin-ownership)). `install <p>@<m> --scope user`
   sets `enabledPlugins` in `settings.json` and records the install in
   `~/.claude/plugins/installed_plugins.json`; installing an installed plugin
   succeeds and changes nothing. `uninstall` of a plugin that isn't installed
@@ -1052,9 +1072,10 @@ codex-cli 0.157.1, in a scratch `HOME`, and their documentation:
   add|list|upgrade|remove`, `add`, `remove`, `list`), each taking `--json`;
   there is no command to enable or disable a plugin. `marketplace add <dir>`
   reads a Claude Code catalog (`.claude-plugin/marketplace.json`) as well as
-  its own (`.agents/plugins/marketplace.json`), and records
-  `[marketplaces.<name>]` with `source_type = "local"` in
-  `~/.codex/config.toml`; adding it again reports `alreadyAdded`.
+  its own (`.agents/plugins/marketplace.json`), its own first when there are
+  both, and records `[marketplaces.<name>]` with `source_type = "local"` in
+  `~/.codex/config.toml`; adding it again reports `alreadyAdded`, and adding
+  another directory under a registered name fails.
   `add <p>@<m>` copies the plugin into
   `~/.codex/plugins/cache/<m>/<p>/local/`, records `[plugins."<p>@<m>"]
   enabled = true`, and turns a Claude Code plugin's `commands/` into skills;
@@ -1086,7 +1107,8 @@ scratch `HOME`:
   a `message`, and on failure a `failureCode`; a failure exits `1` and also
   writes `✘ …` to stderr. `marketplace remove` of a marketplace that isn't
   registered fails (`not_configured`), as `install` of a plugin the
-  marketplace lacks does (`not_found`).
+  marketplace lacks, or from a marketplace that isn't registered, does
+  (`not_found`).
 - **`codex plugin list --json`** prints `{"installed": […], "available": […]}`;
   each installed plugin has `pluginId`, `name`, `marketplaceName`, `version`,
   `installed` and `enabled`. It lists only plugins of registered marketplaces
@@ -1100,7 +1122,8 @@ scratch `HOME`:
   `marketplaceName`, `installedRoot`, `alreadyAdded`; `add`: `pluginId`,
   `version`, `installedPath`). A failure exits `1`, prints nothing on stdout,
   and writes `Error: <message>` to stderr, as `add` of a plugin the
-  marketplace lacks and `marketplace remove` of one that isn't registered do.
+  marketplace lacks (or from a marketplace that isn't registered) and
+  `marketplace remove` of one that isn't registered do.
 
 ## Implementation
 
@@ -1131,8 +1154,9 @@ scratch `HOME`:
   executables first on `PATH`, which answer from files in the temporary
   directory, behave as [Harness facts](#harness-facts-tack-relies-on)
   describes, and record how they were called. Every other `PATH` directory
-  holding a `claude` or `codex` is left out, so even a test that takes a
-  stand-in away can't reach a real agent.
+  holding a `claude` or `codex` is replaced by a mirror of its other
+  programs (DEC-9), so even a test that takes a stand-in away can't reach a
+  real agent.
 
 ## Phases
 

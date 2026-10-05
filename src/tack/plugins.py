@@ -1,0 +1,284 @@
+"""tack's marketplace: the one marketplace tack registers with each agent (DEC-1).
+
+It lives in `<data>/marketplace`, and only tack writes it:
+
+- `plugins/<name>/` is a copy of each selected plugin: everything but `.git`
+  (at any depth), with each symlink copied as the file or directory it points
+  to (DEC-2). A copy is refreshed only when its hash differs from the
+  plugin's, and is built beside the old one and swapped in, so an agent
+  starting a session meanwhile never reads half a copy.
+- `.claude-plugin/marketplace.json` is tack's catalog: an entry for each
+  wanted plugin with a copy, its upstream entry with `source` pointing at the
+  copy. Both agents read it.
+
+Updating the marketplace never deletes a copy: `sync` drops a deselected
+plugin's copy only after uninstalling it.
+"""
+
+from __future__ import annotations
+
+import errno
+import hashlib
+import json
+import os
+import shutil
+import stat
+import tempfile
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Literal
+
+from tack import config
+from tack.config import Paths
+from tack.text import tilde
+
+NAME = "tack"
+CATALOG = ".claude-plugin/marketplace.json"
+_DROPPED = ("headers", "headersHelper")  # they apply only to sources tack doesn't deploy
+
+
+class PluginError(Exception):
+    """A plugin's directory can't be hashed or copied."""
+
+
+@dataclass(frozen=True)
+class Wanted:
+    """A plugin the marketplace should hold."""
+
+    name: str
+    directory: Path  # the plugin's files: in a checkout, a `path` source or a clone
+    entry: Mapping[str, Any]  # its upstream catalog entry
+
+
+@dataclass(frozen=True)
+class Change:
+    action: Literal["copy", "write"]
+    detail: str
+    plugin: str | None  # None for tack's catalog
+    path: Path
+
+
+@dataclass(frozen=True)
+class Failure:
+    """A plugin that couldn't be copied; it keeps the copy it had, if any."""
+
+    plugin: str
+    message: str
+    path: Path  # the plugin's directory
+
+
+@dataclass
+class Update:
+    changes: list[Change] = field(default_factory=list)
+    failures: list[Failure] = field(default_factory=list)
+
+
+def update(paths: Paths, wanted: Iterable[Wanted], *, dry_run: bool = False) -> Update:
+    """Bring tack's marketplace up to date for the `wanted` plugins: copy each
+    one whose copy is missing or stale, then write the catalog if it changes.
+    A dry run reports the same changes and writes nothing."""
+    out = Update()
+    plugins_dir = paths.marketplace_dir / "plugins"
+    if not dry_run:
+        _clear_leftovers(plugins_dir)
+    listed: list[Wanted] = []
+    for w in sorted(wanted, key=lambda w: w.name):
+        copy = plugins_dir / w.name
+        try:
+            stale = tree_hash(w.directory) != _hash_or_none(copy)
+            if stale and not dry_run:
+                _copy(w.directory, copy)
+        except (PluginError, OSError) as e:
+            message = str(e) if isinstance(e, PluginError) else _os_message(e)
+            out.failures.append(Failure(w.name, message, w.directory))
+            stale = False
+        if stale:
+            out.changes.append(Change("copy", f"{w.name} from {tilde(w.directory)}", w.name, copy))
+        if stale or copy.is_dir():
+            listed.append(w)
+
+    file = paths.marketplace_dir / CATALOG
+    text = catalog_text(listed)
+    try:
+        current = file.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        current = None
+    if current != text:
+        out.changes.append(Change("write", tilde(file), None, file))
+        if not dry_run:
+            config.write_atomic(file, text)
+    return out
+
+
+def catalog_text(plugins: Iterable[Wanted]) -> str:
+    """tack's catalog for these plugins: each upstream entry, by name, with its
+    `source` replaced by the copy and `headers` and `headersHelper` dropped."""
+    entries: list[dict[str, Any]] = []
+    for w in sorted(plugins, key=lambda w: w.name):
+        entry = {k: v for k, v in w.entry.items() if k not in _DROPPED}
+        entry["source"] = f"./plugins/{w.name}"
+        entries.append(entry)
+    doc = {"name": NAME, "owner": {"name": NAME}, "plugins": entries}
+    return json.dumps(doc, indent=2, ensure_ascii=False) + "\n"
+
+
+def copies(paths: Paths) -> dict[str, Path]:
+    """The plugins with a copy in tack's marketplace, by name."""
+    try:
+        with os.scandir(paths.marketplace_dir / "plugins") as it:
+            entries = sorted(it, key=lambda e: e.name)
+    except (FileNotFoundError, NotADirectoryError):
+        return {}
+    return {
+        e.name: Path(e.path)
+        for e in entries
+        if not e.name.startswith(".") and e.is_dir(follow_symlinks=False)
+    }
+
+
+def drop(paths: Paths, name: str) -> bool:
+    """Delete one plugin's copy; whether there was one."""
+    copy = paths.marketplace_dir / "plugins" / name
+    if not os.path.lexists(copy):
+        return False
+    _remove(copy)
+    return True
+
+
+def remove(paths: Paths) -> bool:
+    """Delete tack's marketplace; whether it was there."""
+    if not os.path.lexists(paths.marketplace_dir):
+        return False
+    _remove(paths.marketplace_dir)
+    return True
+
+
+# --- the hash and the copy ------------------------------------------------------
+
+
+def tree_hash(directory: Path) -> str:
+    """A SHA-256 over the plugin's files, in order of their paths relative to
+    `directory`: each file's path, whether it is executable, and its contents.
+    Symlinks count as what they point to, `.git` is left out, and directories
+    count only through their files, so a plugin and its copy hash the same.
+
+    Raises PluginError for a missing directory, a symlink that points nowhere,
+    or a loop; OSError for a file it can't read.
+    """
+    _, files = _walk(directory)
+    h = hashlib.sha256()
+    for rel, path in files:
+        with path.open("rb") as f:
+            executable = os.fstat(f.fileno()).st_mode & 0o111 != 0
+            digest = hashlib.file_digest(f, "sha256").hexdigest()
+        h.update(os.fsencode(rel) + b"\0" + (b"x" if executable else b"-") + b"\0")
+        h.update(digest.encode() + b"\0")
+    return h.hexdigest()
+
+
+def _hash_or_none(copy: Path) -> str | None:
+    if not copy.is_dir():
+        return None
+    try:
+        return tree_hash(copy)
+    except (PluginError, OSError):
+        return None  # a damaged copy is stale
+
+
+def _walk(directory: Path) -> tuple[list[str], list[tuple[str, Path]]]:
+    """The directories and the files under `directory`, by POSIX path relative
+    to it, following symlinks and leaving `.git` out; files sorted by path."""
+    try:
+        top = directory.stat()
+    except OSError as e:
+        raise PluginError(f"no plugin directory at {tilde(directory)}") from e
+    if not stat.S_ISDIR(top.st_mode):
+        raise PluginError(f"{tilde(directory)} isn't a directory")
+    dirs: list[str] = []
+    files: list[tuple[str, Path]] = []
+
+    def walk(d: Path, prefix: str, ancestors: frozenset[tuple[int, int]]) -> None:
+        with os.scandir(d) as it:
+            entries = sorted(it, key=lambda e: e.name)
+        for e in entries:
+            if e.name == ".git":
+                continue
+            rel, path = prefix + e.name, Path(e.path)
+            try:
+                st = path.stat()
+            except FileNotFoundError as err:
+                if path.is_symlink():
+                    raise PluginError(f"{rel} is a link to nowhere ({path.readlink()})") from err
+                raise
+            except OSError as err:
+                if err.errno == errno.ELOOP:
+                    raise PluginError(f"{rel} is a symlink loop") from err
+                raise
+            if stat.S_ISDIR(st.st_mode):
+                key = (st.st_dev, st.st_ino)
+                if key in ancestors:
+                    raise PluginError(f"{rel} is a link to a directory that contains it")
+                dirs.append(rel)
+                walk(path, rel + "/", ancestors | {key})
+            elif stat.S_ISREG(st.st_mode):
+                files.append((rel, path))
+            # Anything else (a socket, a FIFO) has no contents to copy.
+
+    walk(directory, "", frozenset({(top.st_dev, top.st_ino)}))
+    files.sort()
+    return dirs, files
+
+
+def _copy(directory: Path, dest: Path) -> None:
+    """Copy the plugin at `directory` to `dest`: built under a dot-named
+    temporary directory beside it, then swapped in."""
+    dirs, files = _walk(directory)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    # Plugin names can't start with a dot (config.valid_name), so the
+    # temporary directories never collide with a copy.
+    tmp = Path(tempfile.mkdtemp(prefix=f".{dest.name}.", dir=dest.parent))
+    try:
+        tmp.chmod(0o755)
+        for rel in dirs:
+            (tmp / rel).mkdir()
+        for rel, path in files:
+            shutil.copy2(path, tmp / rel)  # follows a symlink: its target is copied
+        if os.path.lexists(dest):
+            old = tmp.with_name(tmp.name + ".old")
+            dest.rename(old)
+            try:
+                tmp.rename(dest)
+            except OSError:
+                old.rename(dest)
+                raise
+            _remove(old)
+        else:
+            tmp.rename(dest)
+    except BaseException:
+        if tmp.exists():
+            _remove(tmp)
+        raise
+
+
+def _clear_leftovers(plugins_dir: Path) -> None:
+    """Remove temporary directories an interrupted copy left behind."""
+    try:
+        with os.scandir(plugins_dir) as it:
+            leftovers = [Path(e.path) for e in it if e.name.startswith(".")]
+    except (FileNotFoundError, NotADirectoryError):
+        return
+    for path in leftovers:
+        _remove(path)
+
+
+def _remove(path: Path) -> None:
+    if path.is_symlink() or not path.is_dir():
+        path.unlink()
+    else:
+        shutil.rmtree(path)
+
+
+def _os_message(e: OSError) -> str:
+    where = f"{tilde(e.filename)}: " if e.filename else ""
+    return f"{where}{e.strerror or e}"

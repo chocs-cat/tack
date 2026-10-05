@@ -31,4 +31,19 @@ the product of that procedure has come out wrong.
 
 ## The catalogue
 
-None yet.
+### §1 A *Build* item pins a mechanism where only a property was needed
+
+The brief says *how* to achieve something (drop these directories, link that
+program back) when what the doc requires is a property (no real agent can be
+found; everything else still resolves). The mechanism was never tried in a
+real environment, so the executor finds it wrong and has to log a decision to
+deviate. Before committing a brief, read each *Build* item that manipulates
+the environment, the filesystem or a process and ask whether it states a
+property the tests can check or a recipe; give the property, and offer a
+recipe only as a suggestion in *Notes for the executor*.
+
+*Provenance:* P0001-C01-c. The brief had the stand-in fixture drop every
+`PATH` directory holding a real agent and link `git` back. On a machine with
+the agents installed by Homebrew that dropped every other program there, and
+asdf's `uv` shim, which looks further down `PATH`, failed; the executor
+replaced it with mirrors of those directories (DEC-9).

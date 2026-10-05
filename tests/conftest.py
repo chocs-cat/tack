@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
+
+from tests import standin
 
 REAL_HOME = Path.home()
 
@@ -36,3 +39,22 @@ def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
     assert Path.home() != REAL_HOME
     return h
+
+
+@pytest.fixture(scope="session")
+def _agentless_path(tmp_path_factory: pytest.TempPathFactory) -> str:
+    """PATH without the real agents, built once: see `standin.isolate`."""
+    return standin.isolate(os.environ.get("PATH", ""), tmp_path_factory.mktemp("path"))
+
+
+@pytest.fixture(autouse=True)
+def standins(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _agentless_path: str
+) -> standin.Standins:
+    """Stand-in `claude` and `codex` first on PATH, and no other `claude` or
+    `codex` on it, so no test can start a real agent."""
+    bin_dir = tmp_path / "bin"
+    standin.write_bin(bin_dir)
+    monkeypatch.setenv("PATH", os.pathsep.join([str(bin_dir), _agentless_path]))
+    monkeypatch.setenv(standin.ENV, str(tmp_path / "agents"))
+    return standin.Standins(tmp_path / "agents", bin_dir)

@@ -102,6 +102,11 @@ class Paths:
     def sources_dir(self) -> Path:
         return self.data_dir / "sources"
 
+    @property
+    def marketplace_dir(self) -> Path:
+        """tack's marketplace, the one it registers with each agent (DEC-1)."""
+        return self.data_dir / "marketplace"
+
     @classmethod
     def from_env(cls, config_dir: Path | None = None) -> Paths:
         return cls(
