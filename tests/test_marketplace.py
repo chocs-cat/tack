@@ -159,6 +159,72 @@ def test_catalog_lists_only_wanted_plugins_with_a_copy(tmp_path: Path, paths: Pa
     assert set(plugins.copies(paths)) == {"bar", "foo"}  # bar's copy stays until dropped
 
 
+def test_a_kept_plugin_stays_as_it_is(tmp_path: Path, paths: Paths) -> None:
+    src = tmp_path / "src"
+    foo, bar = plugin(src, "foo"), plugin(src, "bar")
+    plugins.update(paths, [wanted(foo, description="old foo"), wanted(bar)])
+    copy = paths.marketplace_dir / "plugins" / "foo"
+    before = snapshot(copy)
+    write(foo / "skills" / "foo" / "SKILL.md", "Changed.\n")
+
+    # Kept and not wanted: its stale copy isn't refreshed, and its entry survives.
+    up = plugins.update(paths, [wanted(bar)], keep=["foo"])
+    assert not up.changes
+    assert not up.failures
+    assert snapshot(copy) == before
+    assert catalog(paths)["plugins"] == [
+        {"name": "bar", "source": "./plugins/bar"},
+        {"name": "foo", "source": "./plugins/foo", "description": "old foo"},
+    ]
+
+    # Wanted and kept: kept. Its new entry isn't taken, and it has no hash.
+    up = plugins.update(paths, [wanted(foo, description="new foo"), wanted(bar)], keep=["foo"])
+    assert not up.changes
+    assert snapshot(copy) == before
+    assert catalog(paths)["plugins"][1]["description"] == "old foo"
+    assert set(up.hashes) == {"bar"}
+
+    # No longer kept: refreshed.
+    up = plugins.update(paths, [wanted(foo), wanted(bar)])
+    assert actions(up) == [("copy", "foo"), ("write", None)]
+
+
+def test_a_kept_name_without_a_copy_or_an_entry_gets_no_entry(tmp_path: Path, paths: Paths) -> None:
+    src = tmp_path / "src"
+    foo, bar = plugin(src, "foo"), plugin(src, "bar")
+    plugins.update(paths, [wanted(foo), wanted(bar)])
+    plugins.drop(paths, "foo")  # an entry but no copy
+    up = plugins.update(paths, [], keep=["foo", "bar", "gone"])
+    assert actions(up) == [("write", None)]
+    assert catalog(paths)["plugins"] == [{"name": "bar", "source": "./plugins/bar"}]
+    assert set(plugins.copies(paths)) == {"bar"}
+
+    # A copy but no entry: still no entry, and the copy stays.
+    plugins.update(paths, [], keep=["foo"])
+    assert catalog(paths)["plugins"] == []
+    assert set(plugins.copies(paths)) == {"bar"}
+
+    # A catalog that can't be read keeps no entry.
+    (paths.marketplace_dir / plugins.CATALOG).write_text("{")
+    plugins.update(paths, [], keep=["bar"])
+    assert catalog(paths)["plugins"] == []
+    assert set(plugins.copies(paths)) == {"bar"}
+
+
+def test_hashes_are_each_plugins_directorys(tmp_path: Path, paths: Paths) -> None:
+    src = tmp_path / "src"
+    foo, bar = plugin(src, "foo"), plugin(src, "bar")
+    broken = plugin(src, "broken")
+    _break("dangling", broken)
+    every = [wanted(foo), wanted(bar), wanted(broken)]
+    expected = {"foo": plugins.tree_hash(foo), "bar": plugins.tree_hash(bar)}
+    for dry_run in (True, False, False):  # copying, then a copy already there
+        up = plugins.update(paths, every, dry_run=dry_run)
+        assert up.hashes == expected
+        assert [f.plugin for f in up.failures] == ["broken"]
+    assert plugins.tree_hash(paths.marketplace_dir / "plugins" / "foo") == expected["foo"]
+
+
 # --- what a copy holds ----------------------------------------------------------
 
 

@@ -10,7 +10,7 @@ The marketplace lives in `<data>/marketplace`, and only tack writes it:
   starting a session meanwhile never reads half a copy.
 - `.claude-plugin/marketplace.json` is tack's catalog: an entry for each
   wanted plugin with a copy, its upstream entry with `source` pointing at the
-  copy. Both agents read it.
+  copy, and each kept plugin's entry as it was. Both agents read it.
 
 Updating the marketplace never deletes a copy: `sync` drops a deselected
 plugin's copy only after uninstalling it.
@@ -74,27 +74,48 @@ class Failure:
 class Update:
     changes: list[Change] = field(default_factory=list)
     failures: list[Failure] = field(default_factory=list)
+    # Each wanted plugin's hash but a failed one's: its directory's, which its
+    # copy has once copied (a dry run included). `sync` records it.
+    hashes: dict[str, str] = field(default_factory=dict)
 
 
-def update(paths: Paths, wanted: Iterable[Wanted], *, dry_run: bool = False) -> Update:
+def update(
+    paths: Paths,
+    wanted: Iterable[Wanted],
+    *,
+    keep: Iterable[str] = (),
+    dry_run: bool = False,
+) -> Update:
     """Bring tack's marketplace up to date for the `wanted` plugins: copy each
     one whose copy is missing or stale, then write the catalog if it changes.
+
+    The plugins named in `keep` stay exactly as they are: their copies are
+    neither refreshed nor deleted, and their catalog entries are carried over
+    from the catalog on disk (a kept name with no copy, or no entry there, has
+    neither). A name both wanted and kept is kept (DEC-12).
+
     A dry run reports the same changes and writes nothing."""
     out = Update()
+    kept = set(keep)
     plugins_dir = paths.marketplace_dir / "plugins"
     if not dry_run:
         _clear_leftovers(plugins_dir)
-    listed: list[Wanted] = []
+    listed: list[Wanted] = _kept(paths, kept)
     for w in sorted(wanted, key=lambda w: w.name):
+        if w.name in kept:
+            continue
         copy = plugins_dir / w.name
         try:
-            stale = tree_hash(w.directory) != _hash_or_none(copy)
+            digest = tree_hash(w.directory)
+            stale = digest != _hash_or_none(copy)
             if stale and not dry_run:
                 _copy(w.directory, copy)
         except (PluginError, OSError) as e:
             message = str(e) if isinstance(e, PluginError) else _os_message(e)
             out.failures.append(Failure(w.name, message, w.directory))
             stale = False
+        else:
+            out.hashes[w.name] = digest
         if stale:
             out.changes.append(Change("copy", f"{w.name} from {tilde(w.directory)}", w.name, copy))
         if stale or copy.is_dir():
@@ -111,6 +132,27 @@ def update(paths: Paths, wanted: Iterable[Wanted], *, dry_run: bool = False) -> 
         if not dry_run:
             config.write_atomic(file, text)
     return out
+
+
+def _kept(paths: Paths, kept: set[str]) -> list[Wanted]:
+    """The kept plugins with both a copy and an entry in tack's catalog on
+    disk, each with that entry as it is."""
+    if not kept:
+        return []
+    try:
+        data = json.loads((paths.marketplace_dir / CATALOG).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError):
+        return []
+    entries = data.get("plugins") if isinstance(data, dict) else None
+    out: dict[str, Wanted] = {}
+    for entry in entries if isinstance(entries, list) else []:
+        name = entry.get("name") if isinstance(entry, dict) else None
+        if not isinstance(name, str) or name not in kept or name in out:
+            continue
+        copy = paths.marketplace_dir / "plugins" / name
+        if copy.is_dir():
+            out[name] = Wanted(name, copy, entry)
+    return list(out.values())
 
 
 def catalog_text(plugins: Iterable[Wanted]) -> str:

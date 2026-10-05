@@ -112,11 +112,22 @@ def within(path: Path, root: Path) -> bool:
 # --- ownership -----------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class Install:
+    """A plugin tack installed in a harness: the source it came from, and the
+    hash of the files it was installed from (design.md *Plugin ownership*)."""
+
+    source: str
+    hash: str
+
+
 @dataclass
 class Record:
-    """The links tack made: link path -> target."""
+    """The links tack made (link path -> target), and the plugins it installed
+    (harness -> plugin name -> Install; DEC-6)."""
 
     links: dict[str, str] = field(default_factory=dict)
+    plugins: dict[str, dict[str, Install]] = field(default_factory=dict)
 
 
 def load_record(paths: Paths) -> Record:
@@ -130,11 +141,46 @@ def load_record(paths: Paths) -> Record:
     links = data.get("links") if isinstance(data, dict) else None
     if not isinstance(links, dict) or data.get("version") != RECORD_VERSION:
         raise ConfigError(f"{file}: not a version {RECORD_VERSION} ownership record")
-    return Record({str(k): str(v) for k, v in links.items()})
+    try:
+        installed = _plugins(data.get("plugins", {}))
+    except TypeError as e:
+        raise ConfigError(f"{file}: not a version {RECORD_VERSION} ownership record") from e
+    return Record({str(k): str(v) for k, v in links.items()}, installed)
+
+
+def _plugins(value: object) -> dict[str, dict[str, Install]]:
+    """The record's `plugins`: harness -> name -> {"source": …, "hash": …}.
+    Raises TypeError for anything else."""
+    if not isinstance(value, dict):
+        raise TypeError(value)
+    out: dict[str, dict[str, Install]] = {}
+    for harness, installed in value.items():
+        if not isinstance(installed, dict):
+            raise TypeError(installed)
+        out[harness] = {}
+        for name, entry in installed.items():
+            source = entry.get("source") if isinstance(entry, dict) else None
+            digest = entry.get("hash") if isinstance(entry, dict) else None
+            if not isinstance(source, str) or not isinstance(digest, str):
+                raise TypeError(entry)
+            out[harness][name] = Install(source, digest)
+    return out
 
 
 def save_record(paths: Paths, record: Record) -> None:
-    data = {"version": RECORD_VERSION, "links": dict(sorted(record.links.items()))}
+    data: dict[str, object] = {
+        "version": RECORD_VERSION,
+        "links": dict(sorted(record.links.items())),
+    }
+    # Left out when it lists no plugin, so a record without plugins is the
+    # one an older tack writes (DEC-6).
+    installed = {
+        h: {n: {"source": i.source, "hash": i.hash} for n, i in sorted(by_name.items())}
+        for h, by_name in sorted(record.plugins.items())
+        if by_name
+    }
+    if installed:
+        data["plugins"] = installed
     write_atomic(paths.state_dir / RECORD, json.dumps(data, indent=2) + "\n")
 
 
