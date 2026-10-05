@@ -1,16 +1,16 @@
 # Status
 
-Last updated 2026-10-05 by `relay-setup`.
+Last updated 2026-10-05 by `relay-project`.
 Last review: none yet.
 
 ## Where this stands
 
-- The relay workflow was set up on 2026-10-05. Design phases 1–10 are done;
-  no project is active and no chunk is in flight.
-- **Do next:** `/relay-project` to shape the first project, plugin support
-  for Claude Code and Codex
-  ([#22](https://github.com/chocs-cat/tack/issues/22)), or `/relay-next`
-  with a request for a small, already-designed fix.
+- The relay workflow was set up on 2026-10-05. Design phases 1–10 are done.
+- Project [P0001](projects/P0001-plugins.md), plugins for Claude Code and
+  Codex ([#22](https://github.com/chocs-cat/tack/issues/22)), is active:
+  its design is in design.md (marked *(P0001)*) and DEC-1 – DEC-8. No chunk
+  is in flight.
+- **Do next:** `/relay-next` to cut P0001's first chunk, from D1 and D2.
 
 ## In flight
 
