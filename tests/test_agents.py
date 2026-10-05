@@ -4,6 +4,8 @@ import json
 import os
 import shutil
 import subprocess
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -161,10 +163,26 @@ def test_command_arguments(paths: Paths) -> None:
 # --- running them -----------------------------------------------------------------------
 
 
+@contextmanager
+def stdin_pipe() -> Iterator[None]:
+    """Our stdin an open pipe, as in a terminal, so a stand-in can tell
+    whether tack closed it."""
+    r, w = os.pipe()
+    saved = os.dup(0)
+    os.dup2(r, 0)
+    try:
+        yield
+    finally:
+        os.dup2(saved, 0)
+        for fd in (saved, r, w):
+            os.close(fd)
+
+
 def test_commands_run_in_the_data_directory(paths: Paths, standins: Standins) -> None:
     paths.data_dir.mkdir(parents=True)
-    for h in HARNESSES:
-        ok(agents.run(agents.list_plugins(h), paths))
+    with stdin_pipe():
+        for h in HARNESSES:
+            ok(agents.run(agents.list_plugins(h), paths))
     calls = standins.calls()
     assert [(c.cli, c.args) for c in calls] == [
         ("claude", ["plugin", "list", "--json"]),
@@ -177,8 +195,9 @@ def test_commands_run_in_the_data_directory(paths: Paths, standins: Standins) ->
 def test_commands_run_in_a_temporary_directory_without_one(
     paths: Paths, standins: Standins
 ) -> None:
-    for h in HARNESSES:
-        ok(agents.run(agents.list_marketplaces(h), paths))
+    with stdin_pipe():
+        for h in HARNESSES:
+            ok(agents.run(agents.list_marketplaces(h), paths))
     calls = standins.calls()
     assert len(calls) == 2
     for c in calls:
