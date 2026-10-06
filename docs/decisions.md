@@ -198,6 +198,12 @@ an unreachable remote or a typo in an upstream catalog, and install them
 again once it is fixed. The record names each plugin's source, which is how
 `sync` tells which installed plugins a held source keeps.
 
+*Clarified in the review of P0001-C03 (2026-10):* it covers the plugins such
+a source selects as well as those the record lists from it, since a held
+source's newly selected skills aren't linked either, and a source whose root
+isn't there (a git source a dry run hasn't cloned) keeps its plugins too, so
+a dry run doesn't list uninstalls the real run wouldn't make.
+
 *Where:* design.md, *Plugins* (*Deploying*, *Plugin ownership*).
 
 ## DEC-13: Claude Code keeps tack's marketplace while a kept plugin is installed (2026-10)

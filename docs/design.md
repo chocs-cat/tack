@@ -196,7 +196,7 @@ Paths expand `~`, and a relative path is relative to the manifest's directory.
 | `git` | git | — | A clone URL. |
 | `ref` | git | the remote's default branch | The branch or tag `update` follows. |
 | `subdir` | all | `skills` | Where the skill directories are, relative to the source root. |
-| `skills` | all | `"*"` | Which skills to deploy: `"*"`, or a list. A list entry is a name, or `{ name = "…", harnesses = ["claude-code"] }` to limit that skill. A source with `skills = []` needs no skills directory *(P0001)*. |
+| `skills` | all | `"*"` | Which skills to deploy: `"*"`, or a list. A list entry is a name, or `{ name = "…", harnesses = ["claude-code"] }` to limit that skill. A source with `skills = []` needs no skills directory *(P0001)*: it is missing (a `status` state, a `doctor` finding, a source `sync` holds) only when its root isn't there. |
 | `plugins` *(P0001)* | all | `[]` (none) | Which plugins in the source's catalog to deploy: `"*"`, or a list shaped like `skills`. See [Plugins](#plugins) (DEC-3). |
 | `harnesses` | all | every harness | Limit the whole source. |
 | `autocommit` | path | `false` | Commit pending edits to this source's skills when tack runs. |
@@ -549,9 +549,11 @@ tack keeps one marketplace of its own, named `tack`, in
   tack writes the file only when its content changes. Codex reads this
   catalog too, so there is no `.agents/plugins/` one.
 
-Only tack writes this directory. `sync` brings it up to date, then makes each
-harness match it by running that agent's own CLI, never by editing the
-agent's files (principle 5): `claude plugin …` and `codex plugin …`, found on
+Only tack writes this directory. `sync` brings it up to date whenever a
+plugin is selected or the directory exists (so it never creates the directory
+only to remove it, and a directory that stays never names a copy it deleted),
+then makes each harness match it by running that agent's own CLI, never by
+editing the agent's files (principle 5): `claude plugin …` and `codex plugin …`, found on
 `PATH`, with `--json` and stdin closed, run in tack's data directory (or, if
 that doesn't exist yet, an empty temporary one) so that no project's plugin
 settings apply. A command fails when it exits non-zero or its output isn't
@@ -612,11 +614,17 @@ select is a `collision`. `--dry-run` runs only the `list` commands, lists
 the commands it would run, and writes nothing. `--adopt` doesn't apply to
 plugins.
 
-A source `sync` holds (a missing `path`, a failed fetch, a refused checkout;
-see [Ownership and conflicts](#ownership-and-conflicts)) and a source whose
+A source `sync` holds (a missing `path`, a failed fetch, a refused checkout,
+a `path` source whose skills directory isn't there; see
+[Ownership and conflicts](#ownership-and-conflicts)), a source whose root
+isn't there (a git source a dry run hasn't cloned), and a source whose
 catalog is broken keep their plugins as they are: `sync` copies, installs,
 reinstalls and uninstalls none of the plugins the record says came from
-them, and keeps their copies and their entries in tack's catalog (DEC-12).
+them or that they select, and keeps their copies and their entries in
+tack's catalog (DEC-12). So, as with a held source's skills, a plugin such a
+source selects that isn't installed yet waits until the source is reachable,
+and a dry run lists no uninstall for a source it hasn't cloned. These are
+*kept* plugins, as are a collided name's and a plugin whose copy fails.
 
 tack installs and uninstalls plugins but never enables or disables one
 (DEC-5). Turning a tack plugin off in an agent (`/plugin`) is the user's
@@ -641,11 +649,14 @@ targets the harness or the record lists one there, reports it and exits `1`;
 removing or renaming that marketplace clears it.
 
 The ownership record, `state.json`, also lists the plugins tack installed in
-each harness, each with the source it came from and a hash of the files it
+each harness, each with the source that last supplied it (when another
+source takes over a name, the record follows it) and a hash of the files it
 was installed from (tack's copy when tack installed it there, or in Codex
 last reinstalled it), so `sync` knows when Codex's copy is stale (DEC-6) and
-which plugins a held source keeps (DEC-12). It is a `plugins` key beside
-`links`, harness → plugin name → `{"source": …, "hash": …}`, left out when
+which plugins a held source keeps (DEC-12). Claude Code loads tack's copy in
+place, so its hash stays the one recorded when tack installed the plugin or
+first recorded an install it found; nothing compares it. It is a `plugins`
+key beside `links`, harness → plugin name → `{"source": …, "hash": …}`, left out when
 it lists no plugin, so a record without plugins is the one an older tack
 writes. The record is also how tack knows
 which Codex plugins it installed: Codex's `plugin list` leaves out a plugin
