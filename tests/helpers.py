@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import dataclasses
 import json
 import subprocess
 from collections.abc import Iterable
@@ -108,8 +107,8 @@ def market(root: Path, *entries: Any, **doc: Any) -> Path:
 
 def configure(home: Path, *sources: str, manifest: str = "", **selections: Any) -> Config:
     """A Config whose `path` sources are `~/<name>`, each selecting the
-    plugins `selections` gives it (none by default), as `parse_plugins` reads
-    them: the manifest doesn't take `plugins` yet. A source written
+    plugins `selections` gives it (none by default), loaded through the real
+    manifest parser. A source written
     `name:h1,h2` targets those harnesses."""
     tables = []
     for s in sources:
@@ -117,13 +116,17 @@ def configure(home: Path, *sources: str, manifest: str = "", **selections: Any) 
         table = f'[[source]]\nname = "{name}"\npath = "~/{name}"\n'
         if hs:
             table += f"harnesses = {json.dumps(hs.split(','))}\n"
+        value = selections.get(name, [])
+        if isinstance(value, str):
+            selection = json.dumps(value)
+        else:
+            entries = [
+                json.dumps(entry)
+                if isinstance(entry, str)
+                else "{ " + ", ".join(f"{k} = {json.dumps(v)}" for k, v in entry.items()) + " }"
+                for entry in value
+            ]
+            selection = "[" + ", ".join(entries) + "]"
+        table += f"plugins = {selection}\n"
         tables.append(table)
-    cfg = load(home, manifest + "\n" + "\n".join(tables))
-    assert cfg.manifest is not None
-    out = []
-    for src in cfg.sources:
-        value = selections.get(src.name, [])
-        where = f"source {src.name!r}"
-        specs = config.parse_plugins(value, src.harnesses, cfg.harnesses, cfg.manifest, where)
-        out.append(dataclasses.replace(src, plugins=specs))
-    return dataclasses.replace(cfg, sources=tuple(out))
+    return load(home, manifest + "\n" + "\n".join(tables))
