@@ -1,6 +1,6 @@
 # Status
 
-Last updated 2026-10-06 by `relay-next`.
+Last updated 2026-10-06 by `relay-execute`.
 Last review: 2026-10-06 (P0001-C03).
 
 ## Where this stands
@@ -19,20 +19,19 @@ Last review: 2026-10-06 (P0001-C03).
   plugin steps and records installs in `state.json`, still unreachable
   from the manifest; DEC-13 (Claude Code stays registered while a kept
   plugin is installed). #33 is fixed in C04-a.
-- P0001-C04, ready: tack's marketplace kept up to date while it exists
-  (#33), a held source keeping its plugins (DEC-12), `skills = []` needing
-  no skills directory, and the manifest taking `plugins`, with its docs.
-- Still to come in D1–D2: #33, a held source keeping its plugins,
-  `skills = []`, accepting `plugins`, `remove` uninstalling, and the docs.
-  Then D3–D8.
-- **Do next:** `/relay-execute` to build P0001-C04.
+- P0001-C04, awaiting review (#34): tack's marketplace kept up to date
+  while it exists (#33), held sources keeping their plugins (DEC-12),
+  `skills = []` needing no skills directory, and the manifest taking
+  `plugins`, with CLI coverage and docs. DEC-14 covers Codex recovery.
+- D1–D2 are built, pending C04's acceptance. Still to come: D3–D8.
+- **Do next:** `/relay-next` to review P0001-C04.
 
 ## In flight
 
 - **Chunk:** P0001-C04
-- **State:** executing
+- **State:** awaiting review
 - **Branch:** `chunk/p0001-c04`
-- **Pull request:** `#34` (draft)
+- **Pull request:** `#34` (ready)
 - **Units committed:** a, b, c, d
 
 (Fixed shape. `State` ∈ `ready for an executor` · `executing` ·
