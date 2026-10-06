@@ -198,6 +198,60 @@ def test_missing_path_source_holds_its_links(home: Path, mine: Path) -> None:
     assert (home / ".claude" / "skills" / "a").is_symlink()
 
 
+@pytest.mark.parametrize("selection", ["[]", '"*"'])
+def test_path_source_presence_without_a_skills_directory(home: Path, selection: str) -> None:
+    (home / "mine").mkdir()
+    cfg = load(home, MINE + f"skills = {selection}\n")
+
+    result = run(cfg)
+
+    assert deploy.plan(cfg).sources[0].present == (selection == "[]")
+    if selection == "[]":
+        assert result.problems == []
+    else:
+        (problem,) = result.problems
+        assert (problem.kind, problem.message) == (
+            "source",
+            "no skills directory at ~/mine/skills",
+        )
+
+
+def test_empty_skills_selection_unlinks_old_skills_without_a_skills_directory(
+    home: Path, mine: Path
+) -> None:
+    assert run(load(home, MINE)).problems == []
+    shutil.rmtree(mine)
+
+    result = run(load(home, MINE + "skills = []\n"))
+
+    assert result.problems == []
+    assert sorted(actions(result)) == [
+        ("unlink", "claude-code", "a"),
+        ("unlink", "claude-code", "b"),
+        ("unlink", "codex", "a"),
+        ("unlink", "codex", "b"),
+    ]
+    for harness in (".claude", ".agents"):
+        for name in ("a", "b"):
+            assert not (home / harness / "skills" / name).is_symlink()
+
+
+def test_missing_path_with_empty_skills_selection_holds_its_links(home: Path, mine: Path) -> None:
+    assert run(load(home, MINE)).problems == []
+    (home / "mine").rename(home / "mine-moved")
+    cfg = load(home, MINE + "skills = []\n")
+
+    result = run(cfg)
+
+    assert not deploy.plan(cfg).sources[0].present
+    assert [(p.kind, p.source, p.message) for p in result.problems] == [
+        ("source", "mine", "no directory at ~/mine"),
+    ]
+    assert result.changes == []
+    for harness in (".claude", ".agents"):
+        assert (home / harness / "skills" / "a").is_symlink()
+
+
 def test_lock_keeps_entries_for_sources_left_out(home: Path, tmp_path: Path) -> None:
     up = upstream(tmp_path / "up", "x")
     run(load(home, f'[[source]]\nname = "up"\ngit = "{up}"\n'))

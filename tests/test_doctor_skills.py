@@ -113,6 +113,30 @@ def test_source_without_skills_dir(home: Path) -> None:
     assert "has no skills directory at ~/mine/skills" in f.message
 
 
+@pytest.mark.parametrize("selection", ["[]", '"*"'])
+def test_path_source_presence_without_a_skills_directory(home: Path, selection: str) -> None:
+    root = home / "mine"
+    root.mkdir()
+    manifest = MINE + f"skills = {selection}\n"
+
+    fs = findings(home, manifest)
+
+    if selection == "[]":
+        assert fs == []
+    else:
+        (finding,) = fs
+        assert (finding.id, finding.message) == (
+            "not-synced",
+            "source 'mine' has no skills directory at ~/mine/skills",
+        )
+    root.rmdir()
+    (finding,) = findings(home, manifest)
+    assert (finding.id, finding.message) == (
+        "not-synced",
+        "source 'mine' has no directory at ~/mine",
+    )
+
+
 def test_name_collision(home: Path) -> None:
     skill(home / "one" / "skills", "dup")
     skill(home / "two" / "skills", "dup")

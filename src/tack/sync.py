@@ -136,12 +136,16 @@ def _sources(
     pins: dict[str, LockEntry] = dict(lock)
     for src in cfg.sources:
         if src.git is None:
-            if sources.offered(src, cfg.paths) is None:
+            if not sources.present(src, cfg.paths):
                 held.add(src.name)
-                where = tilde(sources.skills_dir(src, cfg.paths))
-                result.problems.append(
-                    Problem("source", f"no skills directory at {where}", source=src.name)
+                directory = (
+                    sources.root(src, cfg.paths)
+                    if src.skills == ()
+                    else sources.skills_dir(src, cfg.paths)
                 )
+                where = tilde(directory)
+                what = "directory" if src.skills == () else "skills directory"
+                result.problems.append(Problem("source", f"no {what} at {where}", source=src.name))
             continue
         try:
             checkout = sources.sync_git(

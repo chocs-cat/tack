@@ -41,6 +41,16 @@ def offered(source: Source, paths: Paths) -> dict[str, Path] | None:
     return {e.name: Path(e.path) for e in entries if not e.name.startswith(".") and e.is_dir()}
 
 
+def present(source: Source, paths: Paths) -> bool:
+    """Whether the source is present (design.md §5 *Source fields*).
+
+    An empty skill selection needs only the root; every other selection
+    needs a readable skills directory."""
+    return (
+        root(source, paths).is_dir() if source.skills == () else offered(source, paths) is not None
+    )
+
+
 # --- git sources ----------------------------------------------------------------
 
 

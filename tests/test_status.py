@@ -4,10 +4,23 @@ import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+
 from tack import status, sync
 from tests.helpers import git, link, load, repo, skill, upstream, write
 
 WHEN = datetime(2026, 9, 27, 12, 0, 0, tzinfo=UTC)
+
+
+@pytest.mark.parametrize("selection", ["[]", '"*"'])
+def test_path_source_presence_without_a_skills_directory(home: Path, selection: str) -> None:
+    root = home / "one"
+    root.mkdir()
+    cfg = load(home, f'[[source]]\nname = "one"\npath = "~/one"\nskills = {selection}\n')
+
+    assert status.status(cfg).sources[0].state == ("ok" if selection == "[]" else "missing")
+    root.rmdir()
+    assert status.status(cfg).sources[0].state == "missing"
 
 
 def test_status(home: Path, tmp_path: Path) -> None:
