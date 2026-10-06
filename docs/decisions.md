@@ -221,3 +221,17 @@ needs no such rule. The marketplace is unregistered at the next `sync` that
 keeps nothing installed there.
 
 *Where:* design.md, *Plugins* (*Deploying*, step 5).
+
+## DEC-14: Recheck recorded Codex installs after registering (2026-10)
+
+Added during P0001-C04-b. When `sync` registers tack's marketplace in Codex
+and the record lists plugins there, it reads Codex's inventory again before
+installing: Codex's list while unregistered hides even installed plugins.
+Using that first list would reinstall unchanged plugins on a held source's
+recovery, contrary to the brief; trusting the record alone would miss a
+plugin uninstalled by hand while the marketplace was unregistered. The
+second inventory distinguishes those cases with the existing CLI contract.
+A dry run cannot register to reveal them, so it assumes recorded plugins
+are installed; the next real run checks them.
+
+*Where:* design.md, *Plugins* (*Deploying*, step 2).

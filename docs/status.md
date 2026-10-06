@@ -33,7 +33,7 @@ Last review: 2026-10-06 (P0001-C03).
 - **State:** executing
 - **Branch:** `chunk/p0001-c04`
 - **Pull request:** `#34` (draft)
-- **Units committed:** a
+- **Units committed:** a, b
 
 (Fixed shape. `State` ∈ `ready for an executor` · `executing` ·
 `awaiting review` · `none`; `Branch`, `Pull request`, and `Units committed` are
@@ -57,3 +57,4 @@ One line per chunk: the decision-log IDs it added.
 - P0001-C01: DEC-9; its review, DEC-10.
 - P0001-C02: none; its review, DEC-11 – DEC-12.
 - P0001-C03: DEC-13; its review, none (DEC-12 clarified).
+- P0001-C04: DEC-14.

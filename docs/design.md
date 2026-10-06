@@ -571,7 +571,10 @@ takes plugins:
 2. **Install** each selected plugin that isn't installed (the agent's `plugin
    list` doesn't show it from tack's marketplace; a disabled one is
    installed): `claude plugin install <name>@tack --scope user`, `codex
-   plugin add <name>@tack`.
+   plugin add <name>@tack`. When Codex was unregistered and the record lists
+   plugins there, read its inventory again after registering: its first
+   list hid those installs. A dry run can't register to reveal them, so it
+   treats the recorded plugins as installed until a real run checks (DEC-14).
 3. **Reinstall** in Codex each plugin whose files changed since tack
    installed it there (an `update`, an edit in a `path` source): Codex
    installs a copy of a plugin in its own cache and doesn't refresh it, so

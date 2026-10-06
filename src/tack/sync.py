@@ -110,7 +110,7 @@ def sync(
     for h in cfg.harnesses.values():
         linker.harness(h)
     _prune(record)
-    _Plugins(cfg, record, result, dry_run=dry_run).run()
+    _Plugins(cfg, record, result, held, dry_run=dry_run).run()
     if (record.links, _installs(record)) != before and not dry_run:
         deploy.save_record(cfg.paths, record)
     return result
@@ -318,14 +318,23 @@ class _Plugins:
 
     *Wanted* plugins are the plan's plugins in the source, one per name
     (DEC-11). *Kept* ones are left exactly as they are, copy, catalog entry,
-    installs and record (DEC-12): a collided name, a plugin from another
-    repository (D8), and a plugin whose copy failed. A dry run runs only the
-    `list` commands and lists every other step as if it had succeeded."""
+    installs and record (DEC-12): a held source's plugins, a collided name,
+    a plugin from another repository (D8), and a plugin whose copy failed.
+    A dry run runs only the `list` commands and lists every other step as if
+    it had succeeded."""
 
-    def __init__(self, cfg: Config, record: Record, result: Result, *, dry_run: bool) -> None:
+    def __init__(
+        self, cfg: Config, record: Record, result: Result, held: set[str], *, dry_run: bool
+    ) -> None:
         self.cfg, self.paths, self.record, self.result = cfg, cfg.paths, record, result
         self.dry_run = dry_run
         self.plan = plugins.plan(cfg)
+        # Both selected and recorded names from these sources are kept (DEC-12).
+        self.kept_sources = held | {
+            state.source.name
+            for state in self.plan.sources
+            if state.catalog_state in ("no-root", "broken")
+        }
         self.selected = [sel for state in self.plan.sources for sel in state.selected]
         # The harnesses a selected plugin targets, deployable or not, collided or not.
         self.targeted = {h for sel in self.selected for h in sel.harnesses}
@@ -344,6 +353,13 @@ class _Plugins:
 
         wanted: dict[str, plugins.Selected] = {}
         kept = set(self.plan.collisions)
+        kept.update(sel.name for sel in self.selected if sel.source.name in self.kept_sources)
+        kept.update(
+            name
+            for by_name in self.record.plugins.values()
+            for name, installed in by_name.items()
+            if installed.source in self.kept_sources
+        )
         for by_name in self.plan.plugins.values():
             for name, sel in by_name.items():
                 if sel.directory is None:
@@ -451,6 +467,16 @@ class _Plugins:
 
         # 1. Register; 2. install; 3. reinstall in Codex.
         if not targeted or registered or self._run(agents.register(h, self.paths.marketplace_dir)):
+            if h == "codex" and targeted and not registered and recorded:
+                # The first list hid these installs while unregistered (DEC-14).
+                if self.dry_run:
+                    installed.update(recorded)
+                else:
+                    refreshed = agents.inventory(h, self.paths)
+                    if isinstance(refreshed, agents.Outcome):
+                        self._failed(refreshed)
+                        return False
+                    installed = {p.name for p in refreshed.plugins if p.marketplace == plugins.NAME}
             for name, sel in wanted.items():
                 now = Install(sel.source.name, hashes[name])
                 if name not in installed:
