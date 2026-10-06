@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
 from tack import deploy
 from tack.config import ConfigError
+from tack.deploy import Install
 from tests.helpers import link, load, skill, write
 
 
@@ -129,6 +131,76 @@ def test_record_round_trip(home: Path) -> None:
     (cfg.paths.state_dir / "state.json").write_text("[]")
     with pytest.raises(ConfigError, match="not a version 1 ownership record"):
         deploy.load_record(cfg.paths)
+
+
+def test_a_record_with_plugins_round_trips(home: Path) -> None:
+    paths = load(home).paths
+    record = deploy.Record(
+        {"/a": "/b"},
+        {
+            "codex": {"y": Install("two", "h2"), "x": Install("one", "h1")},
+            "claude-code": {"x": Install("one", "h0")},
+        },
+    )
+    deploy.save_record(paths, record)
+    assert deploy.load_record(paths) == record
+    data = json.loads((paths.state_dir / "state.json").read_text())
+    assert data == {
+        "version": 1,
+        "links": {"/a": "/b"},
+        "plugins": {
+            "claude-code": {"x": {"source": "one", "hash": "h0"}},
+            "codex": {"x": {"source": "one", "hash": "h1"}, "y": {"source": "two", "hash": "h2"}},
+        },
+    }
+    assert list(data["plugins"]) == ["claude-code", "codex"]
+    assert list(data["plugins"]["codex"]) == ["x", "y"]
+
+
+def test_a_record_with_links_only_is_written_as_before(home: Path) -> None:
+    paths = load(home).paths
+    file = paths.state_dir / "state.json"
+    old = '{\n  "version": 1,\n  "links": {\n    "/a": "/b",\n    "/c": "/d"\n  }\n}\n'
+    write(file, old)
+    record = deploy.load_record(paths)
+    assert record == deploy.Record({"/a": "/b", "/c": "/d"}, {})
+    file.unlink()
+    deploy.save_record(paths, record)
+    assert file.read_text() == old
+
+
+def test_a_harness_with_no_plugins_left_is_dropped(home: Path) -> None:
+    paths = load(home).paths
+    file = paths.state_dir / "state.json"
+    deploy.save_record(
+        paths, deploy.Record({}, {"claude-code": {}, "codex": {"x": Install("s", "h")}})
+    )
+    assert json.loads(file.read_text())["plugins"] == {"codex": {"x": {"source": "s", "hash": "h"}}}
+    deploy.save_record(paths, deploy.Record({}, {"claude-code": {}, "codex": {}}))
+    assert json.loads(file.read_text()) == {"version": 1, "links": {}}
+
+
+@pytest.mark.parametrize(
+    "plugins",
+    [
+        None,
+        [],
+        "x",
+        {"codex": []},
+        {"codex": {"x": "s"}},
+        {"codex": {"x": {"source": "s"}}},
+        {"codex": {"x": {"hash": "h"}}},
+        {"codex": {"x": {"source": 1, "hash": "h"}}},
+        {"codex": {"x": {"source": "s", "hash": None}}},
+    ],
+)
+def test_a_malformed_plugins_record_is_rejected(home: Path, plugins: object) -> None:
+    paths = load(home).paths
+    write(
+        paths.state_dir / "state.json", json.dumps({"version": 1, "links": {}, "plugins": plugins})
+    )
+    with pytest.raises(ConfigError, match="not a version 1 ownership record"):
+        deploy.load_record(paths)
 
 
 def test_state(home: Path) -> None:

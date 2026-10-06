@@ -198,4 +198,26 @@ an unreachable remote or a typo in an upstream catalog, and install them
 again once it is fixed. The record names each plugin's source, which is how
 `sync` tells which installed plugins a held source keeps.
 
+*Clarified in the review of P0001-C03 (2026-10):* it covers the plugins such
+a source selects as well as those the record lists from it, since a held
+source's newly selected skills aren't linked either, and a source whose root
+isn't there (a git source a dry run hasn't cloned) keeps its plugins too, so
+a dry run doesn't list uninstalls the real run wouldn't make.
+
 *Where:* design.md, *Plugins* (*Deploying*, *Plugin ownership*).
+
+## DEC-13: Claude Code keeps tack's marketplace while a kept plugin is installed (2026-10)
+
+Added during P0001-C03-c. `sync` doesn't unregister tack's marketplace from
+Claude Code while a plugin it keeps as it is (DEC-12: a collided name, a
+plugin from another repository, a plugin whose copy failed) is installed
+there, even when no selected plugin targets Claude Code any more. Claude
+Code's `marketplace remove` uninstalls the marketplace's plugins, so step 5
+would uninstall a plugin that no step may touch: `x` installed in both
+harnesses and then selected by two sources for Codex only is a collision
+whose Claude Code install DEC-11 leaves alone, and unregistering would take
+it away. Codex's `marketplace remove` leaves plugins installed, so Codex
+needs no such rule. The marketplace is unregistered at the next `sync` that
+keeps nothing installed there.
+
+*Where:* design.md, *Plugins* (*Deploying*, step 5).

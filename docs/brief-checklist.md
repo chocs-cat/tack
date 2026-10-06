@@ -68,3 +68,24 @@ sources can't be deployed even to different harnesses. Found while cutting
 P0001-C03, whose `sync` needs one copy per name (DEC-11). The sweep found the
 same per-harness rule in `add`'s plugin refusal and `doctor`'s
 `name-collision`, both fixed in that review.
+
+### §3 An exemption that a step's side effect breaks
+
+The brief exempts something from every step ("kept as it is", "left
+alone") and then states a step's condition without crossing it with that
+exemption, though a harness fact says the step's command touches the
+exempted thing anyway. Each line reads true on its own; together they
+contradict, and the executor has to log a decision to say which wins.
+Before committing a brief that keeps anything as it is, take each step it
+lists, look up what that step's command does beyond its purpose (in *Harness
+facts*: a removal that uninstalls, a registration that repoints, a write that
+drops entries), and state the exemption in that step's condition too.
+
+*Provenance:* P0001-C03-c. The brief kept collided plugins and those whose
+copy failed exactly as they were (DEC-11, DEC-12), and had step 5 unregister
+tack's marketplace "when no selected plugin targets the harness". Claude
+Code's `marketplace remove` uninstalls the marketplace's plugins, so step 5
+would uninstall a kept plugin there; the executor logged DEC-13. The sweep
+of P0001-C04's brief checked each step against the wider set of kept
+plugins a held source adds: step 4 and the copies skip them, DEC-13 covers
+step 5, and the record keeps the directory.

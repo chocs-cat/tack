@@ -4,7 +4,7 @@
 - **Created:** 2026-10-05
 - **Ready:** 2026-10-05
 - **Completed:** —
-- **Decisions:** DEC-1 – DEC-12
+- **Decisions:** DEC-1 – DEC-13
 
 ## 1. Problem and outcome
 
@@ -116,6 +116,8 @@ skills and gain plugin cases (DEC-7).
 | design.md, *Selecting plugins*, *Plugin states*, *Adding and removing sources*, *`doctor` checks*; decisions.md (P0001-C02 review) | Plugin names collide across harnesses (DEC-11); a name a catalog lists twice is one plugin. | tack's one marketplace holds one copy per name; the per-harness rule was copied from skills (brief-checklist §2). |
 | design.md, *Deploying*, *Plugin ownership*; decisions.md (P0001-C02 review) | Which harnesses run a CLI and when a missing one is a problem; what "installed" means; step 4's candidates and when a copy is deleted; when the directory goes; change details and problem kinds; a foreign `tack` reported only where it matters; the record's `plugins` shape with each plugin's source; held sources, broken catalogs and failed copies keep their plugins (DEC-12). | The D2 note "to pin at the cut", and what P0001-C03's `sync` would otherwise invent. |
 | design.md, *Harness facts tack relies on* (P0001-C02 review) | No `codex plugin` command takes `--scope`. | Checked against codex-cli 0.157.1's `--help`; the stand-in enforces it. |
+| design.md, *Deploying* step 5; decisions.md (P0001-C03 execution) | Claude Code keeps tack's marketplace registered while a kept plugin is installed there (DEC-13). | Its `marketplace remove` uninstalls the marketplace's plugins; the brief's step 5 would have uninstalled kept ones (brief-checklist §3). |
+| design.md, *Deploying*, *Plugin ownership*, *Source fields*; decisions.md (P0001-C03 review) | tack's marketplace is brought up to date whenever a plugin is selected or it exists (#33); which sources keep their plugins (held, no root, broken catalog) and which plugins (recorded and selected), named *kept*; DEC-12 clarified to match; the record's source follows the manifest; Claude Code's recorded hash; a `skills = []` source is missing only without its root. | What P0001-C04 would otherwise invent, and the shapes C03's executor chose where the docs were silent. |
 
 ## 5. Delivery plan
 
@@ -310,8 +312,9 @@ the diff between the two commits.
 | Chunk | Delivery items | State | Review | Integrated identity |
 |---|---|---|---|---|
 | [P0001-C01](../chunks/P0001-C01.md) | D1 (catalogs), D2 (tack's marketplace, the agents' CLIs, stand-ins): unwired groundwork | accepted with follow-ups (#29; C02-a) | 2026-10-05 | #28, `4c3bcac` |
-| [P0001-C02](../chunks/P0001-C02.md) | D1 (the `plugins` selection, unwired; the plan); C01 review follow-up | accepted with follow-ups (DEC-11 as C03-a; #31) | 2026-10-05 | #30 |
-| [P0001-C03](../chunks/P0001-C03.md) | D2 (`sync`'s plugin steps and the record, not yet reachable); C02 review follow-up (DEC-11) | ready for an executor | — | — |
+| [P0001-C02](../chunks/P0001-C02.md) | D1 (the `plugins` selection, unwired; the plan); C01 review follow-up | accepted with follow-ups (DEC-11 as C03-a; #31) | 2026-10-05 | #30, `3d4bcf5` |
+| [P0001-C03](../chunks/P0001-C03.md) | D2 (`sync`'s plugin steps and the record, not yet reachable); C02 review follow-up (DEC-11) | accepted with follow-ups (#33 as C04-a) | 2026-10-06 | #32 |
+| [P0001-C04](../chunks/P0001-C04.md) | D2 (#33; DEC-12's held sources; `remove`; docs), D1 (`skills = []`; the `plugins` field) | ready for an executor | — | — |
 
 ## 8. Closeout
 

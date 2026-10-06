@@ -37,6 +37,13 @@ VERBS = {
     "commit": ("commit", "committed"),
     "push": ("push", "pushed"),
     "move": ("move", "moved"),
+    "copy": ("copy", "copied"),
+    # An agent's plugin command: its detail is the command line.
+    "register": ("run", "ran"),
+    "install": ("run", "ran"),
+    "reinstall": ("run", "ran"),
+    "uninstall": ("run", "ran"),
+    "unregister": ("run", "ran"),
 }
 
 
