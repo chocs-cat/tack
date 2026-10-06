@@ -351,7 +351,7 @@ class _Plugins:
                 else:
                     wanted.setdefault(name, sel)
         hashes: dict[str, str] = {}
-        if wanted or kept:
+        if self.selected or exists:
             hashes = self._marketplace(wanted, kept)
         wanted = {name: sel for name, sel in wanted.items() if name not in kept}
 

@@ -293,7 +293,7 @@ def test_deselecting_the_last_plugin_unregisters_then_deletes_the_marketplace(
     ]
     assert changes(result)[-1] == ("delete", None, text.tilde(m))
     assert [a for a, _, _ in changes(result)] == [
-        "uninstall", "unregister", "uninstall", "unregister", "delete",
+        "write", "uninstall", "unregister", "uninstall", "unregister", "delete",
     ]  # fmt: skip
     assert not os.path.lexists(m)
     assert record(cfg) == {}
@@ -306,6 +306,44 @@ def test_deselecting_the_last_plugin_unregisters_then_deletes_the_marketplace(
     again = run(configure(home, "one"))
     assert (again.changes, again.problems) == ([], [])
     assert len(standins.calls()) == calls
+
+
+def test_a_failed_unregister_leaves_a_catalog_matching_the_remaining_copies(
+    home: Path, standins: Standins
+) -> None:
+    source(home, "one", "a")
+    cfg = configure(home, "one", one="*")
+    assert run(cfg).problems == []
+    m = cfg.paths.marketplace_dir
+    assert set(plugins.copies(cfg.paths)) == {"a"}
+    standins.fail("codex", ["plugin", "marketplace", "remove", "tack"], "busy")
+    calls = len(standins.calls())
+
+    result = run(configure(home, "one"))
+
+    (problem,) = result.problems
+    assert (problem.kind, problem.harness, problem.message) == (
+        "agent",
+        "codex",
+        "unregistering tack's marketplace failed: busy",
+    )
+    assert changes(result)[0] == ("write", None, text.tilde(m / plugins.CATALOG))
+    assert ran(standins, since=calls) == [
+        claude("uninstall", "a@tack"),
+        claude("marketplace", "remove", "tack"),
+        codex("remove", "a@tack"),
+        codex("marketplace", "remove", "tack"),
+    ]
+    assert m.is_dir()
+    assert (
+        set(plugins.copies(cfg.paths))
+        == {p["name"] for p in json.loads((m / plugins.CATALOG).read_text())["plugins"]}
+        == set()
+    )
+    assert record(cfg) == {}
+    assert "tack" in registered(standins, "codex")
+    for cli_name in ("claude", "codex"):
+        assert installed(standins, cli_name) == {}
 
 
 def test_a_plugin_limited_to_codex_leaves_claude_code_unregistered(
