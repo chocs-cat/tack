@@ -9,14 +9,14 @@ pinned third-party ones — and audit your projects so either agent sees the sam
 skills, and hooks.
 
 `tack sync` deploys skills and selected plugins from the manifest's sources,
-`tack status` shows which skills and plugins are where, `tack outdated` and `tack update`
-track upstream, `tack add` and `tack remove` edit the manifest, `tack doctor`
-audits, and `tack scaffold` applies the fixes it suggests. A `path` source with
-`autocommit = true` (and `autopush`) has its skill edits committed, and
-pushed, whenever a command that changes things runs. A bare `tack` opens a
-TUI over all of it: Skills (grouped by source, and sortable), Sources and
-Doctor tabs, and a Settings screen for the manifest, with every action
-previewed before it runs.
+`tack status` shows which skills and plugins are where, `tack outdated` and
+`tack update` track upstream, `tack add` and `tack remove` edit the manifest,
+`tack doctor` audits, and `tack scaffold` applies the fixes it suggests. A
+`path` source with `autocommit = true` (and `autopush`) has its skill edits
+committed, and pushed, whenever a command that changes things runs. A bare
+`tack` opens a TUI over all of it: Skills (grouped by source, and sortable),
+Sources and Doctor tabs, and a Settings screen for the manifest, with every
+action previewed before it runs.
 
 ## Install
 
@@ -116,6 +116,9 @@ targets; it changes nothing. A plugin is in the first of these that applies:
 - `disabled`: installed, but turned off in the agent; tack leaves it off.
 - `stale`: tack's copy, or Codex's, predates the plugin's files; `sync` refreshes it.
 - `installed`: installed from tack's marketplace, enabled, and current.
+
+Plugins are read from their source as it is now: for a source whose own
+state isn't `ok`, `sync` first holds it or checks out its pin.
 
 `tack status --json` adds `plugins`, one object per selected plugin with
 `name`, `source`, `harnesses` (agent → state), `version` and `path` (its

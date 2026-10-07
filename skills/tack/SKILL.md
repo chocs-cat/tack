@@ -79,8 +79,10 @@ state is the first of these that applies:
   refreshes it.
 - `installed`: installed from tack's marketplace, enabled and current.
 
-`status` runs only those two `list` commands, for each agent a selected
-plugin targets, and changes nothing.
+Plugins are read from their source as it is now, so for a source whose
+`state` isn't `ok`, `sync` first holds it or checks out its pin. `status`
+runs only those two `list` commands, for each agent a selected plugin
+targets, and changes nothing.
 
 `outdated` reports each git source as `current`, `behind` (with `behind`, the
 `commits` and the changed `skills`), `not pinned`, `manifest changed`,

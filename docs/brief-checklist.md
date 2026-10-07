@@ -111,3 +111,25 @@ executor logged DEC-14 for a second inventory. The sweep of P0001-C05's
 brief walked its one multi-run expectation, `status` agreeing with a `sync`
 dry run and then a real one, and found the DEC-14 shape it had to leave
 out.
+
+### §5 A read-only report promised to match what the acting command would do
+
+The doc or brief says a report (`status`, `doctor`, a dry-run preview)
+shows "exactly what `sync` would do", and the report reads its inputs as
+they are, while the acting command first changes them: it holds a source,
+checks out a pin, fetches, or registers. The equivalence holds only for
+inputs those first steps leave alone, and the executor either builds the
+report faithfully and finds the gap, or invents a second copy of those
+steps. Before committing a brief that promises such agreement, list the
+steps the acting command runs before the one being matched, and state the
+inputs the agreement holds for (a source whose state is `ok`), or have the
+report model those steps.
+
+*Provenance:* P0001-C05-b. The cut wrote that a plugin's `stale` is "exactly
+what `sync` would copy or reinstall", but `sync` first holds a source whose
+skills directory is missing or whose checkout has local changes, and checks
+out a git source's pin, so `status` called plugins `stale` or `missing` that
+`sync` would leave alone (#38, DEC-17). The executor implemented the hash
+rule and filed the gap. The sweep found the same promise in P0001-C06's
+*`doctor` checks* text (a leftover is what `sync` would uninstall) and
+stated it for a source whose state is `ok` there too.
