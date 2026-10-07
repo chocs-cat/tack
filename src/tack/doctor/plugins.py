@@ -14,7 +14,7 @@ import os
 from collections.abc import Iterator, Sequence
 
 from tack import agents, catalog, config, deploy, plugins, status
-from tack.config import Config
+from tack.config import Config, Harness
 from tack.doctor.findings import Finding
 from tack.plugins import Plan, Selected
 from tack.text import tilde
@@ -54,7 +54,9 @@ def check(cfg: Config) -> Iterator[Finding]:
                 yield _unavailable(h, inv, stopped)
             continue
         market = inv.marketplace(plugins.NAME)
-        if market is not None and not agents.is_tack(h, market, cfg.paths):
+        foreign = market is not None and not agents.is_tack(h, market, cfg.paths)
+        if foreign:
+            assert market is not None
             if stopped := [sel for sel, st in here if st == "conflict"]:
                 where = tilde(market.location) if market.location else "elsewhere"
                 yield Finding(
@@ -64,18 +66,19 @@ def check(cfg: Config) -> Iterator[Finding]:
                     f"can't deploy {_names(stopped)} to {h}; remove or rename that marketplace",
                     harness=h,
                 )
-            continue
-        for sel, st in here:
-            if st in _STATES:
-                yield Finding(
-                    "not-synced",
-                    "warn",
-                    f"plugin {sel.name!r} from {sel.source.name!r} " + _STATES[st].format(h=h),
-                    path=sel.directory,
-                    harness=h,
-                )
-        if _involved(cfg, h, selected, record):
-            yield from _leftovers(h, inv, plan, record, kept)
+        else:
+            for sel, st in here:
+                if st in _STATES:
+                    yield Finding(
+                        "not-synced",
+                        "warn",
+                        f"plugin {sel.name!r} from {sel.source.name!r} " + _STATES[st].format(h=h),
+                        path=sel.directory,
+                        harness=h,
+                    )
+            if _involved(cfg, h, selected, record):
+                yield from _leftovers(h, inv, plan, record, kept)
+        yield from _others(cfg.harnesses[h], inv, plan, foreign=foreign)
 
 
 def _collisions(cfg: Config, plan: Plan) -> Iterator[Finding]:
@@ -179,6 +182,52 @@ def _leftovers(
             "warn",
             f"{name}@{plugins.NAME} is installed in {h}, but the manifest doesn't deploy "
             f"{name!r} there; `tack sync` uninstalls it",
+            harness=h,
+        )
+
+
+def _others(
+    harness: Harness, inv: agents.Inventory, plan: Plan, *, foreign: bool
+) -> Iterator[Finding]:
+    """The plugins a harness has from marketplaces that aren't tack's (a
+    foreign `tack` among them), at user scope in Claude Code, as in `sync`:
+    `duplicate-plugin` for one the manifest deploys there (none with a foreign
+    `tack`, where nothing is tack's), whatever `ignore_marketplaces` says, by
+    name; then `unmanaged-plugin` for each other one whose marketplace isn't
+    ignored, by id."""
+    h = harness.name
+    theirs = sorted(
+        (
+            p
+            for p in inv.plugins
+            if (foreign or p.marketplace != plugins.NAME)
+            and (h != "claude-code" or p.scope == "user")
+        ),
+        key=lambda p: p.id,
+    )
+    twins: dict[str, list[agents.Installed]] = {}
+    if not foreign:
+        for p in theirs:
+            if p.name in plan.plugins[h]:
+                twins.setdefault(p.name, []).append(p)
+    for name, others in sorted(twins.items()):
+        ids = " and ".join(p.id for p in others)
+        yield Finding(
+            "duplicate-plugin",
+            "warn",
+            f"the manifest deploys {name}@{plugins.NAME} to {h}, which also has {ids}: it loads "
+            f"both; uninstall {'it' if len(others) == 1 else 'them'}, or stop deploying "
+            f"{name!r} there",
+            harness=h,
+        )
+    for p in theirs:
+        if p.name in twins or p.marketplace in harness.ignore_marketplaces:
+            continue
+        yield Finding(
+            "unmanaged-plugin",
+            "info",
+            f"{p.id} is installed in {h} outside tack; select it from its source in the "
+            f"manifest, or add {p.marketplace!r} to [harness.{h}] ignore_marketplaces",
             harness=h,
         )
 

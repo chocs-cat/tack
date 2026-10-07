@@ -527,3 +527,177 @@ def test_doctor_json_lists_plugin_findings(
         }
         for h in BOTH
     ]
+
+
+# --- others' plugins: `unmanaged-plugin` and `duplicate-plugin` -------------------------
+
+
+def others(cfg: Config) -> list[tuple[str, str | None, str]]:
+    """The `unmanaged-plugin` and `duplicate-plugin` findings: id, harness, and
+    the plugin installed outside tack."""
+    out = []
+    for f in check(cfg):
+        if f.id == "unmanaged-plugin":
+            out.append((f.id, f.harness, f.message.split(" ")[0]))
+        elif f.id == "duplicate-plugin":
+            out.append((f.id, f.harness, f.message.split("also has ")[1].split(":")[0]))
+    return out
+
+
+def hand(standins: Standins, cli: str, plugin_id: str, *, scope: str = "user") -> None:
+    """Install a plugin by hand from its own marketplace. Codex lists only the
+    plugins of a registered marketplace whose catalog has them."""
+    name, market = plugin_id.split("@")
+    if cli == "codex":
+        where = f"https://example.com/{market}.git"
+        standins.marketplace("codex", market, where, kind="git", plugins=[name])
+    standins.plugin(cli, plugin_id, scope=scope)
+
+
+def test_a_plugin_installed_by_hand_is_unmanaged(home: Path, standins: Standins) -> None:
+    hand(standins, "claude", "x@hand")
+    hand(standins, "codex", "y@shop")
+    cfg = load(home)
+
+    found = check(cfg)
+    assert [(f.id, f.severity, f.path, f.harness, f.message) for f in found] == [
+        (
+            "unmanaged-plugin",
+            "info",
+            None,
+            "claude-code",
+            "x@hand is installed in claude-code outside tack; select it from its source in the "
+            "manifest, or add 'hand' to [harness.claude-code] ignore_marketplaces",
+        ),
+        (
+            "unmanaged-plugin",
+            "info",
+            None,
+            "codex",
+            "y@shop is installed in codex outside tack; select it from its source in the "
+            "manifest, or add 'shop' to [harness.codex] ignore_marketplaces",
+        ),
+    ]
+
+
+def test_ignored_marketplaces_are_not_reported(home: Path, standins: Standins) -> None:
+    hand(standins, "claude", "s@synced")  # Claude Code's own
+    hand(standins, "codex", "b@openai-bundled")  # Codex's own
+    hand(standins, "claude", "c@company")
+    hand(standins, "codex", "c@company")
+    cfg = load(home, '[harness.claude-code]\nignore_marketplaces = ["company"]\n')
+
+    assert others(cfg) == [("unmanaged-plugin", "codex", "c@company")]
+
+
+def test_only_claude_codes_user_scope_is_audited(home: Path, standins: Standins) -> None:
+    hand(standins, "claude", "p@hand", scope="project")
+    hand(standins, "claude", "s@hand2", scope="synced")
+    hand(standins, "claude", "l@hand3", scope="local")
+    hand(standins, "claude", "u@hand4")
+
+    assert others(load(home)) == [("unmanaged-plugin", "claude-code", "u@hand4")]
+
+
+def test_a_plugin_from_a_foreign_tack_is_unmanaged(home: Path, standins: Standins) -> None:
+    standins.marketplace("claude", "tack", "acme/tack", kind="github", plugins=["f"])
+    standins.plugin("claude", "f@tack")
+
+    assert others(load(home)) == [("unmanaged-plugin", "claude-code", "f@tack")]
+
+
+@pytest.mark.parametrize("ignored", [False, True])
+def test_a_deployed_plugin_installed_elsewhere_too_is_a_duplicate(
+    home: Path, standins: Standins, ignored: bool
+) -> None:
+    plugin_source(home, "one", "a")
+    manifest = '[harness.codex]\nignore_marketplaces = ["other"]\n' if ignored else ""
+    cfg = configure(home, "one", manifest=manifest, one=["a"])
+    run_sync(cfg)
+    hand(standins, "claude", "a@other")
+    hand(standins, "codex", "a@other")
+
+    assert [(f.id, f.severity, f.path, f.harness, f.message) for f in check(cfg)] == [
+        (
+            "duplicate-plugin",
+            "warn",
+            None,
+            h,
+            f"the manifest deploys a@tack to {h}, which also has a@other: it loads both; "
+            "uninstall it, or stop deploying 'a' there",
+        )
+        for h in BOTH
+    ]
+
+
+def test_a_plugin_not_deployed_to_a_harness_is_no_duplicate_there(
+    home: Path, standins: Standins
+) -> None:
+    plugin_source(home, "one", "a")
+    cfg = configure(home, "one", one=[{"name": "a", "harnesses": ["codex"]}])
+    run_sync(cfg)
+    hand(standins, "claude", "a@other")
+    hand(standins, "codex", "a@other")
+
+    assert others(cfg) == [
+        ("unmanaged-plugin", "claude-code", "a@other"),
+        ("duplicate-plugin", "codex", "a@other"),
+    ]
+
+
+def test_no_duplicates_in_a_harness_with_a_foreign_tack(home: Path, standins: Standins) -> None:
+    plugin_source(home, "one", "a")
+    cfg = configure(home, "one", one=["a"])
+    standins.marketplace("claude", "tack", "acme/tack", kind="github", plugins=["f"])
+    standins.plugin("claude", "f@tack")
+    hand(standins, "claude", "a@other")
+
+    assert others(cfg) == [
+        ("unmanaged-plugin", "claude-code", "a@other"),
+        ("unmanaged-plugin", "claude-code", "f@tack"),
+    ]
+
+
+def test_others_come_after_a_harness_s_own_findings(home: Path, standins: Standins) -> None:
+    """Per harness: states, leftovers, then `duplicate-plugin` by name and
+    `unmanaged-plugin` by id."""
+    plugin_source(home, "one", "a", "b", "c")
+    run_sync(configure(home, "one", one=["a", "b", "c"]))
+    cfg = configure(home, "one", one=["b", "a", "d"])
+    for plugin_id in ("z@hand", "b@other", "a@other", "y@hand"):
+        hand(standins, "claude", plugin_id)
+
+    assert [(f.id, f.harness, f.message.split(" ")[:2]) for f in check(cfg)] == [
+        ("not-synced", None, ["the", "manifest"]),  # 'd' isn't in the catalog
+        ("not-synced", "claude-code", ["c@tack", "is"]),
+        ("duplicate-plugin", "claude-code", ["the", "manifest"]),
+        ("duplicate-plugin", "claude-code", ["the", "manifest"]),
+        ("unmanaged-plugin", "claude-code", ["y@hand", "is"]),
+        ("unmanaged-plugin", "claude-code", ["z@hand", "is"]),
+        ("not-synced", "codex", ["c@tack", "is"]),
+    ]
+    assert others(cfg) == [
+        ("duplicate-plugin", "claude-code", "a@other"),
+        ("duplicate-plugin", "claude-code", "b@other"),
+        ("unmanaged-plugin", "claude-code", "y@hand"),
+        ("unmanaged-plugin", "claude-code", "z@hand"),
+    ]
+
+
+def test_doctor_exit_codes_for_others_plugins(
+    home: Path, standins: Standins, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`unmanaged-plugin` alone exits 0; a `duplicate-plugin` exits 1."""
+    hand(standins, "claude", "x@hand")
+    assert cli.main(["doctor", "--json"]) == 0
+    assert [f["id"] for f in json.loads(capsys.readouterr().out)["findings"]] == [
+        "unmanaged-plugin"
+    ]
+
+    plugin_source(home, "one", "x")
+    run_sync(configure(home, "one", one=["x"]))
+    capsys.readouterr()
+    assert cli.main(["doctor", "--json"]) == 1
+    assert [f["id"] for f in json.loads(capsys.readouterr().out)["findings"]] == [
+        "duplicate-plugin"
+    ]
