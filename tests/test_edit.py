@@ -480,6 +480,23 @@ def test_add_plugins_dry_run(home: Path, tmp_path: Path) -> None:
     assert tree(home) == before
 
 
+@pytest.mark.parametrize("kw", [{"skills": ["nope"]}, {"plugins": ["nope"]}])
+@pytest.mark.parametrize("skills", [(), ("x",)])
+def test_a_git_dry_run_ignores_a_leftover_checkout(
+    home: Path, tmp_path: Path, kw: dict[str, list[str]], skills: tuple[str, ...]
+) -> None:
+    """A dry run doesn't clone, so it checks neither a git source's skills
+    nor its plugins, even with tack's checkout of an earlier source by that
+    name still there (#49): here one with no catalog, and no skills
+    directory or one without `nope`."""
+    up = repo(offering(tmp_path / "up"))
+    cfg = load(home, "")
+    upstream(cfg.paths.sources_dir / "up", *skills)
+    before = tree(home)
+    run_add(cfg, url(up), dry_run=True, **kw)
+    assert tree(home) == before
+
+
 # --- remove ---------------------------------------------------------------------------
 
 

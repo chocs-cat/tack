@@ -118,20 +118,23 @@ def add(
 
 def _refusals(cfg: Config, src: Source, *, dry_run: bool) -> list[str]:
     """What makes a new source unfit to add: its skills, unless it takes none
-    (only plugins), then its plugins."""
-    out = [] if src.skills == () else _skill_refusals(cfg, src, dry_run=dry_run)
+    (only plugins), then its plugins. A git source's dry run checks neither:
+    it doesn't clone, so only the new pin could say what they are, whatever
+    tack's checkout of that name holds (design.md *Adding and removing
+    sources*, #49)."""
+    if src.git is not None and dry_run:
+        return []
+    out = [] if src.skills == () else _skill_refusals(cfg, src)
     if src.plugins:  # `add` writes a list of names, never "*"
         out += _plugin_refusals(cfg, src)
     return out
 
 
-def _skill_refusals(cfg: Config, src: Source, *, dry_run: bool) -> list[str]:
+def _skill_refusals(cfg: Config, src: Source) -> list[str]:
     plan = deploy.plan(cfg)
     state = next(s for s in plan.sources if s.source.name == src.name)
     where = tilde(sources.skills_dir(src, cfg.paths))
     if not state.present:
-        if src.git is not None and dry_run:
-            return []  # not fetched, so its skills are unknown
         no_dir = f"there is no skills directory at {where}; --subdir says where they are"
         return [_with_plugins(no_dir, cfg, src)]
     out: list[str] = []
@@ -151,9 +154,7 @@ def _skill_refusals(cfg: Config, src: Source, *, dry_run: bool) -> list[str]:
 
 def _plugin_refusals(cfg: Config, src: Source) -> list[str]:
     """The plugins a new source selects that `sync` couldn't deploy, each with
-    the reason `sync` gives (design.md *Adding and removing sources*). A
-    source whose root isn't there (a git source a dry run hasn't cloned)
-    selects and lacks nothing, so nothing is checked."""
+    the reason `sync` gives (design.md *Adding and removing sources*)."""
     plan = plugins.plan(cfg)
     state = next(s for s in plan.sources if s.source.name == src.name)
     out: list[str] = []
