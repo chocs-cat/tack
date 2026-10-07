@@ -265,3 +265,39 @@ problems list to carry the agent's message, which `sync` reports as an
 `agent` problem.
 
 *Where:* design.md, *Plugins* (*Plugin states*), *`doctor` checks*.
+
+## DEC-17: `status` reads a source's plugins as they are on disk (2026-10)
+
+Added in the review of P0001-C05 (#38). A plugin's `stale` and `missing`
+compare tack's copy, the record and the agents with the plugin's files as its
+source has them now, so they are what `sync` would copy, reinstall and
+install for a source whose own state is `ok`. For any other, `sync` first
+holds the source (DEC-12) or checks out its pin, and the plugin can read
+`stale` or `missing` where `sync` then changes nothing: the source's state,
+on its own line, says what `sync` does first, as it does for a held
+source's skills, which read `missing` too. Reading a git source's plugins
+at its pin, or giving a held source's plugins a state of their own, was the
+alternative: neither helps a held `path` source, and the second is one more
+state for the TUI and `doctor` to place for a case the source already
+reports.
+
+*Where:* design.md, *Plugins* (*Plugin states*).
+
+## DEC-18: `doctor` lists the plugins of each agent that is installed (2026-10)
+
+Added at the cut of P0001-C06, with the maintainer. `doctor`'s plugin checks
+run each built-in harness's two `list` commands whenever its CLI is on
+`PATH` and the global checks run, whether or not the manifest selects
+plugins. `unmanaged-plugin` exists to find plugins installed by hand, and a
+user who hasn't selected any plugin yet is the one most likely to have
+them, as `unmanaged-skill` is reported without any skill selected. So "a
+manifest without plugins runs no agent" (DEC-3) holds for `sync` and
+`status`, which change or show only what tack deploys; `doctor`, an audit,
+runs the agents that are there. A missing CLI is still no finding unless a
+selected plugin targets that harness, and `--projects-only` runs no agent.
+Running them only when `sync` would (a selection, a record entry or tack's
+marketplace) was the alternative: it would leave hand-installed plugins
+unreported until the user adopted plugins in tack, at the cost of two
+`list` commands per agent on every `doctor` run.
+
+*Where:* design.md, *`doctor` checks*.

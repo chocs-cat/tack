@@ -238,9 +238,11 @@ harness it adds to the built-in list rather than replacing it.
 *(P0001)* `ignore_marketplaces` names marketplaces whose plugins belong to the
 agent itself or to someone else (the built-in ones are the agents' own:
 claude.ai's synced plugins, Codex's bundled ones); `doctor` doesn't report
-their plugins as unmanaged. It adds to the built-in list the same way. Only
-the built-in harnesses take plugins: tack drives their own CLIs, and a
-harness defined in the manifest has none it could drive (DEC-8).
+their plugins as unmanaged. It is a list of marketplace names, and adds to
+the built-in list the same way. Only the built-in harnesses take plugins:
+tack drives their own CLIs, and a harness defined in the manifest has none
+it could drive (DEC-8), so `ignore_marketplaces` in its table is a
+configuration error.
 
 ### TUI fields
 
@@ -693,12 +695,17 @@ A plugin is in the first of these states that applies, in this order:
   `plugin list` shows the plugin from tack's marketplace (Claude Code's at
   user scope), enabled or not. `disabled` is such a plugin with `enabled`
   false.
-- `stale` is exactly what `sync` would copy or reinstall: tack's copy is
+- `stale` is what `sync` would copy or reinstall: tack's copy is
   missing or its hash (see [Plugin ownership](#plugin-ownership)) isn't the
   plugin's directory's, in any harness; and in Codex also when the record has
   no hash for the plugin there, or one that isn't the plugin's directory's.
   A plugin with no directory to compare (one tack can't deploy, or one
   whose files can't be read, so that its copy would fail) is never `stale`.
+- Each reads the plugin's files as its source has them now (DEC-17), so
+  `stale` and `missing` are what `sync` would do for a source whose state is
+  `ok`. For any other, `sync` first holds the source or checks out its pin,
+  and its plugins can read `stale` or `missing` where `sync` then changes
+  nothing; the source's state says what `sync` does first.
 - `status` runs a harness's two `list` commands once, and only when a
   selected plugin targets that harness, so a manifest without plugins runs
   no agent (DEC-3). It writes nothing and still exits `0`.
@@ -799,10 +806,45 @@ read wrong), **warn** (will drift or break later), **info**.
 
 *(P0001)* The plugin checks read each agent's plugins through its CLI
 (`claude plugin list --json`, `codex plugin list --json`, and their
-`marketplace list`), as `sync` runs it. A harness whose CLI isn't on `PATH`,
-or whose `list` fails, has no plugins to report; it is a `not-synced`
+`marketplace list`), as `sync` runs it: once per run, in each built-in
+harness whose CLI is on `PATH`, whether or not the manifest selects plugins
+(DEC-18); `--projects-only` runs no agent. A harness whose CLI isn't on
+`PATH`, or whose `list` fails, has no plugins to report; it is a `not-synced`
 finding (its plugins are `unavailable`, DEC-16) only when a selected plugin
-targets it. Project-scoped plugins aren't audited.
+targets it. Project-scoped plugins aren't audited: in Claude Code only
+`user`-scope installs count, as for `sync`. In detail:
+
+- **A selected plugin's state.** `not-synced` takes the plugin's
+  [state](#plugin-states) in each harness it targets, as `status` gives it,
+  for each one that isn't `installed`: one finding per plugin and harness
+  for `missing`, `disabled` and `stale`, and one per harness for
+  `unavailable` (with the agent's message) and for `conflict`, naming the
+  plugins they stop. A `collision` is `name-collision`'s, and a plugin tack
+  can't deploy is reported once for its source instead.
+- **A source.** `not-synced` for each name a source lists that its catalog
+  doesn't have (or that it has no catalog for), each selected plugin tack
+  can't deploy (with the reason), and a broken catalog, located at the
+  catalog file, or the source root when there is none.
+- **Leftovers.** `not-synced` for each of tack's plugins in a harness that
+  `sync` would uninstall there (step 4 of [Deploying](#deploying)): one the
+  manifest no longer deploys to it and that `sync` doesn't keep, a kept one
+  being a collided name, a plugin from another repository, or one whose
+  recorded source's catalog can't be read (its root isn't there, or the
+  catalog is broken).
+- **Collisions.** `name-collision` once per plugin name two sources select,
+  located at the manifest.
+- **Others' plugins.** `unmanaged-plugin` for each plugin installed from a
+  marketplace that isn't tack's (a foreign `tack` among them) and isn't in
+  the harness's `ignore_marketplaces`. `duplicate-plugin` for each plugin
+  the manifest deploys to the harness (selected for it, deployable, and
+  selected by no other source) that the harness also has from another
+  marketplace, whatever `ignore_marketplaces` says; such a plugin isn't
+  also `unmanaged-plugin`.
+
+In a harness with a foreign `tack`, nothing is tack's: none of its plugins
+is a leftover or a duplicate. A finding about a harness names it. Like
+`status`, these checks read each source as it is now (DEC-17): what they
+say `sync` would do is what it does for a source whose state is `ok`.
 
 ### Per project
 

@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, is_dataclass
 from datetime import datetime
 from pathlib import Path
@@ -306,6 +307,7 @@ def _status_text(st: status.Status, cfg: Config) -> str:
         where = tilde(cfg.manifest or cfg.paths.manifest)
         return f"no sources in {where}"
     width = max(len(s.name) for s in st.sources)
+    selecting = {src.name for src in cfg.sources if src.plugins != ()}
     lines = ["sources"]
     for s in st.sources:
         if s.kind == "path":
@@ -318,6 +320,8 @@ def _status_text(st: status.Status, cfg: Config) -> str:
         if s.state != "ok":
             notes.append(text.SOURCE_STATES[s.state].format(name=s.name))
         notes.append(text.plural(len(s.skills), "skill"))
+        if s.name in selecting:
+            notes.append(text.plural(len(s.plugins), "plugin"))
         if s.uncommitted:
             notes.append(f"uncommitted edits to {', '.join(s.uncommitted)}")
         if s.unpushed:
@@ -325,18 +329,34 @@ def _status_text(st: status.Status, cfg: Config) -> str:
         lines.append(f"  {'':<{width}}  {'; '.join(notes)}")
 
     if st.skills:
-        harnesses = list(cfg.harnesses)
-        name_w = max(len("skill"), *(len(k.name) for k in st.skills))
-        src_w = max(len("source"), *(len(k.source) for k in st.skills))
-        cols = [max(len(h), len("collision")) for h in harnesses]
-        head = "  ".join(f"{h:<{w}}" for h, w in zip(harnesses, cols, strict=True))
-        lines += ["", f"{'skill':<{name_w}}  {'source':<{src_w}}  {head}".rstrip()]
-        for k in st.skills:
-            cells = "  ".join(
-                f"{k.harnesses.get(h, '-'):<{w}}" for h, w in zip(harnesses, cols, strict=True)
-            )
-            lines.append(f"{k.name:<{name_w}}  {k.source:<{src_w}}  {cells}".rstrip())
+        rows = [(k.name, k.source, k.harnesses) for k in st.skills]
+        lines += ["", *_state_table("skill", rows, list(cfg.harnesses), "collision")]
+    if st.plugins:
+        rows = [(p.name, p.source, p.harnesses) for p in st.plugins]
+        lines += ["", *_state_table("plugin", rows, config.PLUGIN_HARNESSES, "unavailable")]
     return "\n".join(lines)
+
+
+def _state_table(
+    what: str,
+    rows: Sequence[tuple[str, str, Mapping[str, str]]],
+    harnesses: Sequence[str],
+    widest: str,
+) -> list[str]:
+    """A table of `what`, its source, and its state in each harness (`-`
+    where it doesn't target one), each harness column at least as wide as
+    `widest`."""
+    name_w = max(len(what), *(len(name) for name, _, _ in rows))
+    src_w = max(len("source"), *(len(src) for _, src, _ in rows))
+    cols = [max(len(h), len(widest)) for h in harnesses]
+    head = "  ".join(f"{h:<{w}}" for h, w in zip(harnesses, cols, strict=True))
+    lines = [f"{what:<{name_w}}  {'source':<{src_w}}  {head}".rstrip()]
+    for name, src, states in rows:
+        cells = "  ".join(
+            f"{states.get(h, '-'):<{w}}" for h, w in zip(harnesses, cols, strict=True)
+        )
+        lines.append(f"{name:<{name_w}}  {src:<{src_w}}  {cells}".rstrip())
+    return lines
 
 
 # --- outdated --------------------------------------------------------------------

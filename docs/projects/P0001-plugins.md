@@ -4,7 +4,7 @@
 - **Created:** 2026-10-05
 - **Ready:** 2026-10-05
 - **Completed:** —
-- **Decisions:** DEC-1 – DEC-16
+- **Decisions:** DEC-1 – DEC-18
 
 ## 1. Problem and outcome
 
@@ -54,8 +54,10 @@ Not in scope:
   documented, not checked
   ([#25](https://github.com/chocs-cat/tack/issues/25)).
 
-Compatibility: a manifest without `plugins` behaves exactly as before and
-runs no agent CLI (DEC-3). `state.json` stays version 1, so an older tack
+Compatibility: a manifest without `plugins` behaves exactly as before in
+`sync` and `status`, and runs no agent CLI there (DEC-3); `doctor` lists
+the plugins of each agent that is installed, to report hand-installed ones
+(DEC-18). `state.json` stays version 1, so an older tack
 still reads what a newer one writes (DEC-6). `tack.lock` is unchanged
 (DEC-4). The `not-synced` and `name-collision` ids keep their meaning for
 skills and gain plugin cases (DEC-7).
@@ -121,6 +123,8 @@ skills and gain plugin cases (DEC-7).
 | design.md, *Deploying* step 2; decisions.md (P0001-C04 execution) | Codex's inventory is read again after registering when the record lists plugins there; a dry run assumes them installed (DEC-14). | Codex hides an unregistered marketplace's plugins, so the brief's recovery would have reinstalled them (brief-checklist §4). |
 | design.md, header, *Deploying*, *Harness facts tack relies on* (P0001-C04 review) | What the *(P0001)* mark means once part is built; a `path` source is held when missing as *Source fields* says; Codex lists a kept plugin again once its marketplace is registered again, checked against codex-cli 0.160.1. | The header and the held-source list had gone stale with C04; DEC-14's assumption needed the real agent. |
 | design.md, *Plugin states*; decisions.md (P0001-C05 cut) | The order states apply in (DEC-15); a failing `list` is `unavailable` (DEC-16); what *installed* and `stale` read, matching `sync`; when `status` runs the agents; the `--json` objects' order, `version`'s source, and `path` null without a copy. | What P0001-C05's executor would otherwise invent. |
+| design.md, *Plugin states*; decisions.md (P0001-C05 review) | Plugins are read from their source as it is now; `stale` and `missing` match `sync` for a source whose state is `ok` (DEC-17, #38). | The cut's "exactly what `sync` would copy" ignored the holds and checkouts `sync` does first (brief-checklist §5). |
+| design.md, *`doctor` checks*, *Harness fields*; decisions.md (P0001-C06 cut) | `doctor` lists each installed agent's plugins whatever the manifest selects (DEC-18, with the maintainer); each plugin finding's cases, grouping, exclusions and location; `ignore_marketplaces` a list of names, an error on a manifest-defined harness. | What P0001-C06's executor would otherwise invent. |
 
 ## 5. Delivery plan
 
@@ -221,8 +225,9 @@ manifest (*`doctor` checks*, *Harness fields*; DEC-7).
 **Depends on:** D3.
 
 **Done when:** each finding comes from stand-in fixtures with its severity
-and location; plugins from built-in or listed `ignore_marketplaces` aren't
-reported; project-scope installs aren't reported; a harness without a CLI
+and location; a manifest without plugins still reports `unmanaged-plugin`
+when an agent is installed (DEC-18); plugins from built-in or listed
+`ignore_marketplaces` aren't reported; project-scope installs aren't reported; a harness without a CLI
 yields nothing unless a selected plugin targets it; `unmanaged-plugin` alone
 exits `0`, `duplicate-plugin` exits `1`.
 
@@ -264,6 +269,11 @@ folding and sorting as on Skills with the plugin state order, the detail
 pane, changed plugins in the Sources detail, and plugin commands in `s`'s
 preview (*The TUI*).
 
+Note from the P0001-C05 review: the TUI's worker calls `status.status` and
+`doctor.run` together, and from D4 both list the agents' plugins, so each
+refresh runs every `list` command twice; the Plugins tab's worker reads
+each agent once and shares it.
+
 **Depends on:** D3, D5.
 
 **Done when:** pilot tests show the tab order and keys, the app still
@@ -303,7 +313,8 @@ the diff between the two commits.
   unregisters the marketplace. The run is recorded in a chunk report with the
   agents' versions, and *Harness facts* is corrected if anything differs.
 - **Compatibility.** The existing test suite passes unchanged apart from tab
-  keys; a manifest without `plugins` makes no agent CLI call; a pre-project
+  keys; with a manifest without `plugins`, `sync` and `status` make no
+  agent CLI call (DEC-18); a pre-project
   `state.json` loads, and the new one keeps `version: 1`.
 - **A real setup.** `tack doctor` on a machine with hand-installed plugins
   reports them as `unmanaged-plugin` and stays quiet about the agents' own.
@@ -317,8 +328,9 @@ the diff between the two commits.
 | [P0001-C01](../chunks/P0001-C01.md) | D1 (catalogs), D2 (tack's marketplace, the agents' CLIs, stand-ins): unwired groundwork | accepted with follow-ups (#29; C02-a) | 2026-10-05 | #28, `4c3bcac` |
 | [P0001-C02](../chunks/P0001-C02.md) | D1 (the `plugins` selection, unwired; the plan); C01 review follow-up | accepted with follow-ups (DEC-11 as C03-a; #31) | 2026-10-05 | #30, `3d4bcf5` |
 | [P0001-C03](../chunks/P0001-C03.md) | D2 (`sync`'s plugin steps and the record, not yet reachable); C02 review follow-up (DEC-11) | accepted with follow-ups (#33 as C04-a) | 2026-10-06 | #32, `91feded` |
-| [P0001-C04](../chunks/P0001-C04.md) | D2 (#33; DEC-12's held sources; `remove`; docs), D1 (`skills = []`; the `plugins` field): D1 and D2 done | accepted with follow-ups (#35 as C05-a) | 2026-10-07 | #34 |
-| [P0001-C05](../chunks/P0001-C05.md) | D3 (`status` reports plugins); C04 review follow-up (#35) | ready for an executor | — | — |
+| [P0001-C04](../chunks/P0001-C04.md) | D2 (#33; DEC-12's held sources; `remove`; docs), D1 (`skills = []`; the `plugins` field): D1 and D2 done | accepted with follow-ups (#35 as C05-a) | 2026-10-07 | #34, `5f4cd60` |
+| [P0001-C05](../chunks/P0001-C05.md) | D3 (`status` reports plugins); C04 review follow-up (#35): D3 done | accepted with follow-ups (#40 as C06-a) | 2026-10-07 | #37 |
+| [P0001-C06](../chunks/P0001-C06.md) | D4 (`doctor` audits plugins); C05 review follow-up | ready for an executor | — | — |
 
 ## 8. Closeout
 

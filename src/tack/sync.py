@@ -462,12 +462,7 @@ class _Plugins:
                 )
             return True
         registered = market is not None
-        # tack's plugins there, enabled or not (DEC-5); Claude Code's at user scope.
-        installed = {
-            p.name
-            for p in inv.plugins
-            if p.marketplace == plugins.NAME and (h != "claude-code" or p.scope == "user")
-        }
+        installed = set(agents.tack_plugins(h, inv))
 
         # 1. Register; 2. install; 3. reinstall in Codex.
         if not targeted or registered or self._run(agents.register(h, self.paths.marketplace_dir)):
@@ -480,7 +475,7 @@ class _Plugins:
                     if isinstance(refreshed, agents.Outcome):
                         self._failed(refreshed)
                         return False
-                    installed = {p.name for p in refreshed.plugins if p.marketplace == plugins.NAME}
+                    installed = set(agents.tack_plugins(h, refreshed))
             for name, sel in wanted.items():
                 now = Install(sel.source.name, hashes[name])
                 if name not in installed:

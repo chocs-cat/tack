@@ -49,7 +49,7 @@ local changes. The user's own skills live in `path` sources; edit them there.
 ## Look before acting
 
 ```sh
-tack status --json            # sources (state, pin, pending edits) and skills (state per harness)
+tack status --json            # sources (state, pin, pending edits), skills and plugins (state per harness)
 tack doctor --json            # audit the harnesses and the projects under [projects] roots
 tack doctor --json ~/Code/app # audit one project (or search one directory)
 tack outdated --json          # how far each git source is behind upstream
@@ -62,13 +62,33 @@ a state is `linked`, `missing`, `stale` (a link pointing elsewhere),
 sources offer that name). A source's `state` is `ok`, `missing`,
 `not pinned`, `manifest changed`, `not checked out`, `local changes` or
 `off its pin`; `uncommitted` and `unpushed` list pending edits to a path
-source's skills.
+source's skills, and `plugins` the plugins it selects.
+
+`status` also lists each selected plugin with `name`, `source`, `harnesses`
+(`{"claude-code": "installed", ...}`, for the harnesses it targets),
+`version` and `path` (its copy in tack's marketplace, or null). A plugin's
+state is the first of these that applies:
+
+- `collision`: two sources select the name; neither is deployed.
+- `unavailable`: the agent's CLI isn't on `PATH`, or its `plugin list` or
+  `plugin marketplace list` fails.
+- `conflict`: the agent has a marketplace named `tack` that isn't tack's.
+- `missing`: not installed; `sync` installs it if tack can deploy it.
+- `disabled`: installed but turned off in the agent; tack never turns it on.
+- `stale`: tack's copy, or Codex's, predates the plugin's files; `sync`
+  refreshes it.
+- `installed`: installed from tack's marketplace, enabled and current.
+
+Plugins are read from their source as it is now, so for a source whose
+`state` isn't `ok`, `sync` first holds it or checks out its pin. `status`
+runs only those two `list` commands, for each agent a selected plugin
+targets, and changes nothing.
 
 `outdated` reports each git source as `current`, `behind` (with `behind`, the
 `commits` and the changed `skills`), `not pinned`, `manifest changed`,
 `not checked out` or `error`, with the command that fixes it in `message`.
 
-`status`, `doctor`, and the TUI don't show plugins yet; upstream reports
+`doctor` and the TUI don't show plugins yet; upstream reports
 still track skills. Plugin selections are edited in the manifest by hand.
 
 ## Changing things
@@ -123,19 +143,24 @@ it would commit and push.
 ### Editing the manifest by hand
 
 `add` and `remove` cover sources; for anything else, edit `tack.toml` and
-then run `tack sync --dry-run`. The source fields:
+then run `tack sync --dry-run`. The source fields, for a git source and a
+`path` source:
 
 ```toml
 [[source]]
 name = "vendor"
-git = "https://github.com/org/skills.git"   # or: path = "~/Code/my-skills"
-ref = "main"                  # git: the branch or tag to follow (default: the remote's)
+git = "https://github.com/org/skills.git"
+ref = "main"                  # the branch or tag to follow (default: the remote's)
 subdir = "skills"             # where the skill directories are
 skills = ["a", { name = "b", harnesses = ["codex"] }]         # default "*": all of them
 plugins = ["p", { name = "q", harnesses = ["codex"] }]       # default []: none
 harnesses = ["codex"]         # limit the whole source (default: every harness)
-autocommit = true             # path: commit skill edits when tack runs
-autopush = true               # path: and push them
+
+[[source]]
+name = "mine"
+path = "~/Code/my-skills"     # a local directory, used as it is
+autocommit = true             # commit skill edits when tack runs (path sources only)
+autopush = true               # and push them
 ```
 
 `plugins` is `"*"` or a list shaped like `skills`; plugin harnesses may name
