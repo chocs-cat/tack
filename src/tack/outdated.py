@@ -134,7 +134,7 @@ def _compare(src: Source, cfg: Config, entry: LockEntry | None, *, diff: bool) -
     at_pin, at_tip = sources.skills_at(d, pin, sub), sources.skills_at(d, tip, sub)
     selected = at_pin | at_tip if src.skills is None else {s.name for s in src.skills}
 
-    changed = git.run(d, "diff", "--name-only", "-z", pin, tip, "--", sub)
+    changed = git.run(d, "diff", "--no-renames", "--name-only", "-z", pin, tip, "--", sub)
     touched = sources.skills_in(changed.stdout.split("\0"), sub) & selected
     for name in sorted(touched):
         kind: SkillChange = (
@@ -143,14 +143,9 @@ def _compare(src: Source, cfg: Config, entry: LockEntry | None, *, diff: bool) -
         r.skills.append(ChangedSkill(name, kind))
     tracked = _plugins(r, src, d, pin, tip) if src.plugins != () else None
 
-    log = git.run(
-        d, "-c", "core.quotePath=false", "log", "--format=%x1e%H%x1f%s", "--name-only",
-        f"{pin}..{tip}", "--", sub,
-    )  # fmt: skip
-    for record in log.stdout.split("\x1e")[1:]:
-        head, _, files = record.partition("\n")
+    for head, files in git.log(d, "%H%x1f%s", f"{pin}..{tip}", "--", sub):
         commit, _, subject = head.partition("\x1f")
-        if names := sorted(sources.skills_in(files.splitlines(), sub) & selected):
+        if names := sorted(sources.skills_in(files, sub) & selected):
             r.commits.append(Commit(commit, subject, names))
     if tracked is not None:
         r.commits = tracked.commits({c.commit: c.skills for c in r.commits})
@@ -247,15 +242,10 @@ class _Tracked:
         """The commits between the pin and the tip that touch selected skills
         (`skills`, by commit) or selected plugins, newest first (DEC-20)."""
         span = f"{self.before.commit}..{self.after.commit}"
-        log = git.run(
-            self.repo, "-c", "core.quotePath=false", "log", "--no-renames",
-            "--format=%x1e%H%x1f%P%x1f%s", "--name-only", span,
-        )  # fmt: skip
         out: list[Commit] = []
-        for record in log.stdout.split("\x1e")[1:]:
-            head, _, files = record.partition("\n")
+        for head, files in git.log(self.repo, "%H%x1f%P%x1f%s", span):
             commit, parents, subject = head.split("\x1f", 2)
-            plugins = self._touched(commit, parents.split(), files.splitlines())
+            plugins = self._touched(commit, parents.split(), files)
             names = skills.get(commit, [])
             if names or plugins:
                 out.append(Commit(commit, subject, names, plugins))

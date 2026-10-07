@@ -64,6 +64,11 @@ def ids(findings: Iterable[Finding]) -> list[str]:
     return [f.id for f in findings]
 
 
+# A file name git C-quotes in a list of paths unless asked for `-z`: a double
+# quote, a tab and a newline (review-checklist §2).
+QUOTED = 'q"t\tn\nl.md'
+
+
 def skill_md(name: str) -> str:
     return f"---\nname: {name}\ndescription: The {name} skill.\n---\n"
 

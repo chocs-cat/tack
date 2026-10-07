@@ -8,8 +8,9 @@ import pytest
 
 from tack import sources
 from tack.config import Config, LockEntry
+from tack.git import log as git_log
 from tack.sources import SourceError
-from tests.helpers import commit, git, load, upstream, write
+from tests.helpers import QUOTED, commit, git, load, repo, upstream, write
 
 WHEN = datetime(2026, 9, 27, 12, 0, 0, tzinfo=UTC)
 
@@ -123,3 +124,50 @@ def test_dry_run_changes_nothing(home: Path, tmp_path: Path) -> None:
     assert out.entry.commit == tip
     assert [a for a, _ in out.steps] == ["pin", "clone", "checkout"]
     assert not cfg.paths.data_dir.exists()
+
+
+# --- unpushed skill edits (design.md *Auto-commit*) ------------------------------------
+
+
+def pushed(tmp_path: Path) -> Path:
+    """A work tree with skills `a` and `b`, pushed to its upstream."""
+    remote = tmp_path / "remote.git"
+    remote.mkdir()
+    git(remote, "init", "-q", "--bare", "-b", "master")
+    mine = repo(
+        tmp_path / "mine",
+        {"skills/a/SKILL.md": "a\n", "skills/a/notes.md": "notes\n", "skills/b/SKILL.md": "b\n"},
+    )
+    git(mine, "remote", "add", "origin", str(remote))
+    git(mine, "push", "-q", "-u", "origin", "master")
+    return mine
+
+
+def test_git_log_frames_any_name(tmp_path: Path) -> None:
+    """Each commit's line and the files it changes, whatever a name holds: a
+    quote, a tab and a newline, or a newline first; an empty commit has none."""
+    r = repo(tmp_path / "r", {"a.md": "a\n"})
+    commit(r, {"\nlead.md": "x\n", f"d/{QUOTED}": "y\n"}, "Two")
+    git(r, "commit", "-q", "--allow-empty", "-m", "Empty")
+    commit(r, {"a.md": "b\n"}, "One")
+    assert git_log(r, "%s", "HEAD~3..HEAD") == [
+        ("One", ["a.md"]),
+        ("Empty", []),
+        ("Two", ["\nlead.md", f"d/{QUOTED}"]),
+    ]
+    assert git_log(r, "%s", "nope") == []
+
+
+def test_unpushed_a_file_name_git_quotes(tmp_path: Path) -> None:
+    mine = pushed(tmp_path)
+    assert sources.unpushed(mine, "skills") == set()
+    commit(mine, {f"skills/a/{QUOTED}": "new\n"})
+    assert sources.unpushed(mine, "skills") == {"a"}
+
+
+def test_unpushed_a_file_moved_between_skills(tmp_path: Path) -> None:
+    """It touches both: the skill it left and the one it joined."""
+    mine = pushed(tmp_path)
+    git(mine, "mv", "skills/a/notes.md", "skills/b/notes.md")
+    git(mine, "commit", "-qm", "Move notes")
+    assert sources.unpushed(mine, "skills") == {"a", "b"}
