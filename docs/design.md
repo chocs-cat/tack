@@ -250,7 +250,7 @@ configuration error.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `group_by_source` | `true` | Whether the Skills tab opens grouped by source (see [The TUI](#the-tui)). |
+| `group_by_source` | `true` | Whether the Skills tab (and the Plugins tab, *P0001*) opens grouped by source (see [The TUI](#the-tui)). |
 
 ### Writing the manifest
 
@@ -393,7 +393,9 @@ sorted, if there are any. Otherwise it
 appends the table and syncs. A git source it can't
 reach is reported (exit `1`) with nothing written. A new source is always
 pinned afresh, replacing any lock entry left under its name. A dry run doesn't
-clone, so it can't check a git source's skills or plugins.
+clone, so it checks neither a git source's skills nor its plugins, even when
+tack's checkout of an earlier source by that name is still there (one
+`remove` left for its local changes): only the new pin says what they are.
 
 **`remove`** cuts the source's table, drops its lock entry, syncs (which
 removes its links, and uninstalls its plugins *(P0001)*), and then deletes
@@ -1051,7 +1053,10 @@ the selected row:
 - **Sources** — each source's state: how far behind upstream a git source
   is, or that it isn't pinned or checked out; a path source's uncommitted and
   unpushed skill edits. The detail shows the pin, the commits since, the
-  changed skills (and plugins, *P0001*), and their diff.
+  changed skills (and plugins, *P0001*), and their diff. *(P0001)* It names
+  the plugins the source selects after its skills, when it selects any, and
+  gives its changed plugins, its `plugins_error` and "no selected skill or
+  plugin changed" as `outdated`'s text does.
 - **Doctor** — the findings by project, colored by severity. The detail
   shows the message, the path, and the fix. Errors come first, then warnings,
   then info.
@@ -1063,6 +1068,8 @@ order. The Plugins tab's grouping and sort are its own, held like Skills'.
 The audit and
 the upstream fetch (`outdated --diff`) run in the background, so the app
 opens at once and fills each tab as they finish. `r` runs them again.
+*(P0001)* Each run lists each agent's plugins once (its two `list`
+commands), for the Plugins tab and the audit together.
 
 **Sorting.** Click a column's header to sort the Skills table by it, and
 click it again to reverse; `o` moves the sort to the next column and `O`
@@ -1085,6 +1092,29 @@ its row, and folds hold through refreshes. A source's row shows that source's
 detail, as on Sources. `g` turns grouping off or on until the app closes;
 `[tui] group_by_source` (default `true`) sets how the app opens, and
 Settings changes it.
+
+**The Plugins tab** *(P0001)* has a column for the plugin, one for its
+source while ungrouped, and one for each harness that takes plugins, in the
+order the Skills tab shows them. It sorts, groups and folds as Skills does,
+by the plugin state order above, with a sort, a grouping and folds of its
+own: `o`, `O`, `g`, the fold keys and a header click change the tab they
+are used on, and `[tui] group_by_source` sets how both tabs open. A group
+row stands for each source that selects plugins (whose `plugins` isn't
+`[]`), in the manifest's order, with how many plugins it selects and, under
+each harness, how many of them aren't `installed` there, by state, in the
+column's sort order (`1 disabled, 1 missing`). `installed` is green;
+`stale`, `disabled` and `missing` are yellow; `unavailable`, `conflict` and
+`collision` are red. With no plugin selected, the tab says so, and that a
+source's `plugins` in the manifest, or the plugins field of `a` on Sources,
+selects them. A plugin's detail names its source and that source's pin (a
+`path` source's directory), tack's copy of the plugin if there is one, its
+version, its description, and its state in each harness it targets; for a
+plugin `sync` reports a problem about (one tack can't deploy, one from
+another repository, one whose files can't be read, or a name two sources
+select), it gives that problem as `sync` words it, reading the source as it
+is now, as the states do (DEC-17). A plugin's description
+is the first string `description` among its `plugin.json` files, read as its
+[version](#catalogs) is, else its catalog entry's, else none.
 
 **Settings.** `,` opens a Settings screen over the manifest, in tabs:
 
