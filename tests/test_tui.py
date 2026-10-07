@@ -7,19 +7,21 @@ from collections.abc import Awaitable, Callable
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
+import pytest
 from rich.text import Text
 from textual.pilot import Pilot
 from textual.widgets import DataTable, Input, Static, TabbedContent
 from textual.widgets._header import HeaderTitle
 from textual.widgets._tabbed_content import ContentTabs
 
-from tack import __version__, config, outdated, sync
+from tack import __version__, config, edit, outdated, sync
 from tack.status import SourceStatus
 from tack.tui import render
 from tack.tui.app import FixedHeader, TackApp
 from tack.tui.dialogs import ActionScreen, AddScreen
-from tests.helpers import commit, load, repo, skill, skill_md, upstream, write
+from tests.helpers import commit, load, market, repo, skill, skill_md, upstream, write
 
 Scenario = Callable[[TackApp, Pilot[None]], Awaitable[None]]
 
@@ -313,6 +315,47 @@ def test_adds_a_source(home: Path, tmp_path: Path) -> None:
         await settle(pilot)
         assert [s.name for s in config.load().sources] == ["mine", "up", "more"]
         assert rows(app, "skills")[-2:] == [["▾ more (1)", "", ""], ["  b", "linked", "linked"]]
+
+    drive(scenario)
+
+
+def test_adds_a_source_of_plugins(
+    home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The form's plugins field, split as the skills field is, reaches the add."""
+    machine(home, tmp_path)
+    write(home / "plugged" / "plugins" / "p" / "README.md", "p\n")
+    write(home / "plugged" / "plugins" / "q" / "README.md", "q\n")
+    market(home / "plugged", "p", "q")
+    adds: list[dict[str, Any]] = []
+    real = edit.add
+
+    def add(cfg: config.Config, spec: str, **fields: Any) -> sync.Result:
+        adds.append(fields)
+        return real(cfg, spec, **fields)
+
+    monkeypatch.setattr(edit, "add", add)
+
+    async def scenario(app: TackApp, pilot: Pilot[None]) -> None:
+        await pilot.press("2", "a")
+        await settle(pilot)
+        assert isinstance(app.screen, AddScreen)
+        app.screen.query_one("#spec", Input).value = str(home / "plugged")
+        app.screen.query_one("#plugins", Input).value = "p, q"
+        await pilot.press("enter")
+        await settle(pilot)
+        assert "would write ~/.config/tack/tack.toml" in body(app)
+        await pilot.press("y")
+        await settle(pilot)
+        await pilot.press("n")
+        await settle(pilot)
+        assert [a["plugins"] for a in adds] == [["p", "q"], ["p", "q"]]  # the preview, the add
+        source = config.load().sources[-1]
+        assert (source.name, source.skills, [p.name for p in source.plugins or ()]) == (
+            "plugged",
+            (),
+            ["p", "q"],
+        )
 
     drive(scenario)
 

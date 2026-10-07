@@ -242,12 +242,14 @@ def uncommitted(top: Path, rel: str) -> set[str]:
 
 def unpushed(top: Path, rel: str) -> set[str]:
     """The skills in `rel` touched by commits not in the branch's upstream;
-    none when it has no upstream."""
+    none when it has no upstream. A file's name may hold any character, and a
+    file moved from one skill to another touches both (design.md
+    *Auto-commit*)."""
     r = git.run(
-        top, "--literal-pathspecs", "-c", "core.quotePath=false", "log", "--format=",
-        "--name-only", "@{upstream}..HEAD", "--", rel,
+        top, "--literal-pathspecs", "log", "--no-renames", "-z", "--format=", "--name-only",
+        "@{upstream}..HEAD", "--", rel,
     )  # fmt: skip
-    return skills_in(r.stdout.splitlines(), rel) if r.returncode == 0 else set()
+    return skills_in(r.stdout.split("\0"), rel) if r.returncode == 0 else set()
 
 
 def edits(source: Source, paths: Paths) -> tuple[list[str], list[str]]:

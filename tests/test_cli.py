@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -287,6 +288,17 @@ def test_add_takes_skills_in_any_grouping(home: Path, capsys: pytest.CaptureFixt
     code, _, _ = run(capsys, "add", str(home / "mine"), "--skill", "a", "b", "--skill", "c")
     assert code == 0
     assert sorted(p.name for p in (home / ".agents" / "skills").iterdir()) == ["a", "b", "c"]
+
+
+def test_add_takes_plugins_in_any_grouping(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    for name in ("a", "b", "c", "d"):
+        write(home / "mine" / "plugins" / name / "README.md", f"{name}\n")
+    market(home / "mine", "a", "b", "c", "d")
+    code, _, err = run(capsys, "add", str(home / "mine"), "--plugin", "a", "b", "--plugin", "c")
+    assert (code, err) == (0, "")
+    with (home / ".config" / "tack" / "tack.toml").open("rb") as f:
+        (table,) = tomllib.load(f)["source"]
+    assert (table["skills"], table["plugins"]) == ([], ["a", "b", "c"])
 
 
 def test_usage_errors_exit_two(home: Path, capsys: pytest.CaptureFixture[str]) -> None:

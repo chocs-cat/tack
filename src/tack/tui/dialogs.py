@@ -139,7 +139,13 @@ class AddScreen(ModalScreen[dict[str, Any] | None]):
             yield Label("Add a source", id="dialog-title")
             yield Input(placeholder="a git URL, or a directory", id="spec")
             yield Input(placeholder="name (default: from the URL or directory)", id="name")
-            yield Input(placeholder="skills to deploy, space-separated (default: all)", id="skills")
+            yield Input(
+                placeholder="skills to deploy, space-separated (default: all; none with plugins)",
+                id="skills",
+            )
+            yield Input(
+                placeholder="plugins to deploy, space-separated (default: none)", id="plugins"
+            )
             yield Input(placeholder="ref: branch or tag to follow (git only)", id="ref")
             yield Input(placeholder="subdir holding the skills (default: skills)", id="subdir")
             with Horizontal(id="dialog-buttons"):
@@ -168,6 +174,7 @@ class AddScreen(ModalScreen[dict[str, Any] | None]):
                 "spec": spec,
                 "name": self._value("name"),
                 "skills": (self._value("skills") or "").replace(",", " ").split(),
+                "plugins": (self._value("plugins") or "").replace(",", " ").split(),
                 "ref": self._value("ref"),
                 "subdir": self._value("subdir"),
             }

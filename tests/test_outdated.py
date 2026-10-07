@@ -11,7 +11,7 @@ import pytest
 from tack import catalog, cli, outdated, sources, sync
 from tack.config import Config, UsageError
 from tack.outdated import ChangedSkill
-from tests.helpers import commit, git, load, repo, skill_md, upstream
+from tests.helpers import QUOTED, commit, git, load, repo, skill_md, upstream
 
 WHEN = datetime(2026, 9, 27, 12, 0, 0, tzinfo=UTC)
 
@@ -82,6 +82,40 @@ def test_only_selected_skills_count(home: Path, tmp_path: Path) -> None:
     commit(up, {"skills/new/SKILL.md": "new"}, "Add new")
     r = only(cfg)
     assert (r.state, r.behind, r.skills, r.commits) == ("behind", 2, [], [])
+
+
+def test_a_file_name_git_quotes(home: Path, tmp_path: Path) -> None:
+    """A commit whose only change under a skill is a file named with a quote,
+    a tab and a newline is listed and attributed (design.md *Tracking
+    upstream*: every changed file counts)."""
+    up = upstream(tmp_path / "up", "a")
+    cfg = pinned(home, source(up))
+    commit(up, {f"skills/a/{QUOTED}": "new\n"}, "Quoted")
+    r = only(cfg)
+    assert r.skills == [ChangedSkill("a", "modified")]
+    assert [(c.subject, c.skills) for c in r.commits] == [("Quoted", ["a"])]
+
+
+@pytest.mark.parametrize(("selection", "changes", "attributed"), [
+    ('"*"', [ChangedSkill("a", "removed"), ChangedSkill("b", "added")], ["a", "b"]),
+    ('["a"]', [ChangedSkill("a", "removed")], ["a"]),
+])  # fmt: skip
+def test_a_renamed_skill(
+    home: Path,
+    tmp_path: Path,
+    selection: str,
+    changes: list[ChangedSkill],
+    attributed: list[str],
+) -> None:
+    """Its old name removed and its new one added: git's rename detection
+    plays no part."""
+    up = upstream(tmp_path / "up", "a")
+    cfg = pinned(home, source(up, f"skills = {selection}\n"))
+    git(up, "mv", "skills/a", "skills/b")
+    git(up, "commit", "-qm", "Rename a")
+    r = only(cfg)
+    assert r.skills == changes
+    assert [(c.subject, c.skills) for c in r.commits] == [("Rename a", attributed)]
 
 
 def test_subdir_at_the_root(home: Path, tmp_path: Path) -> None:
@@ -610,6 +644,17 @@ def test_commits_touching_plugins(home: Path, tmp_path: Path) -> None:
         ("Entry b", [], ["b"]),
         ("File a", [], ["a"]),
     ]
+
+
+def test_a_commit_touching_a_file_name_git_quotes(home: Path, tmp_path: Path) -> None:
+    """Its only change under a plugin is a file named with a quote, a tab and
+    a newline: listed and attributed."""
+    up = plugin_upstream(tmp_path / "up", "a")
+    cfg = tracking(home, up)
+    commit(up, {f"plugins/a/{QUOTED}": "new\n"}, "Quoted")
+    r = only(cfg)
+    assert plugin_changes(r) == [("a", "modified", "1.0", "1.0")]
+    assert listed(r) == {"Quoted": ([], ["a"])}
 
 
 def test_a_merge_touches_no_plugin(home: Path, tmp_path: Path) -> None:

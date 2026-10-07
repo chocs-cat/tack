@@ -46,6 +46,30 @@ def toplevel(path: Path) -> Path | None:
     return Path(r.stdout.strip()) if r.returncode == 0 else None
 
 
+def log(repo: Path, fmt: str, *args: str) -> list[tuple[str, list[str]]]:
+    """`git log --no-renames --name-only args...`: each commit's `fmt` line
+    and the files it changes, none when git fails. Read NUL-separated, so a
+    name holding a newline or a quote is itself; without rename detection, so
+    a rename is its old path and its new one (design.md *Tracking upstream*).
+
+    With `-z`, each commit is `\\0<fmt>\\0`, then, when it changes files, `\\n`
+    and each name followed by `\\0`: the empty field a commit starts with is
+    never a name."""
+    r = run(repo, "log", "--no-renames", "-z", f"--format=%x00{fmt}", "--name-only", *args)
+    commits: list[tuple[str, list[str]]] = []
+    fields = iter(r.stdout.split("\0"))
+    for field in fields:
+        if field == "":
+            head = next(fields, None)
+            if head is None:
+                break
+            commits.append((head, []))
+        elif commits:
+            files = commits[-1][1]
+            files.append(field if files else field.removeprefix("\n"))
+    return commits
+
+
 def tracked(repo: Path, *paths: str) -> set[str]:
     """Which of `paths` (relative to `repo`) are tracked in its index."""
     r = run(repo, "ls-files", "-z", "--", *paths)

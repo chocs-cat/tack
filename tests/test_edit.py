@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import re
 import tomllib
 from datetime import UTC, datetime
 from pathlib import Path
@@ -7,9 +9,10 @@ from pathlib import Path
 import pytest
 
 from tack import config, deploy, edit, sync
-from tack.config import Config, ConfigError, UsageError
+from tack.config import Config, ConfigError, SkillSpec, Source, UsageError
 from tack.sync import Result
-from tests.helpers import git, load, skill, tree, upstream, write
+from tests.helpers import git, load, market, repo, skill, tree, upstream, write
+from tests.standin import Standins
 
 WHEN = datetime(2026, 9, 27, 12, 0, 0, tzinfo=UTC)
 
@@ -257,6 +260,223 @@ def test_add_dry_run(home: Path, tmp_path: Path) -> None:
     assert [c.action for c in result.changes] == ["write", "link", "link"]
     result = run_add(cfg, url(up), skills=["nope"], dry_run=True)  # unchecked: not cloned
     assert [c.action for c in result.changes][:5] == ["pin", "write", "clone", "checkout", "write"]
+    assert tree(home) == before
+
+
+# --- add --plugin (design.md *Adding and removing sources*) --------------------------
+
+NPM = {"name": "u", "source": {"source": "npm", "package": "@acme/u"}}
+ELSEWHERE = {"name": "r", "source": {"source": "github", "repo": "acme/r", "sha": "0" * 40}}
+
+
+def offering(root: Path, *skills: str) -> Path:
+    """A source at `root` whose catalog offers plugins `a` and `good`, with
+    their files; `u`, from npm, which tack can't deploy; `r`, from another
+    repository; and `gone`, whose directory isn't there. Its `skills` are in
+    `skills/`, which isn't there without them."""
+    for p in ("a", "good"):
+        write(root / "plugins" / p / ".claude-plugin" / "plugin.json", json.dumps({"name": p}))
+    for s in skills:
+        skill(root / "skills", s)
+    return market(root, "a", "good", NPM, ELSEWHERE, "gone")
+
+
+def plugins_of(home: Path) -> Source:
+    (src,) = load(home).sources
+    return src
+
+
+@pytest.mark.parametrize(("kw", "table", "selected"), [
+    ({}, 'skills = []\nplugins = ["a", "good"]\n', ()),
+    ({"skills": ["s"]}, 'skills = ["s"]\nplugins = ["a", "good"]\n', (SkillSpec("s"),)),
+    ({"subdir": "lib"}, 'subdir = "lib"\nskills = []\nplugins = ["a", "good"]\n', ()),
+])  # fmt: skip
+def test_add_plugins_writes_them_after_the_skills(
+    home: Path, kw: dict[str, object], table: str, selected: tuple[SkillSpec, ...]
+) -> None:
+    """`--plugin a --plugin a good`: each name once, in the order given; with
+    no `--skill`, `skills = []`."""
+    offering(home / "full", "s")
+    (home / "full" / "lib").mkdir()
+    cfg = load(home, "")
+    result = run_add(cfg, home / "full", plugins=["a", "a", "good"], **kw)
+    assert result.problems == []
+    assert manifest_text(home) == '[[source]]\nname = "full"\npath = "~/full"\n' + table
+    assert plugins_of(home) == Source(
+        "full",
+        path=home / "full",
+        subdir=str(kw.get("subdir", "skills")),
+        skills=selected,
+        plugins=(SkillSpec("a"), SkillSpec("good")),
+    )
+
+
+def test_add_without_plugins_writes_the_table_as_before(home: Path) -> None:
+    offering(home / "full", "s")
+    run_add(load(home, ""), home / "full")
+    assert manifest_text(home) == '[[source]]\nname = "full"\npath = "~/full"\n'
+
+
+def test_add_plugins_installs_them(home: Path, tmp_path: Path, standins: Standins) -> None:
+    """A source with no skills directory, path or git, is accepted with
+    `--plugin`: its skills aren't checked. The plugin goes to both agents."""
+    offering(home / "full")
+    up = repo(offering(tmp_path / "git" / "up"))
+    cfg = load(home, "")
+    assert run_add(cfg, home / "full", plugins=["good"]).problems == []
+    cfg = load(home)
+    assert run_add(cfg, url(up), plugins=["a"]).problems == []
+    assert [(s.name, s.skills, s.plugins) for s in load(home).sources] == [
+        ("full", (), (SkillSpec("good"),)),
+        ("up", (), (SkillSpec("a"),)),
+    ]
+    for cli_name in ("claude", "codex"):
+        assert set(standins.state()[cli_name]["plugins"]) == {"good@tack", "a@tack"}
+    calls = [" ".join(c.args[:3]) for c in standins.calls() if c.args[1] in ("install", "add")]
+    assert calls == [
+        "plugin install good@tack",
+        "plugin add good@tack",
+        "plugin install a@tack",
+        "plugin add a@tack",
+    ]
+
+
+def plugin_refusal_cases(home: Path, tmp_path: Path) -> list[tuple[str, list[str], str]]:
+    """Each refusal for a path source and for a fresh git clone: the source,
+    `--plugin`, and the refusal."""
+    out: list[tuple[str, list[str], str]] = []
+    for kind in ("path", "git"):
+        base = home if kind == "path" else tmp_path / "git"
+        full, bare, broken = offering(base / "full"), base / "bare", base / "broken"
+        write(bare / "README.md", "no catalog\n")
+        write(broken / ".claude-plugin" / "marketplace.json", "{}")
+        if kind == "git":
+            full, bare, broken = (url(repo(r)) for r in (full, bare, broken))
+        root = "~/" if kind == "path" else "~/.local/share/tack/sources/"
+        catalog = f"{root}full/.claude-plugin/marketplace.json"
+        out += [
+            (str(bare), ["x"], f"there is no plugin catalog in {root}bare "
+                "(.claude-plugin/marketplace.json or .agents/plugins/marketplace.json)"),
+            (str(full), ["good", "nope", "nah"], f"{catalog} has no plugins 'nope', 'nah'"),
+            (str(broken), ["x"], "marketplace.json: not a catalog: it needs a `plugins` list"),
+            (str(full), ["u"], "plugin 'u' can't be deployed: "),
+            (str(full), ["r"], "plugin 'r' is in another repository (https://github.com/acme/r.git)"),
+            (str(full), ["gone"], f"plugin 'gone': no plugin directory at {root}full/plugins/gone"),
+            (str(full), ["a"], "plugin 'a' already selected by taken"),
+        ]  # fmt: skip
+    return out
+
+
+def test_add_plugin_refusals_write_nothing(home: Path, tmp_path: Path) -> None:
+    offering(home / "taken")
+    cfg = load(home, '[[source]]\nname = "taken"\npath = "~/taken"\nskills = []\nplugins = ["a"]\n')
+    cases = plugin_refusal_cases(home, tmp_path)
+    cfg.paths.sources_dir.mkdir(parents=True)
+    before = tree(home)
+    for spec, names, message in cases:
+        with pytest.raises(UsageError, match=re.escape(message)):
+            run_add(cfg, spec, plugins=names)
+        assert tree(home) == before, (spec, names)  # a fresh clone is removed again
+
+
+def test_add_plugin_refusals_come_in_order(home: Path) -> None:
+    """The skills', then a broken catalog or the names it lacks, then each
+    plugin `sync` couldn't deploy, then each another source selects."""
+    offering(home / "taken")
+    cfg = load(home, '[[source]]\nname = "taken"\npath = "~/taken"\nskills = []\nplugins = ["a"]\n')
+    offering(home / "full")
+    with pytest.raises(UsageError) as refused:
+        run_add(cfg, home / "full", skills=["s"], plugins=["a", "nope", "gone", "r", "u"])
+    assert str(refused.value).removeprefix("can't add full: ").split("; ") == [
+        "there is no skills directory at ~/full/skills",
+        "--subdir says where they are",  # the skills refusal's own "; "
+        "~/full/.claude-plugin/marketplace.json has no plugin 'nope'",
+        "plugin 'gone': no plugin directory at ~/full/plugins/gone",
+        "plugin 'r' is in another repository (https://github.com/acme/r.git), "
+        "and tack doesn't deploy those yet",
+        "plugin 'u' can't be deployed: `npm` sources can't be pinned",
+        "plugin 'a' already selected by taken",
+    ]
+
+
+def test_a_source_with_no_skills_lists_its_plugins(home: Path) -> None:
+    """Without `--plugin`, the refusal of a source with no skills lists the
+    plugins `--plugin` would accept: sorted, deployable, and selected by no
+    other source. Each of them is then accepted."""
+    offering(home / "full")
+    write(home / "full" / "plugins" / "b" / "README.md", "b\n")
+    market(home / "full", "good", "a", NPM, ELSEWHERE, "gone", "b")
+    (home / "empty" / "skills").mkdir(parents=True)
+    write(home / "empty" / "plugins" / "e" / "README.md", "e\n")
+    market(home / "empty", "e")
+    cfg = load(home, '[[source]]\nname = "taken"\npath = "~/taken"\nskills = []\nplugins = ["a"]\n')
+    offering(home / "taken")
+
+    with pytest.raises(UsageError) as refused:
+        run_add(cfg, home / "full")
+    assert str(refused.value) == (
+        "can't add full: there is no skills directory at ~/full/skills; --subdir says where "
+        "they are; --plugin selects its plugins 'b', 'good'"
+    )
+    with pytest.raises(UsageError) as refused:
+        run_add(cfg, home / "empty")
+    assert str(refused.value) == (
+        "can't add empty: there are no skills in ~/empty/skills; --plugin selects its plugin 'e'"
+    )
+    # With --plugin, the refusal is as before.
+    with pytest.raises(UsageError, match=r"--subdir says where they are; plugin 'u' can't"):
+        run_add(cfg, home / "full", skills=["s"], plugins=["u"])
+
+    assert run_add(cfg, home / "full", plugins=["b", "good"]).problems == []
+    assert [(s.name, s.plugins) for s in load(home).sources][-1] == (
+        "full",
+        (SkillSpec("b"), SkillSpec("good")),
+    )
+
+
+def test_a_source_with_no_skills_and_no_plugins_to_offer(home: Path) -> None:
+    """No catalog, a broken one, or none `--plugin` would accept: the refusal
+    is as before."""
+    (home / "bare").mkdir()
+    write(home / "broken" / ".claude-plugin" / "marketplace.json", "{")
+    market(home / "only-npm", NPM)
+    cfg = load(home, "")
+    for name in ("bare", "broken", "only-npm"):
+        with pytest.raises(UsageError) as refused:
+            run_add(cfg, home / name)
+        assert str(refused.value) == (
+            f"can't add {name}: there is no skills directory at ~/{name}/skills; "
+            "--subdir says where they are"
+        )
+
+
+@pytest.mark.parametrize("plugin", ["u", "r", "gone"])
+def test_a_plugin_refusal_gives_the_reason_sync_gives(home: Path, plugin: str) -> None:
+    """The same words as the `source` problem a `sync` dry run reports for
+    the source already in the manifest selecting the plugin."""
+    offering(home / "full")
+    with pytest.raises(UsageError) as refused:
+        run_add(load(home, ""), home / "full", plugins=[plugin])
+    selecting = load(
+        home, f'[[source]]\nname = "full"\npath = "~/full"\nskills = []\nplugins = ["{plugin}"]\n'
+    )
+    result = sync.sync(selecting, dry_run=True, now=WHEN)
+    (problem,) = result.problems
+    assert (problem.kind, problem.source) == ("source", "full")
+    assert str(refused.value) == f"can't add full: {problem.message}"
+
+
+def test_add_plugins_dry_run(home: Path, tmp_path: Path) -> None:
+    """A git source's dry run can't check its plugins, not having cloned it;
+    a path source's checks them."""
+    offering(home / "full")
+    up = repo(offering(tmp_path / "up"))
+    cfg = load(home, "")
+    before = tree(home)
+    result = run_add(cfg, url(up), plugins=["nope"], dry_run=True)
+    assert [c.action for c in result.changes][:2] == ["pin", "write"]
+    with pytest.raises(UsageError, match="has no plugin 'nope'"):
+        run_add(cfg, home / "full", plugins=["nope"], dry_run=True)
     assert tree(home) == before
 
 
