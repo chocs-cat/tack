@@ -38,3 +38,23 @@ quick proof.
 stdin passed with `stdin=subprocess.DEVNULL` removed, because fd 0 under
 pytest is already `/dev/null`; the executor's mutation check caught it, and
 `13c2ca4` made the tests hold a pipe open on fd 0.
+
+### §2 A list of paths parsed from git's output line by line
+
+The code reads file names from `git log --name-only`, `git diff
+--name-only`, `git status` or `git ls-files` split on newlines. Without
+`-z`, git C-quotes a path holding a double quote, a backslash, a tab, a
+newline or another control character (`core.quotePath=false` only stops
+the escaping of non-ASCII bytes), so the line starts with `"` and matches
+no prefix, and the file silently counts for nothing. Test fixtures use
+plain names, so every test passes. Look for any git command whose output
+is split into paths without `-z`, and for a test with a name git quotes.
+The same commands list a rename as its new path only unless
+`--no-renames` is given, which drops the old one the same silent way.
+
+*Provenance:* P0001-C07 review. `outdated._Tracked.commits` parsed `git log
+--name-only` without `-z`, so a commit whose only change under a plugin was
+to `x"y.md` wasn't listed, though the plugin read *modified* (its diff used
+`-z`). The sweep found the same parse in `outdated`'s skills log and
+`sources.unpushed` (#47), and #46 is the rename half for skills; both
+scheduled as P0001-C08-a.

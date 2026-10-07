@@ -128,6 +128,8 @@ skills and gain plugin cases (DEC-7).
 | design.md, *`doctor` checks* (P0001-C06 execution) | *Leftovers* keeps a plugin whose files can't be read, and there are none in a harness `sync` doesn't run. | The bullet dropped members of *Deploying*'s kept plugins (brief-checklist §6). |
 | design.md, *`doctor` checks*; decisions.md (P0001-C06 review) | Every plugin problem a `sync` dry run reports has a `doctor` finding: a plugin whose files can't be read, and a harness's `unavailable` and `conflict` wherever `sync` reports them (DEC-19, #44). | The cut built these from the plugins' states and missed problems `sync` reports every run (brief-checklist §6). |
 | design.md, *Tracking plugins upstream*; decisions.md (P0001-C07 cut) | How `outdated` reads catalogs and versions at a commit, a broken catalog at either end (DEC-20), which plugins are selected, what *modified* means for each kind, which commits touch a plugin, the `--diff` entry diff's format, `plugins_error` and the text lines. | What P0001-C07's executor would otherwise invent. |
+| design.md, *Tracking plugins upstream* (P0001-C07 review) | A catalog symlinked out of the repository is broken at that commit; a source whose plugins weren't compared says "no selected skill changed". | The executor's choices where the section was silent. |
+| design.md, *Tracking upstream*, *Auto-commit*, *Adding and removing sources* (P0001-C08 cut) | A renamed skill is removed and added, and any file name counts (#46, #47); `--plugin` takes names, written after `skills`; each plugin refusal and its reason, a broken catalog's included, and a plugin whose files can't be read; which plugins the no-skills refusal lists; a dry run checks no git source's plugins. | What P0001-C08's executor would otherwise invent; the unreadable plugin is the member `sync`'s problems had that the refusals' list lacked (brief-checklist §6). |
 
 ## 5. Delivery plan
 
@@ -260,6 +262,10 @@ neither skills nor `--plugin`, whose message lists the catalog's plugins
 
 **Depends on:** D2.
 
+Notes from the P0001-C08 cut: until D8, `add` refuses a plugin from another
+repository as `sync` reports it; the TUI's add form takes plugins in this
+item, since *The TUI* has it take what `tack add` takes.
+
 **Done when:** each refusal exits `2` with nothing written and a fresh clone
 removed; a dry run writes nothing; the appended table round-trips through the
 manifest parser and the following `sync` installs the plugin; the agent
@@ -336,8 +342,9 @@ the diff between the two commits.
 | [P0001-C03](../chunks/P0001-C03.md) | D2 (`sync`'s plugin steps and the record, not yet reachable); C02 review follow-up (DEC-11) | accepted with follow-ups (#33 as C04-a) | 2026-10-06 | #32, `91feded` |
 | [P0001-C04](../chunks/P0001-C04.md) | D2 (#33; DEC-12's held sources; `remove`; docs), D1 (`skills = []`; the `plugins` field): D1 and D2 done | accepted with follow-ups (#35 as C05-a) | 2026-10-07 | #34, `5f4cd60` |
 | [P0001-C05](../chunks/P0001-C05.md) | D3 (`status` reports plugins); C04 review follow-up (#35): D3 done | accepted with follow-ups (#40 as C06-a) | 2026-10-07 | #37, `0b78ae1` |
-| [P0001-C06](../chunks/P0001-C06.md) | D4 (`doctor` audits plugins, `ignore_marketplaces`); C05 review follow-up (#40): D4 done | accepted with follow-ups (#44 as C07-a; #42) | 2026-10-07 | #41 |
-| [P0001-C07](../chunks/P0001-C07.md) | D5 (`outdated` tracks plugins, `update` reinstalls in Codex); C06 review follow-up (#44) | ready for an executor | — | — |
+| [P0001-C06](../chunks/P0001-C06.md) | D4 (`doctor` audits plugins, `ignore_marketplaces`); C05 review follow-up (#40): D4 done | accepted with follow-ups (#44 as C07-a; #42) | 2026-10-07 | #41, `32ca329` |
+| [P0001-C07](../chunks/P0001-C07.md) | D5 (`outdated` tracks plugins, `update` reinstalls in Codex); C06 review follow-up (#44): D5 done | accepted with follow-ups (#46, #47 as C08-a; brief-checklist §7) | 2026-10-07 | #45 |
+| [P0001-C08](../chunks/P0001-C08.md) | D6 (`add --plugin`, the TUI's add form); C07 review follow-ups (#46, #47) | ready for an executor | — | — |
 
 ## 8. Closeout
 

@@ -155,3 +155,22 @@ section found three more problems `sync` reports with no finding (a
 `conflict` and a failing `list` in a harness only the record involves, a
 missing CLI only an undeployable plugin targets; #44, DEC-19), and checked
 *The TUI*'s plugin sort order against *Plugin states*: all seven states.
+
+### §7 A Done-when keeps a test unchanged whose fixtures the unit changes
+
+The brief requires an existing test to "pass unchanged", to show a unit
+didn't disturb what it shouldn't, but one of that test's fixtures is the
+very case the unit changes (or its assertion covers every finding, line or
+change of a kind the unit adds). The executor either breaks the test or
+breaks the design, and has to say which in its report. Before committing a
+brief with such a guarantee, open the named test, list its fixtures and
+what it asserts over all of them, and check each against the units'
+*Build*; name the test as one to update where they meet, saying how.
+
+*Provenance:* P0001-C07-a. The brief kept
+`test_state_findings_agree_with_status` unchanged, but its `unreadable`
+fixture (a plugin whose directory is gone) was exactly the plugin unit a
+gives a source finding with no harness, which the test's `_covered`
+couldn't place; the executor made it skip harness-less findings and said
+so. The sweep checked the brief's other "unchanged" tests: none met a
+unit's change.
