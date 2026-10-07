@@ -110,7 +110,7 @@ def source_detail(s: SourceStatus, up: outdated.SourceReport | None) -> Text:
     if s.commit and s.locked:
         out.append(f"pinned {s.commit[:12]} on {s.locked.date().isoformat()}\n")
     if s.state != "ok":
-        out.append(text.SOURCE_STATES[s.state].format(name=s.name) + "\n", style="red")
+        out.append(text.source_note(s.state, s.name, s.root) + "\n", style="red")
     out.append(f"{plural(len(s.skills), 'skill')}: {', '.join(s.skills)}\n")
     if s.uncommitted:
         out.append(f"uncommitted edits to {', '.join(s.uncommitted)}\n", style="yellow")
