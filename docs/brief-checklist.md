@@ -133,3 +133,25 @@ out a git source's pin, so `status` called plugins `stale` or `missing` that
 rule and filed the gap. The sweep found the same promise in P0001-C06's
 *`doctor` checks* text (a leftover is what `sync` would uninstall) and
 stated it for a source whose state is `ok` there too.
+
+### §6 A list restated from the section that owns it drops a member
+
+The brief, or the doc text it cites, restates a list another section owns
+(the plugins `sync` keeps, the problems it reports, the states a plugin can
+take) to say how a second command treats each member, and the restatement
+leaves one out. Every member present is handled correctly and tested, so
+nothing fails, and the missing one falls through to a default that is wrong
+for it. Before committing a brief whose doc text restates such a list, open
+the owning section and compare member by member; where the second command
+must mirror the first, have the brief require a test that holds the two
+together (run both and compare) rather than trust the enumeration.
+
+*Provenance:* P0001-C06's cut. *`doctor` checks* restated *Deploying*'s
+kept plugins and `sync`'s plugin problems, and dropped "a plugin whose copy
+fails" from both: the executor caught the first (a leftover `sync` keeps),
+the review the second (a plugin whose directory is gone reads `installed`
+with no finding while every `sync` reports it). The sweep of the same
+section found three more problems `sync` reports with no finding (a
+`conflict` and a failing `list` in a harness only the record involves, a
+missing CLI only an undeployable plugin targets; #44, DEC-19), and checked
+*The TUI*'s plugin sort order against *Plugin states*: all seven states.

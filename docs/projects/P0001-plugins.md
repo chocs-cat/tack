@@ -4,7 +4,7 @@
 - **Created:** 2026-10-05
 - **Ready:** 2026-10-05
 - **Completed:** —
-- **Decisions:** DEC-1 – DEC-18
+- **Decisions:** DEC-1 – DEC-20
 
 ## 1. Problem and outcome
 
@@ -125,6 +125,9 @@ skills and gain plugin cases (DEC-7).
 | design.md, *Plugin states*; decisions.md (P0001-C05 cut) | The order states apply in (DEC-15); a failing `list` is `unavailable` (DEC-16); what *installed* and `stale` read, matching `sync`; when `status` runs the agents; the `--json` objects' order, `version`'s source, and `path` null without a copy. | What P0001-C05's executor would otherwise invent. |
 | design.md, *Plugin states*; decisions.md (P0001-C05 review) | Plugins are read from their source as it is now; `stale` and `missing` match `sync` for a source whose state is `ok` (DEC-17, #38). | The cut's "exactly what `sync` would copy" ignored the holds and checkouts `sync` does first (brief-checklist §5). |
 | design.md, *`doctor` checks*, *Harness fields*; decisions.md (P0001-C06 cut) | `doctor` lists each installed agent's plugins whatever the manifest selects (DEC-18, with the maintainer); each plugin finding's cases, grouping, exclusions and location; `ignore_marketplaces` a list of names, an error on a manifest-defined harness. | What P0001-C06's executor would otherwise invent. |
+| design.md, *`doctor` checks* (P0001-C06 execution) | *Leftovers* keeps a plugin whose files can't be read, and there are none in a harness `sync` doesn't run. | The bullet dropped members of *Deploying*'s kept plugins (brief-checklist §6). |
+| design.md, *`doctor` checks*; decisions.md (P0001-C06 review) | Every plugin problem a `sync` dry run reports has a `doctor` finding: a plugin whose files can't be read, and a harness's `unavailable` and `conflict` wherever `sync` reports them (DEC-19, #44). | The cut built these from the plugins' states and missed problems `sync` reports every run (brief-checklist §6). |
+| design.md, *Tracking plugins upstream*; decisions.md (P0001-C07 cut) | How `outdated` reads catalogs and versions at a commit, a broken catalog at either end (DEC-20), which plugins are selected, what *modified* means for each kind, which commits touch a plugin, the `--diff` entry diff's format, `plugins_error` and the text lines. | What P0001-C07's executor would otherwise invent. |
 
 ## 5. Delivery plan
 
@@ -317,7 +320,10 @@ the diff between the two commits.
   agent CLI call (DEC-18); a pre-project
   `state.json` loads, and the new one keeps `version: 1`.
 - **A real setup.** `tack doctor` on a machine with hand-installed plugins
-  reports them as `unmanaged-plugin` and stays quiet about the agents' own.
+  reports them as `unmanaged-plugin` and stays quiet about the agents' own;
+  the run records the agents' own marketplace names that
+  `ignore_marketplaces` defaults to in *Harness facts*, with the versions
+  (#42: a fresh scratch `HOME` has none to check).
 - **Docs.** `README.md` and `skills/tack/SKILL.md` describe plugins;
   design.md's *(P0001)* marks and the header note are removed.
 
@@ -329,8 +335,9 @@ the diff between the two commits.
 | [P0001-C02](../chunks/P0001-C02.md) | D1 (the `plugins` selection, unwired; the plan); C01 review follow-up | accepted with follow-ups (DEC-11 as C03-a; #31) | 2026-10-05 | #30, `3d4bcf5` |
 | [P0001-C03](../chunks/P0001-C03.md) | D2 (`sync`'s plugin steps and the record, not yet reachable); C02 review follow-up (DEC-11) | accepted with follow-ups (#33 as C04-a) | 2026-10-06 | #32, `91feded` |
 | [P0001-C04](../chunks/P0001-C04.md) | D2 (#33; DEC-12's held sources; `remove`; docs), D1 (`skills = []`; the `plugins` field): D1 and D2 done | accepted with follow-ups (#35 as C05-a) | 2026-10-07 | #34, `5f4cd60` |
-| [P0001-C05](../chunks/P0001-C05.md) | D3 (`status` reports plugins); C04 review follow-up (#35): D3 done | accepted with follow-ups (#40 as C06-a) | 2026-10-07 | #37 |
-| [P0001-C06](../chunks/P0001-C06.md) | D4 (`doctor` audits plugins); C05 review follow-up | ready for an executor | — | — |
+| [P0001-C05](../chunks/P0001-C05.md) | D3 (`status` reports plugins); C04 review follow-up (#35): D3 done | accepted with follow-ups (#40 as C06-a) | 2026-10-07 | #37, `0b78ae1` |
+| [P0001-C06](../chunks/P0001-C06.md) | D4 (`doctor` audits plugins, `ignore_marketplaces`); C05 review follow-up (#40): D4 done | accepted with follow-ups (#44 as C07-a; #42) | 2026-10-07 | #41 |
+| [P0001-C07](../chunks/P0001-C07.md) | D5 (`outdated` tracks plugins, `update` reinstalls in Codex); C06 review follow-up (#44) | ready for an executor | — | — |
 
 ## 8. Closeout
 

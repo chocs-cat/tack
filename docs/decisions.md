@@ -301,3 +301,42 @@ unreported until the user adopted plugins in tack, at the cost of two
 `list` commands per agent on every `doctor` run.
 
 *Where:* design.md, *`doctor` checks*.
+
+## DEC-19: `doctor` reports every plugin problem a `sync` would (2026-10)
+
+Added in the review of P0001-C06. Each plugin problem a `sync` dry run
+reports has a `doctor` finding, for a source whose state is `ok` (DEC-17): a
+`collision` is `name-collision`; a `source` problem (a broken catalog, a
+plugin tack can't deploy or from another repository, a plugin whose files
+can't be read so that its copy would fail) is the source's `not-synced`; an
+`agent` problem (a missing CLI a selected plugin's harness needs, a `list`
+that fails in a harness `sync` runs) and a `conflict` (a foreign `tack` where
+a selected plugin targets the harness or the record lists one there) are the
+harness's `not-synced`, even when it names no plugin of its own. The cut of
+P0001-C06 had built these findings from the plugins' states instead, so a
+plugin whose directory is gone read `installed` and had no finding while
+every `sync` reported it and exited `1`, and a harness only the record
+involved had no finding for a foreign `tack` or a failing `list`. Building
+them from the states alone was the alternative: it leaves `doctor` quiet
+about a problem that fails `sync` every run, which is what an audit is for.
+A plugin is still named once: one with a source finding gets no per-plugin
+state finding, and a harness's finding names only the plugins that have no
+finding of their own.
+
+*Where:* design.md, *`doctor` checks*.
+
+## DEC-20: `outdated` doesn't compare plugins across a broken catalog (2026-10)
+
+Added at the cut of P0001-C07. `outdated` reads a source's catalog at the pin
+and at the tip from git. When either is broken (*Catalogs*), it reports no
+plugin changes for that source and says why in the source's
+`plugins_error`, with the catalog's error; its skills are compared as
+before. Reading a broken catalog as one with no plugins was the alternative:
+every selected plugin would show as added or removed, though `sync` keeps a
+broken catalog's plugins exactly as they are (DEC-12), so neither `update`
+nor the next `sync` would remove or add any of them. Inside the range, a
+catalog that can't be read at a commit counts as one with no entries, so the
+commit that breaks it and the one that fixes it each touch the plugins whose
+entries they hide or restore.
+
+*Where:* design.md, *Plugins* (*Tracking plugins upstream*).

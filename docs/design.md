@@ -732,20 +732,51 @@ gone missing is cloned again. `remove` deletes its source's clones.
 ### Tracking plugins upstream
 
 `outdated` compares a source's selected plugins between its pin and the tip
-of its ref, as it does skills. A plugin in the source is *modified* when files
-under its directory or its catalog entry changed; one from another repository
-when its entry changed (a new commit among them). *Added* and *removed*
-follow the catalog; for `plugins = "*"`, every plugin at the pin or the tip
-is selected, so a new upstream plugin shows as added. Each changed plugin
-shows its version at the pin and at the tip, as `status` takes it. The
-commits listed are those touching selected skills or selected plugins.
-`--diff` adds the diff under a plugin's directory and of its catalog entry,
-and for a plugin from another repository the diff between its two commits
-(fetched into its clone).
+of its ref, as it does skills. It reads the source's catalog at each end from
+git, as [Catalogs](#catalogs) reads one from disk (the same two files, in the
+same order), and only for a source that selects plugins. A source whose
+catalog is broken at either end has no plugin changes, and says why
+(DEC-20). The selected plugins are, for `plugins = "*"`, every plugin in the
+catalog at the pin or the tip, so a new upstream plugin shows as added; for a
+list, the names it lists, a name in neither catalog being left out.
+
+- A plugin in both catalogs is *modified* when its catalog entry changed
+  (compared as JSON values), or, for a plugin in the source, when a file
+  under its directory at the pin or at the tip changed. One from another
+  repository, or one tack can't deploy, changes only with its entry (a new
+  commit among them). A name the catalog lists twice has as its entry all
+  of that name's entries, in order.
+- *Added* and *removed* follow the catalog: a selected plugin in the tip's
+  catalog and not the pin's, or the other way round.
+- Each changed plugin shows its version at the pin and at the tip, as
+  `status` takes it ([Catalogs](#catalogs)), its `plugin.json` files read
+  from git at that commit under its directory there; null at the end that
+  doesn't have it.
+- The commits listed are those touching selected skills or selected plugins.
+  A commit touches a plugin when it changes a file under the plugin's
+  directory (at the pin or the tip), or changes a catalog file and the
+  plugin's entry differs between the commit and its first parent (DEC-20).
+  As for skills, a merge commit, whose own change git doesn't list, touches
+  nothing.
+- `--diff` adds, after the skills' diff, each changed plugin's in name
+  order: the diff under its directory at the pin and at the tip, then, when
+  its entry changed, a unified diff of the entry as JSON (indented two
+  spaces, keys in the catalog's order), headed `a/<catalog file>#<name>` and
+  `b/<catalog file>#<name>`, or `/dev/null` at the end without it. For a
+  plugin from another repository it is also the diff between its two
+  commits, fetched into its clone.
 
 `outdated --json` gives each source `plugins` beside `skills`: one object per
-changed plugin with `name`, `change` and `version` (`{"from": …, "to": …}`,
-either null), and each commit `plugins` beside `skills`.
+changed plugin, sorted by name, with `name`, `change` and `version`
+(`{"from": …, "to": …}`, either null), and `plugins_error`, why its plugins
+couldn't be compared, or null; and each commit `plugins` beside `skills`, the
+selected plugins it touches, sorted. The text lists the changed plugins
+after the skills, a line per kind of change as for skills
+(`plugins modified: a (1.0 -> 1.1), b`), each with its versions in
+parentheses when it has one at either end: for *modified* both (`none` for
+the end without one, a single version when they are equal), the tip's for
+*added*, the pin's for *removed*. `plugins_error` is a line of its own. A source that selects plugins and has neither changed says "no
+selected skill or plugin changed".
 
 ## Auto-commit
 
@@ -794,7 +825,7 @@ read wrong), **warn** (will drift or break later), **info**.
 |---|---|---|
 | `unmanaged-skill` | warn | An entry in a harness skills directory that tack doesn't own and isn't in `ignore` — e.g. installed by hand or by another manager. |
 | `dangling-link` | error | A skill link whose target is gone. |
-| `not-synced` | warn | A selected skill missing from a harness it targets, or a link pointing somewhere other than the manifest says — including a tack link to a skill no longer selected, a listed skill its source doesn't have, and a source that isn't there (a missing `path`, a git source not yet checked out). *(P0001)* Also a selected plugin that isn't `installed` in a harness it targets (any other [state](#plugin-states)), a tack plugin no longer selected, and a listed or selected plugin its source's catalog doesn't have or tack can't deploy (DEC-7). |
+| `not-synced` | warn | A selected skill missing from a harness it targets, or a link pointing somewhere other than the manifest says — including a tack link to a skill no longer selected, a listed skill its source doesn't have, and a source that isn't there (a missing `path`, a git source not yet checked out). *(P0001)* Also a selected plugin that isn't `installed` in a harness it targets (any other [state](#plugin-states)), a tack plugin no longer selected, a listed or selected plugin its source's catalog doesn't have or tack can't deploy, and whatever else `sync` would report about plugins (DEC-7, DEC-19). |
 | `name-collision` | error | Two sources select the same skill name for the same harness, or *(P0001)* the same plugin name for any harnesses (DEC-11). |
 | `unmanaged-plugin` *(P0001)* | info | A plugin installed in a harness at user scope from a marketplace other than tack's and not in `ignore_marketplaces`: installed by hand or by another manager, so nothing keeps it the same across agents and machines. Selecting it from its source does. |
 | `duplicate-plugin` *(P0001)* | warn | A plugin tack deploys to a harness is also installed there, under the same name, from another marketplace: the agent loads both. |
@@ -809,22 +840,35 @@ read wrong), **warn** (will drift or break later), **info**.
 `marketplace list`), as `sync` runs it: once per run, in each built-in
 harness whose CLI is on `PATH`, whether or not the manifest selects plugins
 (DEC-18); `--projects-only` runs no agent. A harness whose CLI isn't on
-`PATH`, or whose `list` fails, has no plugins to report; it is a `not-synced`
-finding (its plugins are `unavailable`, DEC-16) only when a selected plugin
-targets it. Project-scoped plugins aren't audited: in Claude Code only
+`PATH`, or whose `list` fails, has no plugins to report. Every plugin problem
+a `sync` dry run would report has a finding (DEC-19), so it is a
+`not-synced` finding (its plugins are `unavailable`, DEC-16) where `sync`
+reports an `agent` problem: a missing CLI when a selected plugin targets
+the harness, a failing `list` when `sync` runs the harness's CLI at all (see
+*Leftovers*). Project-scoped plugins aren't audited: in Claude Code only
 `user`-scope installs count, as for `sync`. In detail:
 
 - **A selected plugin's state.** `not-synced` takes the plugin's
   [state](#plugin-states) in each harness it targets, as `status` gives it,
   for each one that isn't `installed`: one finding per plugin and harness
   for `missing`, `disabled` and `stale`, and one per harness for
-  `unavailable` (with the agent's message) and for `conflict`, naming the
-  plugins they stop. A `collision` is `name-collision`'s, and a plugin tack
-  can't deploy is reported once for its source instead.
+  `unavailable` (with the agent's message) and for `conflict`. A `collision`
+  is `name-collision`'s, and a plugin with a source finding (one tack can't
+  deploy, or whose files can't be read) is reported once, for its source,
+  instead.
+- **A harness.** The per-harness `unavailable` comes as the paragraph above
+  says, and `conflict` (with the foreign marketplace's location) where a
+  selected plugin targets the harness or the record lists one there: where
+  `sync` reports them (DEC-19). Each names the plugins it stops that have no
+  finding of their own, and says only what is wrong with the harness when
+  there are none.
 - **A source.** `not-synced` for each name a source lists that its catalog
   doesn't have (or that it has no catalog for), each selected plugin tack
   can't deploy (with the reason), and a broken catalog, located at the
-  catalog file, or the source root when there is none.
+  catalog file, or the source root when there is none; and for each plugin
+  the manifest deploys from it whose files can't be read, so that its copy
+  would fail (with the reason, as `sync` gives it), located at the plugin's
+  directory.
 - **Leftovers.** `not-synced` for each of tack's plugins in a harness that
   `sync` would uninstall there (step 4 of [Deploying](#deploying)): one the
   manifest no longer deploys to it and that `sync` doesn't keep, a kept one

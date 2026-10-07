@@ -189,9 +189,9 @@ or to another program, so `doctor` doesn't report them as unmanaged. Like
 `ignore`, it adds to the built-in list (Claude Code's `builtin`, `inline`,
 `skills-dir` and `synced`; Codex's `openai-bundled`, `openai-curated-remote`
 and `openai-primary-runtime`); a harness defined in the manifest can't take
-it, since only the built-in ones take plugins. `[projects] roots`, `exclude` and `owners` set what
-`doctor` audits (a repo whose `origin` belongs to someone not in `owners` is
-skipped as a clone).
+it, since only the built-in ones take plugins. `[projects] roots`, `exclude`
+and `owners` set what `doctor` audits (a repo whose `origin` belongs to
+someone not in `owners` is skipped as a clone).
 
 ### Adding a new skill
 
