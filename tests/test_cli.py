@@ -219,6 +219,29 @@ def test_status_shows_plugins_in_place_of_skills(
     ]
 
 
+@pytest.mark.parametrize(
+    ("selection", "root", "note"),
+    [
+        ("[]", False, "its directory isn't there"),
+        ('"*"', False, "its directory isn't there"),
+        ('"*"', True, "its skills directory isn't there"),
+    ],
+)
+def test_status_says_which_directory_a_missing_source_lacks(
+    home: Path, capsys: pytest.CaptureFixture[str], selection: str, root: bool, note: str
+) -> None:
+    """A `path` source whose root is gone says so; one with a root but no
+    skills directory says that, as `doctor` tells them apart (#40)."""
+    if root:
+        (home / "gone").mkdir()
+    manifest(home, f'[[source]]\nname = "gone"\npath = "~/gone"\nskills = {selection}\n')
+
+    code, out, _ = run(capsys, "status")
+    assert code == 0
+    assert out.splitlines() == ["sources", "  gone  ~/gone", f"        {note}; 0 skills"]
+    assert json.loads(run(capsys, "status", "--json")[1])["sources"][0]["state"] == "missing"
+
+
 def test_tracking(home: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     up = upstream(tmp_path / "up", "a")
     pin = git(up, "rev-parse", "HEAD").strip()

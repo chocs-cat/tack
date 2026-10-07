@@ -88,8 +88,8 @@ targets, and changes nothing.
 `commits` and the changed `skills`), `not pinned`, `manifest changed`,
 `not checked out` or `error`, with the command that fixes it in `message`.
 
-`doctor` and the TUI don't show plugins yet; upstream reports
-still track skills. Plugin selections are edited in the manifest by hand.
+The TUI doesn't show plugins yet, and upstream reports still track skills.
+Plugin selections are edited in the manifest by hand.
 
 ## Changing things
 
@@ -183,9 +183,15 @@ plugin; selecting its skills as well gives an agent two copies of each skill.
 
 `[harness.<name>] ignore = [...]` names entries in a harness's skills
 directory that belong to another program; tack leaves them alone and `doctor`
-doesn't report them. `[projects] roots`, `exclude` and `owners` set what
-`doctor` audits (a repo whose `origin` belongs to someone not in `owners` is
-skipped as a clone).
+doesn't report them. `[harness.claude-code]` and `[harness.codex]` also take
+`ignore_marketplaces = [...]`: marketplaces whose plugins belong to the agent
+or to another program, so `doctor` doesn't report them as unmanaged. Like
+`ignore`, it adds to the built-in list (Claude Code's `builtin`, `inline`,
+`skills-dir` and `synced`; Codex's `openai-bundled`, `openai-curated-remote`
+and `openai-primary-runtime`); a harness defined in the manifest can't take
+it, since only the built-in ones take plugins. `[projects] roots`, `exclude`
+and `owners` set what `doctor` audits (a repo whose `origin` belongs to
+someone not in `owners` is skipped as a clone).
 
 ### Adding a new skill
 
@@ -197,8 +203,31 @@ harness; with a list, add the name to it first.
 ## Auditing projects
 
 `doctor` findings have a stable `id`, a `severity` (`error`, `warn`, `info`),
-a `message`, the `path`, the `project` (null for global ones), and the
-`scaffold` fix where one exists. It exits `1` on any error or warning.
+a `message`, the `path`, the `harness` a finding is about, the `project`
+(null for global ones), and the `scaffold` fix where one exists. It exits
+`1` on any error or warning.
+
+`doctor` also audits plugins. It reads every installed agent's plugins
+(`plugin list` and `plugin marketplace list`, once each for each agent whose
+CLI is on `PATH`) whether or not the manifest selects any; `--projects-only`
+runs no agent. A finding about an agent's plugins names it in `harness` and
+in its `message`, which says what fixes it:
+
+- `not-synced` (warn): a selected plugin `missing`, `disabled` or `stale` in
+  an agent (`path` is its directory), or `unavailable` or in `conflict` there
+  (one finding per agent, naming the plugins, with the agent's error or the
+  foreign marketplace); a plugin a source lists that its catalog lacks, one
+  tack can't deploy, or a broken catalog (`path` is the catalog file); and
+  one of tack's plugins that `sync` would uninstall from an agent.
+- `name-collision` (error): two sources select one plugin name.
+- `duplicate-plugin` (warn): a plugin tack deploys to an agent is also
+  installed there from another marketplace, so the agent loads both.
+- `unmanaged-plugin` (info): a plugin installed from another marketplace;
+  select it from its source, or add its marketplace to the harness's
+  `ignore_marketplaces`.
+
+An agent whose CLI isn't on `PATH` is a finding only when a selected plugin
+targets it.
 
 The conventions it checks: `AGENTS.md` is the project's instructions and
 `CLAUDE.md` imports it (`@AGENTS.md`); `.agents/skills` is the one real

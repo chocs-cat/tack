@@ -102,7 +102,7 @@ copy in place. Deselected plugins are uninstalled, including through
 enables or disables plugins, and a source sync can't reach keeps its
 existing plugins. A sync with no plugin selections, marketplace directory,
 or recorded installs runs no agent CLI. Plugin selections are edited by
-hand; `doctor` and the TUI don't show plugins yet.
+hand; the TUI doesn't show plugins yet.
 
 `tack status` shows each selected plugin's state in each agent it targets,
 read through `claude plugin list` and `codex plugin list` (and their
@@ -124,6 +124,39 @@ state isn't `ok`, `sync` first holds it or checks out its pin.
 `name`, `source`, `harnesses` (agent → state), `version` and `path` (its
 copy in tack's marketplace, or null), and gives each source `plugins`, the
 names it selects.
+
+`tack doctor` audits plugins too. It lists every installed agent's plugins
+(the same two `list` commands, for each agent whose CLI is on `PATH`),
+whether or not the manifest selects any; `--projects-only` runs neither.
+A finding about an agent's plugins names the agent:
+
+- `not-synced` (warn): a selected plugin that is `missing`, `disabled` or
+  `stale` in an agent, or that an agent can't take (`unavailable`,
+  `conflict`); a listed plugin the source's catalog lacks, one tack can't
+  deploy, or a broken catalog; one of tack's plugins that `sync` would
+  uninstall.
+- `name-collision` (error): two sources select the same plugin name.
+- `duplicate-plugin` (warn): a plugin tack deploys to an agent is also
+  installed there from another marketplace, so the agent loads both.
+- `unmanaged-plugin` (info): a plugin installed from another marketplace, by
+  hand or by another manager; selecting it from its source keeps it the same
+  across agents and machines.
+
+A CLI that isn't on `PATH` is a finding only when a selected plugin targets
+that agent.
+
+Built-in harnesses need no table; `[harness.claude-code]` or
+`[harness.codex]` appears only to change a setting. Their
+`ignore_marketplaces` lists marketplaces whose plugins belong to the agent or
+to another program, which `doctor` doesn't report as unmanaged; it adds to
+the built-in list (Claude Code's `builtin`, `inline`, `skills-dir` and
+`synced`; Codex's `openai-bundled`, `openai-curated-remote` and
+`openai-primary-runtime`). Only these two harnesses take it:
+
+```toml
+[harness.claude-code]
+ignore_marketplaces = ["company-tools"]
+```
 
 ## Agent skill
 

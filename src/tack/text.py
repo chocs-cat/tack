@@ -59,6 +59,15 @@ SOURCE_STATES = {
 }
 
 
+def source_note(state: str, name: str, root: Path) -> str:
+    """What a source's state means, for people. A `missing` source says
+    whether its directory is gone or only its skills directory, as `doctor`
+    does (#40)."""
+    if state == "missing" and not root.is_dir():
+        return "its directory isn't there"
+    return SOURCE_STATES[state].format(name=name)
+
+
 def result_text(result: Result, idle: str) -> str:
     """A changing command's result: each change (with its diff, in a dry run),
     note and problem, then a summary; `idle` when there were no changes."""

@@ -91,6 +91,32 @@ def test_values_back_at_their_defaults_are_removed(home: Path, tmp_path: Path) -
     drive(scenario)
 
 
+def test_ignore_marketplaces_is_edited_by_hand_and_kept(home: Path, tmp_path: Path) -> None:
+    """The Harnesses tab says `ignore_marketplaces` is edited in tack.toml, and
+    saving an `ignore` list beside it leaves it alone (design.md *The TUI*)."""
+    machine(home, tmp_path)
+    file = home / ".config" / "tack" / "tack.toml"
+    file.write_text('[harness.codex]\nignore_marketplaces = ["mine"]\n\n' + file.read_text())
+
+    async def scenario(app: TackApp, pilot: Pilot[None]) -> None:
+        screen = await open_settings(app, pilot)
+        notes = [str(n.render()) for n in screen.query("#tab-harnesses .note")]
+        assert any("ignore_marketplaces" in n and "by hand" in n for n in notes)
+        screen.query_one("#ignore-1", TextArea).load_text("codebase-memory\n")
+        await pilot.press("ctrl+s")
+        await settle(pilot)
+        await pilot.press("y")
+        await settle(pilot)
+        await pilot.press("n")
+        await settle(pilot)
+        assert manifest(home)["harness"]["codex"] == {
+            "ignore_marketplaces": ["mine"],
+            "ignore": ["codebase-memory"],
+        }
+
+    drive(scenario)
+
+
 def test_cancelling_asks_before_discarding(home: Path, tmp_path: Path) -> None:
     machine(home, tmp_path)
     before = (home / ".config" / "tack" / "tack.toml").read_text()

@@ -318,7 +318,7 @@ def _status_text(st: status.Status, cfg: Config) -> str:
         if s.commit and s.locked:
             notes.append(f"pinned {s.commit[:12]} on {s.locked.date().isoformat()}")
         if s.state != "ok":
-            notes.append(text.SOURCE_STATES[s.state].format(name=s.name))
+            notes.append(text.source_note(s.state, s.name, s.root))
         notes.append(text.plural(len(s.skills), "skill"))
         if s.name in selecting:
             notes.append(text.plural(len(s.plugins), "plugin"))

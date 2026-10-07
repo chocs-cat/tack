@@ -392,6 +392,14 @@ def test_source_state() -> None:
     assert plain(render.source_state(missing, None, fetching=False)) == "missing"
 
 
+def test_source_detail_says_which_directory_a_missing_source_lacks(tmp_path: Path) -> None:
+    """#40: a `path` source whose root is gone says its directory isn't there."""
+    gone = replace(PATH_SOURCE, root=tmp_path / "gone", state="missing")
+    assert "its directory isn't there\n" in render.source_detail(gone, None).plain
+    (tmp_path / "gone").mkdir()
+    assert "its skills directory isn't there\n" in render.source_detail(gone, None).plain
+
+
 def test_diff_colors() -> None:
     t = render.diff("--- a/x\n+++ b/x\n@@ -1 +1 @@\n-old\n+new\n")
     assert t.plain == "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-old\n+new\n"
