@@ -344,8 +344,11 @@ compares each pin with the tip of its `ref`. It reports how many commits the
 pin is behind, the commits that touch selected skills, and each selected skill
 that changed, as *modified*, *added* or *removed* (for a source taking `"*"`,
 every skill at the pin or the tip is selected, so a new upstream skill shows as
-added). A tip whose history no longer contains the pin (upstream rewrote it)
-is flagged. A source that isn't pinned, isn't checked out, or whose manifest
+added). A renamed skill is its old name removed and its new one added, and a
+file moved from one skill to another changes both: git's rename detection
+plays no part, here or for plugins. Every changed file counts, whatever
+characters its name holds. A tip whose history no longer contains the pin
+(upstream rewrote it) is flagged. A source that isn't pinned, isn't checked out, or whose manifest
 entry changed since it was pinned can't be compared; it is reported with the
 command that fixes it. `--diff` adds `git diff` output limited to the changed
 skills. Exits `1` when any source is behind or couldn't be compared.
@@ -368,6 +371,9 @@ named `skills` takes its owner's name (`cloudflare/skills` becomes
 `--subdir` sets where its skills are. *(P0001)* `--plugin` selects plugins
 from the source's catalog (`plugins` stays `[]` otherwise); given without
 `--skill`, it writes `skills = []`, so the source deploys only the plugins.
+Both take names, each written once in the order given, `plugins` after
+`skills`; a source taking every plugin (`plugins = "*"`) is written by
+hand.
 
 Before writing anything, `add` pins a git source to the tip of its ref and
 clones it, then refuses (exit `2`, nothing written, a fresh clone removed) a
@@ -375,14 +381,19 @@ name already in the manifest, a source already in it (the same `path`, or the
 same `git` and `ref`), a source with no skills in its `subdir`, a `--skill`
 the source doesn't have, and a skill another source already deploys to the
 same harness. *(P0001)* It refuses the same way a `--plugin` the catalog
-doesn't have or tack can't deploy (see [Catalogs](#catalogs)), and a plugin
-another source already selects (DEC-11). With `--plugin`, a
-source with no skills in its `subdir` is accepted; without it, the refusal
-lists the plugins in the source's catalog, if it has one. Otherwise it
+doesn't have (a source with no catalog has none, and one with a broken
+catalog none either: the refusal gives the catalog's error), one tack can't
+deploy (see [Catalogs](#catalogs)) or whose files can't be read, so that its
+copy would fail (each with the reason `sync` gives), and a plugin another
+source already selects (DEC-11). With `--plugin` and no
+`--skill`, the source's skills aren't checked: it deploys none. Without
+`--plugin`, the refusal of a source with no skills (no skills directory, or
+none in it) lists the plugins `--plugin` would accept from its catalog,
+sorted, if there are any. Otherwise it
 appends the table and syncs. A git source it can't
 reach is reported (exit `1`) with nothing written. A new source is always
 pinned afresh, replacing any lock entry left under its name. A dry run doesn't
-clone, so it can't check a git source's skills.
+clone, so it can't check a git source's skills or plugins.
 
 **`remove`** cuts the source's table, drops its lock entry, syncs (which
 removes its links, and uninstalls its plugins *(P0001)*), and then deletes
@@ -734,7 +745,10 @@ gone missing is cloned again. `remove` deletes its source's clones.
 `outdated` compares a source's selected plugins between its pin and the tip
 of its ref, as it does skills. It reads the source's catalog at each end from
 git, as [Catalogs](#catalogs) reads one from disk (the same two files, in the
-same order), and only for a source that selects plugins. A source whose
+same order, a symlink followed as a checkout would follow it), and only for a
+source that selects plugins. A catalog file that is a symlink leaving the
+repository, or leading nowhere, is broken at that commit: git has nothing
+outside the repository to read. A source whose
 catalog is broken at either end has no plugin changes, and says why
 (DEC-20). The selected plugins are, for `plugins = "*"`, every plugin in the
 catalog at the pin or the tip, so a new upstream plugin shows as added; for a
@@ -776,7 +790,8 @@ after the skills, a line per kind of change as for skills
 parentheses when it has one at either end: for *modified* both (`none` for
 the end without one, a single version when they are equal), the tip's for
 *added*, the pin's for *removed*. `plugins_error` is a line of its own. A source that selects plugins and has neither changed says "no
-selected skill or plugin changed".
+selected skill or plugin changed", or, when its plugins weren't compared
+(`plugins_error`), "no selected skill changed".
 
 ## Auto-commit
 
@@ -808,7 +823,9 @@ and a failed commit leaves its changes staged. `--dry-run` says what would be
 committed and pushed and changes nothing. `--no-commit` (or
 `TACK_NO_COMMIT=1`) skips auto-commit for one run. `status` and `doctor`
 report uncommitted and unpushed skill edits: exactly the ones auto-commit
-takes.
+takes. A commit touches each skill it changes a file in, whatever characters
+the file's name holds, and both skills of a file moved from one to the
+other.
 
 Why on-run rather than a background watcher: no daemon to install or keep
 alive, and the delay is only until tack next runs.

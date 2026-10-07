@@ -4,14 +4,15 @@ what each agent has, read through its CLI, against the manifest's plugins.
 Each built-in harness's inventory is read once per run, whether or not the
 manifest selects plugins (DEC-18), and every check here shares it. A selected
 plugin's state is `status.plugin_states`, the function `status` uses; the
-leftovers are `sync`'s step 4 (design.md *Deploying*) seen from outside. Like
+leftovers are `sync`'s step 4 (design.md *Deploying*) seen from outside, and
+every plugin problem a `sync` dry run reports has a finding (DEC-19). Like
 `status`, these read each source as it is now (DEC-17).
 """
 
 from __future__ import annotations
 
 import os
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 
 from tack import agents, catalog, config, deploy, plugins, status
 from tack.config import Config, Harness
@@ -32,9 +33,12 @@ def check(cfg: Config) -> Iterator[Finding]:
     plan = plugins.plan(cfg)
     record = deploy.load_record(cfg.paths)
     inventories = {h: agents.inventory(h, cfg.paths) for h in config.PLUGIN_HARNESSES}
+    kept = _kept(plan, record)
+    unreadable = _unreadable(plan, kept)
+    kept |= set(unreadable)
     yield from _collisions(cfg, plan)
     for state in plan.sources:
-        yield from _source(state)
+        yield from _source(state, unreadable)
     cells = {
         (p.name, p.source): p.harnesses
         for p in status.plugin_states(cfg, plan, record, inventories)
@@ -44,26 +48,34 @@ def check(cfg: Config) -> Iterator[Finding]:
         key=lambda sel: (sel.name, sel.source.name),
     )
     # The plugins whose state gets a finding of its own: one tack can't
-    # deploy is its source's, a collided name `name-collision`'s.
-    stated = [s for s in selected if s.directory is not None and s.name not in plan.collisions]
-    kept = _kept(plan, record)
+    # deploy, or whose files can't be read, is its source's, a collided name
+    # `name-collision`'s.
+    stated = [
+        s
+        for s in selected
+        if s.directory is not None and s.name not in plan.collisions and s.name not in unreadable
+    ]
     for h, inv in inventories.items():
         here = [(sel, cells[sel.name, sel.source.name][h]) for sel in stated if h in sel.harnesses]
+        targeted = any(h in sel.harnesses for sel in selected)
         if isinstance(inv, agents.Outcome):
-            if stopped := [sel for sel, st in here if st == "unavailable"]:
-                yield _unavailable(h, inv, stopped)
+            # Where `sync` reports it (DEC-19): a missing CLI where a selected
+            # plugin targets the harness, a failing `list` wherever it runs it.
+            if targeted if inv.missing else _involved(cfg, h, selected, record):
+                yield _unavailable(h, inv, [sel for sel, st in here if st == "unavailable"])
             continue
         market = inv.marketplace(plugins.NAME)
         foreign = market is not None and not agents.is_tack(h, market, cfg.paths)
         if foreign:
             assert market is not None
-            if stopped := [sel for sel, st in here if st == "conflict"]:
+            if targeted or record.plugins.get(h):
                 where = tilde(market.location) if market.location else "elsewhere"
+                stopped = [sel for sel, st in here if st == "conflict"]
                 yield Finding(
                     "not-synced",
                     "warn",
                     f"a marketplace named {plugins.NAME!r} from {where} isn't tack's, so tack "
-                    f"can't deploy {_names(stopped)} to {h}; remove or rename that marketplace",
+                    f"can't {_deploy(stopped, h)}; remove or rename that marketplace",
                     harness=h,
                 )
         else:
@@ -92,9 +104,10 @@ def _collisions(cfg: Config, plan: Plan) -> Iterator[Finding]:
         )
 
 
-def _source(state: plugins.SourceState) -> Iterator[Finding]:
+def _source(state: plugins.SourceState, unreadable: Mapping[str, str]) -> Iterator[Finding]:
     """A source's catalog: the names it lacks, the plugins tack can't deploy,
-    or that it is broken; at the catalog file, or the root when there is none."""
+    or that it is broken, at the catalog file, or the root when there is none;
+    and the plugins whose files can't be read, at their directories."""
     src = state.source.name
     where = catalog.find(state.root) or state.root
     if state.catalog_state == "broken":
@@ -114,6 +127,7 @@ def _source(state: plugins.SourceState) -> Iterator[Finding]:
         yield Finding("not-synced", "warn", message, path=where)
     for sel in state.selected:
         it = f"plugin {sel.name!r} from {src!r}"
+        path = where
         if isinstance(sel.plugin.where, catalog.Undeployable):
             message = f"{it} can't be deployed: {sel.plugin.where.reason}"
         elif isinstance(sel.plugin.where, catalog.InRepository):
@@ -121,18 +135,21 @@ def _source(state: plugins.SourceState) -> Iterator[Finding]:
                 f"{it} is in another repository ({sel.plugin.where.url}), "
                 "and tack doesn't deploy those yet"
             )
+        elif sel.name in unreadable:
+            message = f"{it} can't be copied, so tack leaves it as it is: {unreadable[sel.name]}"
+            path = sel.directory
         else:
             continue
-        yield Finding("not-synced", "warn", message, path=where)
+        yield Finding("not-synced", "warn", message, path=path)
 
 
 def _unavailable(h: str, inv: agents.Outcome, stopped: Sequence[Selected]) -> Finding:
     """A harness whose CLI isn't on PATH, or whose `list` fails (DEC-16)."""
     if inv.missing:
-        message = f"{inv.error}, so tack can't deploy {_names(stopped)} to {h}; install it"
+        message = f"{inv.error}, so tack can't {_deploy(stopped, h)}; install it"
     else:
         message = (
-            f"`{inv.command}` failed: {inv.error}; tack can't deploy {_names(stopped)} to {h} "
+            f"`{inv.command}` failed: {inv.error}; tack can't {_deploy(stopped, h)} "
             "until it succeeds"
         )
     return Finding("not-synced", "warn", message, harness=h)
@@ -140,8 +157,9 @@ def _unavailable(h: str, inv: agents.Outcome, stopped: Sequence[Selected]) -> Fi
 
 def _kept(plan: Plan, record: deploy.Record) -> set[str]:
     """The plugins `sync` keeps as they are wherever they are installed
-    (DEC-12): a collided name, a plugin from another repository (D8), one whose
-    copy would fail, and one whose recorded source's catalog can't be read."""
+    (DEC-12), short of those whose copy would fail: a collided name, a plugin
+    from another repository (D8), and one whose recorded source's catalog
+    can't be read."""
     unread = {s.source.name for s in plan.sources if s.catalog_state in ("no-root", "broken")}
     kept = set(plan.collisions)
     kept.update(
@@ -151,10 +169,25 @@ def _kept(plan: Plan, record: deploy.Record) -> set[str]:
         if install.source in unread
     )
     for by_name in plan.plugins.values():
-        for name, sel in by_name.items():
-            if status.plugin_digest(sel.directory) is None:
-                kept.add(name)
+        kept.update(name for name, sel in by_name.items() if sel.directory is None)
     return kept
+
+
+def _unreadable(plan: Plan, kept: set[str]) -> dict[str, str]:
+    """The plugins `sync` would copy whose files can't be read, so that the
+    copy fails, each with the reason `sync` gives (DEC-19). A kept plugin
+    isn't copied."""
+    out: dict[str, str] = {}
+    seen = set(kept)
+    for by_name in plan.plugins.values():
+        for name, sel in by_name.items():
+            if name in seen or sel.directory is None:
+                continue
+            seen.add(name)
+            digest = plugins.files_hash(sel.directory)
+            if isinstance(digest, plugins.Unreadable):
+                out[name] = digest.reason
+    return out
 
 
 def _involved(cfg: Config, h: str, selected: Sequence[Selected], record: deploy.Record) -> bool:
@@ -232,8 +265,12 @@ def _others(
         )
 
 
-def _names(sels: Sequence[Selected]) -> str:
-    names = [repr(sel.name) for sel in sels]
+def _deploy(stopped: Sequence[Selected], h: str) -> str:
+    """What a harness's problem stops: the plugins it names, or, when each
+    plugin has a finding of its own (or there is none), the harness."""
+    names = [repr(sel.name) for sel in stopped]
+    if not names:
+        return f"manage {h}'s plugins"
     if len(names) == 1:
-        return f"plugin {names[0]}"
-    return f"plugins {', '.join(names[:-1])} and {names[-1]}"
+        return f"deploy plugin {names[0]} to {h}"
+    return f"deploy plugins {', '.join(names[:-1])} and {names[-1]} to {h}"

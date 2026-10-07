@@ -4,9 +4,11 @@ paragraph), against the stand-in agents."""
 from __future__ import annotations
 
 import json
+import os
 import re
 import shlex
 import shutil
+from collections import Counter
 from collections.abc import Callable
 from pathlib import Path
 
@@ -18,7 +20,7 @@ from tack.doctor import plugins as doctor_plugins
 from tack.doctor.findings import Finding
 from tests.helpers import configure, load, skill, write
 from tests.standin import Standins
-from tests.test_status import BOTH, FIXTURES, NPM, WHEN, plugin_source, run_sync
+from tests.test_status import BOTH, FIXTURES, NPM, WHEN, one, plugin_source, run_sync
 
 SHA = "a" * 40
 ELSEWHERE = {"source": "github", "repo": "acme/x", "sha": SHA}
@@ -81,8 +83,8 @@ def test_state_findings_agree_with_status(home: Path, standins: Standins, fixtur
     found = check(cfg)
     covered: dict[tuple[str, str], str] = {}
     for f in found:
-        if f.id == "name-collision":
-            continue
+        if f.id == "name-collision" or f.harness is None:
+            continue  # a collision's, or a source's: a plugin whose files can't be read
         assert (f.id, f.severity) == ("not-synced", "warn")
         here = _covered(f)
         assert not set(here) & set(covered), f"{f.message} reports a cell twice"
@@ -223,6 +225,224 @@ def test_no_leftovers_in_a_harness_with_a_foreign_tack(home: Path, standins: Sta
         ("codex", "a"),  # the conflict, and nothing else there
     ]
     assert "isn't tack's" in found[1].message
+
+
+# --- agreement with `sync` (problems, DEC-19) -------------------------------------------
+
+
+def _gone(home: Path, standins: Standins) -> Config:
+    """A selected plugin whose directory is gone, not yet installed."""
+    cfg = one(home)
+    shutil.rmtree(home / "one" / "plugins" / "a")
+    return cfg
+
+
+def _gone_but_kept(home: Path, standins: Standins) -> Config:
+    """A plugin whose directory is gone, selected from one source and
+    recorded from another whose catalog is broken: `sync` keeps it, so it
+    copies nothing and its files' state is no problem (DEC-12)."""
+    plugin_source(home, "one", "a")
+    plugin_source(home, "two", "a", "b")
+    run_sync(configure(home, "two", two=["a", "b"]))
+    write(home / "two" / ".claude-plugin" / "marketplace.json", "{")
+    shutil.rmtree(home / "one" / "plugins" / "a")
+    return configure(home, "one", "two", one=["a"], two=["b"])
+
+
+def _foreign_where_recorded(home: Path, standins: Standins) -> Config:
+    """A foreign `tack` in Codex, where only the record lists plugins."""
+    plugin_source(home, "one", "a")
+    run_sync(configure(home, "one", one=["a"]))
+    standins.marketplace("codex", "tack", home / "elsewhere")
+    return configure(home, "one")
+
+
+def _list_fails_where_recorded(home: Path, standins: Standins) -> Config:
+    """Claude Code's `plugin list` fails, and only the record involves it."""
+    plugin_source(home, "one", "a")
+    cfg = configure(home, "one", one=["a"])
+    run_sync(cfg)
+    shutil.rmtree(cfg.paths.marketplace_dir)
+    standins.fail("claude", ["plugin", "list"], "not logged in")
+    return configure(home, "one", one=[{"name": "a", "harnesses": ["codex"]}])
+
+
+def _list_fails_where_marketplace(home: Path, standins: Standins) -> Config:
+    """Codex's `plugin list` fails, and only tack's marketplace directory
+    involves it."""
+    skill(home / "mine" / "skills", "s")
+    cfg = load(home, '[[source]]\nname = "mine"\npath = "~/mine"\n')
+    cfg.paths.marketplace_dir.mkdir(parents=True)
+    standins.fail("codex", ["plugin", "list"], "config.toml is broken")
+    return cfg
+
+
+def _no_cli_undeployable(home: Path, standins: Standins) -> Config:
+    """Codex's CLI is gone, and only a plugin tack can't deploy targets it."""
+    plugin_source(home, "one", entries=({"name": "x", "source": NPM},))
+    standins.remove("codex")
+    return configure(home, "one", one=["x"])
+
+
+def _undeployable(home: Path, standins: Standins) -> Config:
+    plugin_source(home, "one", "a", entries=({"name": "x", "source": NPM},))
+    return configure(home, "one", one=["a", "x"])
+
+
+def _elsewhere(home: Path, standins: Standins) -> Config:
+    plugin_source(home, "one", "a", entries=({"name": "r", "source": ELSEWHERE},))
+    return configure(home, "one", one=["a", "r"])
+
+
+PROBLEMS: dict[str, Callable[[Path, Standins], Config]] = {
+    "directory gone, installed": FIXTURES["unreadable"][0],
+    "directory gone, not installed": _gone,
+    "directory gone, kept by its recorded source": _gone_but_kept,
+    "foreign tack where only the record lists plugins": _foreign_where_recorded,
+    "list fails where only the record involves it": _list_fails_where_recorded,
+    "list fails where only the marketplace involves it": _list_fails_where_marketplace,
+    "missing cli only an undeployable plugin targets": _no_cli_undeployable,
+    "missing cli a deployable plugin targets": FIXTURES["no cli"][0],
+    "broken catalog": _broken,
+    "undeployable": _undeployable,
+    "from another repository": _elsewhere,
+    "collision": FIXTURES["collision"][0],
+}
+
+
+def _plugin_named(message: str) -> str | None:
+    m = re.match(r"plugin '([^']+)'", message)
+    return m.group(1) if m else None
+
+
+@pytest.mark.parametrize("case", PROBLEMS)
+def test_problems_agree_with_sync(home: Path, standins: Standins, case: str) -> None:
+    """Each plugin problem a `sync` dry run reports has one finding, and each
+    finding of these kinds one problem: `name-collision` and `collision` by
+    name, a source's `not-synced` (but a name it lacks) and `source` by path
+    and plugin, a harness's `unavailable` and `agent`, and its `conflict` and
+    `conflict`, by harness."""
+    cfg = PROBLEMS[case](home, standins)
+    assert {s.state for s in status.status(cfg).sources} == {"ok"}
+    found = [f for f in check(cfg) if not f.message.endswith("`tack sync` uninstalls it")]
+    problems = sync.sync(cfg, dry_run=True, now=WHEN).problems
+    assert problems
+    assert {p.kind for p in problems} <= {"collision", "source", "agent", "conflict"}
+
+    def harnesses(conflict: bool) -> Counter[str | None]:
+        return Counter(
+            f.harness
+            for f in found
+            if f.harness and f.path is None and ("isn't tack's" in f.message) == conflict
+        )
+
+    assert Counter(f.message.split("'")[1] for f in found if f.id == "name-collision") == Counter(
+        p.message.split("'")[1] for p in problems if p.kind == "collision"
+    )
+    assert Counter(
+        (f.path, _plugin_named(f.message))
+        for f in found
+        if f.id == "not-synced" and f.harness is None and "the manifest selects" not in f.message
+    ) == Counter((p.path, _plugin_named(p.message)) for p in problems if p.kind == "source")
+    assert harnesses(conflict=False) == Counter(p.harness for p in problems if p.kind == "agent")
+    assert harnesses(conflict=True) == Counter(p.harness for p in problems if p.kind == "conflict")
+
+
+@pytest.mark.parametrize("installed", [False, True])
+@pytest.mark.parametrize("how", ["directory gone", "file unreadable"])
+def test_a_plugin_whose_files_cant_be_read(
+    home: Path, standins: Standins, installed: bool, how: str
+) -> None:
+    """One finding, at its directory, with the reason the dry run gives, and
+    no state finding in either harness, whatever its state there."""
+    if how == "file unreadable" and os.geteuid() == 0:
+        pytest.skip("root reads any file")
+    cfg = one(home)
+    if installed:
+        run_sync(cfg)
+    directory = home / "one" / "plugins" / "a"
+    if how == "directory gone":
+        shutil.rmtree(directory)
+    else:
+        (directory / "skills" / "a" / "SKILL.md").chmod(0)
+
+    (problem,) = sync.sync(cfg, dry_run=True, now=WHEN).problems
+    assert (problem.kind, problem.path) == ("source", directory)
+    reason = problem.message.removeprefix("plugin 'a': ")
+    assert reason != problem.message
+    states = {p.name: set(p.harnesses.values()) for p in status.status(cfg).plugins}
+    assert states == {"a": {"installed" if installed else "missing"}}
+
+    (f,) = check(cfg)
+    assert (f.id, f.severity, f.path, f.harness) == ("not-synced", "warn", directory, None)
+    assert (
+        f.message == f"plugin 'a' from 'one' can't be copied, so tack leaves it as it is: {reason}"
+    )
+
+
+@pytest.mark.parametrize(
+    ("case", "harness", "message"),
+    [
+        (
+            "missing cli only an undeployable plugin targets",
+            "codex",
+            "`codex` isn't on PATH, so tack can't manage codex's plugins; install it",
+        ),
+        (
+            "list fails where only the record involves it",
+            "claude-code",
+            "`claude plugin list --json` failed: not logged in; tack can't manage claude-code's "
+            "plugins until it succeeds",
+        ),
+        (
+            "list fails where only the marketplace involves it",
+            "codex",
+            "`codex plugin list --json` failed: config.toml is broken; tack can't manage codex's "
+            "plugins until it succeeds",
+        ),
+        (
+            "foreign tack where only the record lists plugins",
+            "codex",
+            "a marketplace named 'tack' from ~/elsewhere isn't tack's, so tack can't manage "
+            "codex's plugins; remove or rename that marketplace",
+        ),
+    ],
+)
+def test_a_harness_finding_naming_no_plugin(
+    home: Path, standins: Standins, case: str, harness: str, message: str
+) -> None:
+    cfg = PROBLEMS[case](home, standins)
+    found = [f for f in check(cfg) if f.harness == harness and f.path is None]
+    found = [f for f in found if not f.message.endswith("`tack sync` uninstalls it")]
+    assert [(f.id, f.severity, f.message) for f in found] == [("not-synced", "warn", message)]
+
+
+def test_a_harness_finding_leaves_out_an_unreadable_plugin(home: Path, standins: Standins) -> None:
+    """A plugin whose files can't be read has its own finding, so the missing
+    CLI's names only the others."""
+    plugin_source(home, "one", "a", "b")
+    cfg = configure(home, "one", one=["a", "b"])
+    shutil.rmtree(home / "one" / "plugins" / "a")
+    standins.remove("codex")
+
+    assert [(f.path, f.harness, f.message) for f in check(cfg)] == [
+        (
+            home / "one" / "plugins" / "a",
+            None,
+            "plugin 'a' from 'one' can't be copied, so tack leaves it as it is: "
+            "no plugin directory at ~/one/plugins/a",
+        ),
+        (
+            home / "one" / "plugins" / "b",
+            "claude-code",
+            "plugin 'b' from 'one' isn't installed in claude-code; `tack sync` installs it",
+        ),
+        (
+            None,
+            "codex",
+            "`codex` isn't on PATH, so tack can't deploy plugin 'b' to codex; install it",
+        ),
+    ]
 
 
 # --- sources and collisions -----------------------------------------------------------
@@ -488,13 +708,16 @@ def test_a_removed_cli_a_plugin_targets_is_one_finding(home: Path, standins: Sta
 def test_a_removed_cli_only_a_plugin_tack_cant_deploy_targets(
     home: Path, standins: Standins
 ) -> None:
-    """Its harness stops no plugin that gets a finding of its own: the
-    plugin is reported once, for its source."""
+    """`sync` reports the missing CLI, so `doctor` does (DEC-19); the plugin
+    is reported once, for its source, and the harness's finding names none."""
     plugin_source(home, "one", entries=({"name": "x", "source": NPM},))
     cfg = configure(home, "one", one=["x"])
     standins.remove("codex")
 
-    assert [f.path for f in check(cfg)] == [home / "one" / ".claude-plugin" / "marketplace.json"]
+    assert [(f.path, f.harness) for f in check(cfg)] == [
+        (home / "one" / ".claude-plugin" / "marketplace.json", None),
+        (None, "codex"),
+    ]
 
 
 def test_projects_only_runs_no_agent(home: Path, standins: Standins) -> None:

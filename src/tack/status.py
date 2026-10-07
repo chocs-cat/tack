@@ -229,10 +229,8 @@ def plugin_digest(directory: Path | None) -> str | None:
     `stale`."""
     if directory is None:
         return None
-    try:
-        return plugins.tree_hash(directory)
-    except (plugins.PluginError, OSError):
-        return None
+    digest = plugins.files_hash(directory)
+    return digest if isinstance(digest, str) else None
 
 
 def _git_state(root: Path, entry: config.LockEntry | None, matches: bool) -> SourceState:
