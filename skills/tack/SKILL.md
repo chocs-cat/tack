@@ -95,8 +95,8 @@ they weren't compared (a catalog broken at either end), else null. Each
 commit has `skills` and `plugins`, the selected ones it touches. `--diff`
 adds each changed plugin's files and catalog entry after the skills.
 
-The TUI doesn't show plugins yet. Plugin selections are edited in the
-manifest by hand.
+The TUI doesn't show plugins yet. `tack add … --plugin` selects plugins for
+a new source; otherwise plugin selections are edited in the manifest by hand.
 
 ## Changing things
 
@@ -108,6 +108,7 @@ tack sync                           # make every harness match the manifest and 
 tack sync --adopt                   # also take over conflicting entries
 tack add https://github.com/org/skills.git --skill a b   # a git source, only skills a and b
 tack add ~/Code/my-skills           # a local directory of the user's own skills
+tack add https://github.com/org/plugins.git --plugin p q   # only plugins p and q (skills = [])
 tack update SOURCE                  # move a git source's pin to the tip of its ref, then sync
 tack remove SOURCE                  # its manifest table, lock entry, links and checkout
 ```
@@ -131,9 +132,16 @@ tack remove SOURCE                  # its manifest table, lock entry, links and 
   marketplace or recorded installs to clean up. `--adopt` doesn't apply to plugins.
 - **`add`** takes a git URL or a directory. The name defaults to the repo's
   or directory's name (a repo named `skills` takes its owner's name);
-  `--name`, `--ref`, `--subdir` and `--skill` override. It refuses (exit
+  `--name`, `--ref`, `--subdir` and `--skill` override. `--plugin` selects
+  plugins from the source's catalog; without `--skill` it writes
+  `skills = []`, so the source deploys only those plugins. It refuses (exit
   `2`, nothing written) a name or source already there, a source with no
-  skills, and a skill another source already deploys.
+  skills (unless `--plugin` is given without `--skill`; the refusal lists
+  the plugins `--plugin` would accept), a skill another source already
+  deploys, a `--plugin` the catalog lacks (or no catalog, or a broken one),
+  one `sync` couldn't deploy (with the reason `sync` gives), and a plugin
+  another source already selects. A git source's dry run checks neither its
+  skills nor its plugins: it isn't cloned.
 - **`update`** takes in upstream changes; run `outdated SOURCE --diff` first
   and let the user see what they are taking. A source whose `git` or `ref`
   changed in the manifest shows `manifest changed` until `update` re-pins it.

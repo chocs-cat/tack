@@ -399,6 +399,57 @@ def test_add_plugin_refusals_come_in_order(home: Path) -> None:
     ]
 
 
+def test_a_source_with_no_skills_lists_its_plugins(home: Path) -> None:
+    """Without `--plugin`, the refusal of a source with no skills lists the
+    plugins `--plugin` would accept: sorted, deployable, and selected by no
+    other source. Each of them is then accepted."""
+    offering(home / "full")
+    write(home / "full" / "plugins" / "b" / "README.md", "b\n")
+    market(home / "full", "good", "a", NPM, ELSEWHERE, "gone", "b")
+    (home / "empty" / "skills").mkdir(parents=True)
+    write(home / "empty" / "plugins" / "e" / "README.md", "e\n")
+    market(home / "empty", "e")
+    cfg = load(home, '[[source]]\nname = "taken"\npath = "~/taken"\nskills = []\nplugins = ["a"]\n')
+    offering(home / "taken")
+
+    with pytest.raises(UsageError) as refused:
+        run_add(cfg, home / "full")
+    assert str(refused.value) == (
+        "can't add full: there is no skills directory at ~/full/skills; --subdir says where "
+        "they are; --plugin selects its plugins 'b', 'good'"
+    )
+    with pytest.raises(UsageError) as refused:
+        run_add(cfg, home / "empty")
+    assert str(refused.value) == (
+        "can't add empty: there are no skills in ~/empty/skills; --plugin selects its plugin 'e'"
+    )
+    # With --plugin, the refusal is as before.
+    with pytest.raises(UsageError, match=r"--subdir says where they are; plugin 'u' can't"):
+        run_add(cfg, home / "full", skills=["s"], plugins=["u"])
+
+    assert run_add(cfg, home / "full", plugins=["b", "good"]).problems == []
+    assert [(s.name, s.plugins) for s in load(home).sources][-1] == (
+        "full",
+        (SkillSpec("b"), SkillSpec("good")),
+    )
+
+
+def test_a_source_with_no_skills_and_no_plugins_to_offer(home: Path) -> None:
+    """No catalog, a broken one, or none `--plugin` would accept: the refusal
+    is as before."""
+    (home / "bare").mkdir()
+    write(home / "broken" / ".claude-plugin" / "marketplace.json", "{")
+    market(home / "only-npm", NPM)
+    cfg = load(home, "")
+    for name in ("bare", "broken", "only-npm"):
+        with pytest.raises(UsageError) as refused:
+            run_add(cfg, home / name)
+        assert str(refused.value) == (
+            f"can't add {name}: there is no skills directory at ~/{name}/skills; "
+            "--subdir says where they are"
+        )
+
+
 @pytest.mark.parametrize("plugin", ["u", "r", "gone"])
 def test_a_plugin_refusal_gives_the_reason_sync_gives(home: Path, plugin: str) -> None:
     """The same words as the `source` problem a `sync` dry run reports for

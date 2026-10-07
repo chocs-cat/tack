@@ -142,7 +142,16 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="+",
         action="extend",
         default=[],
-        help="deploy only these skills (default: all of them)",
+        help="deploy only these skills (default: all of them; none with --plugin)",
+    )
+    p.add_argument(
+        "--plugin",
+        dest="plugins",
+        metavar="P",
+        nargs="+",
+        action="extend",
+        default=[],
+        help="deploy these plugins from the source's catalog (default: none)",
     )
     p.add_argument("--ref", metavar="R", help="the branch or tag to follow (default: the remote's)")
     p.add_argument("--subdir", metavar="D", help="where the skills are (default: skills)")
@@ -259,6 +268,7 @@ def cmd_add(args: argparse.Namespace, cfg: Config) -> int:
         args.spec,
         name=args.name,
         skills=args.skills,
+        plugins=args.plugins,
         ref=args.ref,
         subdir=args.subdir,
         dry_run=args.dry_run,

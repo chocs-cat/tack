@@ -46,6 +46,7 @@ into its own environment. It needs Python 3.11 or later;
 ```sh
 tack                      # the TUI
 tack add https://github.com/cloudflare/skills.git --skill wrangler
+tack add https://github.com/anthropics/claude-plugins-official.git --plugin skill-creator
 tack sync --dry-run       # what would change
 tack sync                 # fetch pinned sources, link skills into every harness
 tack status               # sources, pins, and where skills and plugins are deployed
@@ -73,7 +74,8 @@ Each `[[source]]` selects skills and, optionally, plugins:
 | `harnesses` | every harness | Limit the whole source; a plugin may further limit its harnesses. |
 | `autocommit` / `autopush` | `false` | Commit a path source's skill edits when tack changes things, and optionally push them. |
 
-For a source that supplies only plugins:
+For a source that supplies only plugins, which `tack add … --plugin
+skill-creator` writes:
 
 ```toml
 [[source]]
@@ -97,12 +99,24 @@ files are copied again, with Codex reinstalled; Claude Code loads tack's
 copy in place. Deselected plugins are uninstalled, including through
 `tack remove`.
 
+`tack add SOURCE --plugin P…` selects plugins from the source's catalog,
+each name once in the order given; without `--skill` it writes `skills = []`,
+so the source deploys only those plugins and needs no skills directory.
+`add` refuses (exit `2`, nothing written) a `--plugin` the catalog doesn't
+have (or a source with no catalog, or a broken one, with its error), one
+`sync` couldn't deploy (from another repository, a source tack can't pin, or
+files that can't be read), giving the reason `sync` would, and one another
+source already selects. Without `--plugin`, refusing a source with no skills
+lists the plugins `--plugin` would accept. A dry run of a git source doesn't
+clone it, so it checks neither its skills nor its plugins. `plugins = "*"`
+is written by hand.
+
 `tack sync --dry-run` lists the commands as `would run` and writes nothing;
 `--json` includes the command lines and harnesses in its changes. tack never
 enables or disables plugins, and a source sync can't reach keeps its
 existing plugins. A sync with no plugin selections, marketplace directory,
-or recorded installs runs no agent CLI. Plugin selections are edited by
-hand; the TUI doesn't show plugins yet.
+or recorded installs runs no agent CLI. Beyond `add`, plugin selections are
+edited by hand; the TUI doesn't show plugins yet.
 
 `tack status` shows each selected plugin's state in each agent it targets,
 read through `claude plugin list` and `codex plugin list` (and their

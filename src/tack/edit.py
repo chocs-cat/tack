@@ -13,6 +13,7 @@ text parses to the old manifest with exactly those changes.
 from __future__ import annotations
 
 import copy
+import dataclasses
 import difflib
 import os
 import re
@@ -131,12 +132,13 @@ def _skill_refusals(cfg: Config, src: Source, *, dry_run: bool) -> list[str]:
     if not state.present:
         if src.git is not None and dry_run:
             return []  # not fetched, so its skills are unknown
-        return [f"there is no skills directory at {where}; --subdir says where they are"]
+        no_dir = f"there is no skills directory at {where}; --subdir says where they are"
+        return [_with_plugins(no_dir, cfg, src)]
     out: list[str] = []
     if state.missing:
         out.append(f"{where} has no {_names('skill', state.missing)}")
     elif not state.selected:
-        out.append(f"there are no skills in {where}")
+        out.append(_with_plugins(f"there are no skills in {where}", cfg, src))
     collided = sorted(n for n, (_, srcs) in plan.collisions.items() if src.name in srcs)
     if collided:
         others = sorted({s for n in collided for s in plan.collisions[n][1]} - {src.name})
@@ -164,18 +166,43 @@ def _plugin_refusals(cfg: Config, src: Source) -> list[str]:
     elif state.missing:
         file = catalog.find(state.root) or state.root
         out.append(f"{tilde(file)} has no {_names('plugin', state.missing)}")
-    for sel in state.selected:
-        if why := plugins.undeployable(sel.plugin):
-            out.append(f"plugin {sel.name!r} {why}")
-        elif sel.directory is not None:
-            digest = plugins.files_hash(sel.directory)
-            if isinstance(digest, plugins.Unreadable):
-                out.append(f"plugin {sel.name!r}: {digest.reason}")  # as its copy fails in `sync`
+    out += [why for sel in state.selected if (why := _unfit(sel))]
     for sel in state.selected:
         if sel.name in plan.collisions:  # DEC-11
             others = [s for s in plan.collisions[sel.name][1] if s != src.name]
             out.append(f"plugin {sel.name!r} already selected by {', '.join(others)}")
     return out
+
+
+def _unfit(sel: plugins.Selected) -> str | None:
+    """Why `sync` couldn't deploy a selected plugin, as `sync` says it: one
+    tack can't deploy, one from another repository, or one whose files can't
+    be read, so that its copy would fail. None when it could."""
+    if why := plugins.undeployable(sel.plugin):
+        return f"plugin {sel.name!r} {why}"
+    if sel.directory is not None:
+        digest = plugins.files_hash(sel.directory)
+        if isinstance(digest, plugins.Unreadable):
+            return f"plugin {sel.name!r}: {digest.reason}"
+    return None
+
+
+def _with_plugins(refusal: str, cfg: Config, src: Source) -> str:
+    """A no-skills refusal, ending, without `--plugin`, with the plugins
+    `--plugin` would accept from the source's catalog, sorted: those `sync`
+    would deploy that no other source selects."""
+    if src.plugins:
+        return refusal
+    every = dataclasses.replace(src, plugins=None)
+    trial = dataclasses.replace(
+        cfg, sources=tuple(every if s.name == src.name else s for s in cfg.sources)
+    )
+    plan = plugins.plan(trial)
+    state = next(s for s in plan.sources if s.source.name == src.name)
+    offered = sorted(
+        sel.name for sel in state.selected if sel.name not in plan.collisions and not _unfit(sel)
+    )
+    return f"{refusal}; --plugin selects its {_names('plugin', offered)}" if offered else refusal
 
 
 def _names(word: str, names: Sequence[str]) -> str:
