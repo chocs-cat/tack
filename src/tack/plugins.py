@@ -439,6 +439,19 @@ def plan(cfg: Config) -> Plan:
     return Plan(states, wanted, collisions)
 
 
+def undeployable(plugin: catalog.Plugin) -> str | None:
+    """Why `sync` can't deploy a selected plugin, to follow its name: one tack
+    can't deploy (design.md *Catalogs*), or one from another repository,
+    until D8; None for one in the source. `sync`, `doctor` and `add` all say
+    it this way, each with its own prefix."""
+    where = plugin.where
+    if isinstance(where, catalog.Undeployable):
+        return f"can't be deployed: {where.reason}"
+    if isinstance(where, catalog.InRepository):
+        return f"is in another repository ({where.url}), and tack doesn't deploy those yet"
+    return None
+
+
 def _source_state(src: Source, cfg: Config) -> SourceState:
     root = sources.root(src, cfg.paths)
     if not root.is_dir():

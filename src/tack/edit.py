@@ -23,7 +23,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from tack import config, deploy, sources, sync
+from tack import catalog, config, deploy, plugins, sources, sync
 from tack.config import Config, LockEntry, Source, UsageError
 from tack.sources import SourceError
 from tack.sync import Change, Problem, Result
@@ -36,13 +36,15 @@ def add(
     *,
     name: str | None = None,
     skills: Sequence[str] = (),
+    plugins: Sequence[str] = (),
     ref: str | None = None,
     subdir: str | None = None,
     dry_run: bool = False,
     now: datetime | None = None,
 ) -> Result:
     """Add a git URL or a local directory as a source, then sync. Nothing is
-    written unless the source is reachable and deploys cleanly."""
+    written unless the source is reachable and deploys cleanly. Given
+    `plugins` and no `skills`, it deploys only those plugins (`skills = []`)."""
     now = now or datetime.now(UTC)
     directory = None if is_url(spec) else Path(os.path.normpath(Path(spec).expanduser().absolute()))
     if directory is not None:
@@ -72,8 +74,10 @@ def add(
         fields["ref"] = ref
     if subdir is not None:
         fields["subdir"] = subdir
-    if skills:
+    if skills or plugins:
         fields["skills"] = list(dict.fromkeys(skills))
+    if plugins:
+        fields["plugins"] = list(dict.fromkeys(plugins))
 
     file = cfg.manifest or cfg.paths.manifest
     text = file.read_text(encoding="utf-8") if cfg.manifest else ""
@@ -112,7 +116,15 @@ def add(
 
 
 def _refusals(cfg: Config, src: Source, *, dry_run: bool) -> list[str]:
-    """What makes a new source unfit to add."""
+    """What makes a new source unfit to add: its skills, unless it takes none
+    (only plugins), then its plugins."""
+    out = [] if src.skills == () else _skill_refusals(cfg, src, dry_run=dry_run)
+    if src.plugins:  # `add` writes a list of names, never "*"
+        out += _plugin_refusals(cfg, src)
+    return out
+
+
+def _skill_refusals(cfg: Config, src: Source, *, dry_run: bool) -> list[str]:
     plan = deploy.plan(cfg)
     state = next(s for s in plan.sources if s.source.name == src.name)
     where = tilde(sources.skills_dir(src, cfg.paths))
@@ -132,6 +144,37 @@ def _refusals(cfg: Config, src: Source, *, dry_run: bool) -> list[str]:
             f"{_names('skill', collided)} already deployed by {', '.join(others)}; "
             "--skill takes only the skills you name"
         )
+    return out
+
+
+def _plugin_refusals(cfg: Config, src: Source) -> list[str]:
+    """The plugins a new source selects that `sync` couldn't deploy, each with
+    the reason `sync` gives (design.md *Adding and removing sources*). A
+    source whose root isn't there (a git source a dry run hasn't cloned)
+    selects and lacks nothing, so nothing is checked."""
+    plan = plugins.plan(cfg)
+    state = next(s for s in plan.sources if s.source.name == src.name)
+    out: list[str] = []
+    if state.catalog_state == "broken":
+        out.append(str(state.error))
+    elif state.catalog_state == "no-catalog":
+        out.append(
+            f"there is no plugin catalog in {tilde(state.root)} ({' or '.join(catalog.CATALOGS)})"
+        )
+    elif state.missing:
+        file = catalog.find(state.root) or state.root
+        out.append(f"{tilde(file)} has no {_names('plugin', state.missing)}")
+    for sel in state.selected:
+        if why := plugins.undeployable(sel.plugin):
+            out.append(f"plugin {sel.name!r} {why}")
+        elif sel.directory is not None:
+            digest = plugins.files_hash(sel.directory)
+            if isinstance(digest, plugins.Unreadable):
+                out.append(f"plugin {sel.name!r}: {digest.reason}")  # as its copy fails in `sync`
+    for sel in state.selected:
+        if sel.name in plan.collisions:  # DEC-11
+            others = [s for s in plan.collisions[sel.name][1] if s != src.name]
+            out.append(f"plugin {sel.name!r} already selected by {', '.join(others)}")
     return out
 
 

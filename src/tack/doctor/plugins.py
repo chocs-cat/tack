@@ -128,13 +128,8 @@ def _source(state: plugins.SourceState, unreadable: Mapping[str, str]) -> Iterat
     for sel in state.selected:
         it = f"plugin {sel.name!r} from {src!r}"
         path = where
-        if isinstance(sel.plugin.where, catalog.Undeployable):
-            message = f"{it} can't be deployed: {sel.plugin.where.reason}"
-        elif isinstance(sel.plugin.where, catalog.InRepository):
-            message = (
-                f"{it} is in another repository ({sel.plugin.where.url}), "
-                "and tack doesn't deploy those yet"
-            )
+        if why := plugins.undeployable(sel.plugin):
+            message = f"{it} {why}"
         elif sel.name in unreadable:
             message = f"{it} can't be copied, so tack leaves it as it is: {unreadable[sel.name]}"
             path = sel.directory

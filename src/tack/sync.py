@@ -396,17 +396,9 @@ class _Plugins:
             if state.catalog_state == "broken":
                 self.result.problems.append(Problem("source", str(state.error), src, path=file))
             for sel in state.selected:
-                where = sel.plugin.where
-                if isinstance(where, catalog.Undeployable):
-                    message = f"plugin {sel.name!r} can't be deployed: {where.reason}"
-                elif isinstance(where, catalog.InRepository):
-                    message = (
-                        f"plugin {sel.name!r} is in another repository ({where.url}), "
-                        "and tack doesn't deploy those yet"
-                    )
-                else:
-                    continue
-                self.result.problems.append(Problem("source", message, src, path=file))
+                if why := plugins.undeployable(sel.plugin):
+                    message = f"plugin {sel.name!r} {why}"
+                    self.result.problems.append(Problem("source", message, src, path=file))
 
     def _marketplace(self, wanted: dict[str, plugins.Selected], kept: set[str]) -> dict[str, str]:
         """Bring tack's marketplace up to date; each wanted plugin's hash. A
