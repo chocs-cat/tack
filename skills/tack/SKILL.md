@@ -1,12 +1,13 @@
 ---
 name: tack
-description: Manage agent skills and audit agent setup with the `tack` CLI — deploy skills to Claude Code and Codex from one manifest (`~/.config/tack/tack.toml`) of sources (your own skill directories and pinned git repos), add or remove a source, see what is deployed where, check what changed upstream and take it, and audit projects so both agents see the same instructions (AGENTS.md / CLAUDE.md), skills (.agents/skills / .claude/skills) and hooks. Use this whenever the user wants to install, deploy, add, remove, update or sync skills, asks why a skill doesn't show up in one agent, asks what skills are installed or where one comes from, creates a new skill in a skills repo tack deploys, mentions tack.toml or tack.lock, or wants a repo checked or fixed so Claude Code and Codex read the same instructions, skills and hooks.
+description: Manage agent skills and plugins and audit agent setup with the `tack` CLI — deploy skills and selected plugins to Claude Code and Codex from one manifest (`~/.config/tack/tack.toml`) of sources (your own directories and pinned git repos), add or remove a source, see which skills are deployed where, check what changed upstream and take it, and audit projects so both agents see the same instructions (AGENTS.md / CLAUDE.md), skills (.agents/skills / .claude/skills) and hooks. Use this whenever the user wants to install, deploy, add, remove, update or sync skills or plugins, asks why a skill doesn't show up in one agent, asks what skills are installed or where one comes from, creates a new skill in a skills repo tack deploys, mentions tack.toml or tack.lock, or wants a repo checked or fixed so Claude Code and Codex read the same instructions, skills and hooks.
 ---
 
 # tack
 
-tack deploys **skills** to every coding agent (a *harness*: `claude-code` and
-`codex` are built in) from one manifest of **sources**, and audits projects
+tack deploys **skills** and selected **plugins** to coding agents (a
+*harness*: `claude-code` and `codex` are built in) from one manifest of
+**sources**, and audits projects
 so both agents see the same instructions, skills and hooks.
 
 - A **source** is a `path` (a local directory the user edits, linked in
@@ -16,6 +17,10 @@ so both agents see the same instructions, skills and hooks.
 - A **deployment** is a symlink `<harness skills dir>/<name> -> <skill dir>`:
   `~/.claude/skills/<name>` for Claude Code, `~/.agents/skills/<name>` for
   Codex.
+- A **plugin** is a bundle listed in a source's catalog at
+  `.claude-plugin/marketplace.json`, else `.agents/plugins/marketplace.json`.
+  tack copies it into its own `tack` marketplace and installs `<name>@tack`
+  through each agent's CLI. Only the built-in harnesses take plugins.
 
 **Use the CLI with `--json`, not the TUI.** A bare `tack` opens a TUI for the
 human (outside a terminal it prints the usage and exits `2`). Every command
@@ -30,6 +35,7 @@ error (nothing was changed).
 | Manifest `tack.toml` | `$TACK_CONFIG/tack.toml`, else `~/.config/tack/tack.toml` | the user, or `tack add`/`remove` |
 | Lockfile `tack.lock` | beside the manifest | tack only: never edit it |
 | Git checkouts | `$XDG_DATA_HOME/tack/sources/<source>/` (`~/.local/share/tack/…`) | tack only |
+| Plugin marketplace | `$XDG_DATA_HOME/tack/marketplace/` | tack only |
 | Ownership record | `$XDG_STATE_HOME/tack/state.json` | tack only |
 
 After tack changes the manifest or the lockfile it runs the manifest's
@@ -62,6 +68,9 @@ source's skills.
 `commits` and the changed `skills`), `not pinned`, `manifest changed`,
 `not checked out` or `error`, with the command that fixes it in `message`.
 
+`status`, `doctor`, and the TUI don't show plugins yet; upstream reports
+still track skills. Plugin selections are edited in the manifest by hand.
+
 ## Changing things
 
 Run every changing command with `--dry-run --json` first, show the user what
@@ -81,6 +90,18 @@ tack remove SOURCE                  # its manifest table, lock entry, links and 
   selected. It never replaces what it doesn't own: that is a `conflict`,
   reported with exit `1`. `--adopt` takes it over, moving a real directory to
   `$XDG_STATE_HOME/tack/adopted/…` (never deleting it); ask before using it.
+  After skills it copies selected plugins into tack's marketplace, registers
+  it and installs `<name>@tack` through `claude plugin` and `codex plugin`.
+  Changed files refresh the copy and reinstall in Codex; Claude Code loads
+  tack's copy in place. Deselected plugins are uninstalled. The `claude` or
+  `codex` executable is needed on `PATH` only when a selected plugin targets
+  that agent: a missing CLI or failed command is an `agent` problem (exit
+  `1`), and the other plugins and skills carry on. A dry run runs only the
+  agents' `list` commands and lists other commands as `would run`; JSON
+  changes include their command lines and harnesses. tack never enables or
+  disables a plugin, and holds an unreachable source's plugins as they are.
+  A manifest without plugins runs no agent unless tack has an existing
+  marketplace or recorded installs to clean up. `--adopt` doesn't apply to plugins.
 - **`add`** takes a git URL or a directory. The name defaults to the repo's
   or directory's name (a repo named `skills` takes its owner's name);
   `--name`, `--ref`, `--subdir` and `--skill` override. It refuses (exit
@@ -90,7 +111,7 @@ tack remove SOURCE                  # its manifest table, lock entry, links and 
   and let the user see what they are taking. A source whose `git` or `ref`
   changed in the manifest shows `manifest changed` until `update` re-pins it.
 - **`remove`** keeps a checkout that has local changes, and never touches a
-  `path` source's directory.
+  `path` source's directory. Its sync uninstalls that source's plugins too.
 
 **Auto-commit.** A `path` source with `autocommit = true` has its skill edits
 committed (and with `autopush = true`, pushed) by every changing command:
@@ -110,11 +131,30 @@ name = "vendor"
 git = "https://github.com/org/skills.git"   # or: path = "~/Code/my-skills"
 ref = "main"                  # git: the branch or tag to follow (default: the remote's)
 subdir = "skills"             # where the skill directories are
-skills = ["a", { name = "b", harnesses = ["claude-code"] }]   # default "*": all of them
+skills = ["a", { name = "b", harnesses = ["codex"] }]         # default "*": all of them
+plugins = ["p", { name = "q", harnesses = ["codex"] }]       # default []: none
 harnesses = ["codex"]         # limit the whole source (default: every harness)
 autocommit = true             # path: commit skill edits when tack runs
 autopush = true               # path: and push them
 ```
+
+`plugins` is `"*"` or a list shaped like `skills`; plugin harnesses may name
+only `claude-code` and `codex`, and a source selecting plugins must target at
+least one of them. `skills = []` deploys no skills and needs no skills
+directory, only the source root. Use it for a plugin-only source:
+
+```toml
+[[source]]
+name = "plugins"
+path = "~/Code/my-plugins"
+skills = []
+plugins = ["p"]
+```
+
+This release deploys plugins inside their source. A catalog entry for a
+plugin in another repository, an unsupported entry or a broken catalog is a
+`source` problem. Many catalogs bundle a whole skills repository as one
+plugin; selecting its skills as well gives an agent two copies of each skill.
 
 `[harness.<name>] ignore = [...]` names entries in a harness's skills
 directory that belong to another program; tack leaves them alone and `doctor`

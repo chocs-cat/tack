@@ -8,9 +8,11 @@ uninstall, unregister, the failures in between) and checks each command's exit
 code and the JSON fields tack reads: list shapes, `enabled`, `scope`, the
 failure forms (Claude Code's JSON `message` and `failureCode`, Codex's
 `Error:` line), Claude Code's `marketplace remove` uninstalling and Codex's
-not, Codex's `plugin list` hiding a plugin whose catalog entry is gone, a
-second directory under a registered name (Claude Code repoints the name,
-Codex refuses), and Codex reading its own catalog before Claude Code's.
+not, Codex's `plugin list` hiding a plugin whose catalog entry or
+marketplace is gone and listing it again once the marketplace is registered
+again (DEC-14), a second directory under a registered name (Claude Code
+repoints the name, Codex refuses), and Codex reading its own catalog before
+Claude Code's.
 
 What it does not verify: anything about loading a plugin in a session, the
 plugin caches' layout, project scope, git marketplaces, or fields tack doesn't
@@ -280,6 +282,16 @@ def codex_facts(a: Agent, mkt: Path) -> None:
     listed = a.json("list after marketplace remove", "list")
     check("list hides foo@tack once its marketplace is gone",
           isinstance(listed, dict) and listed.get("installed") == [], listed)  # fmt: skip
+    # Registering it again lists the plugin it kept, still installed (DEC-14).
+    has("marketplace add after remove", a.json("marketplace add after remove", "marketplace",
+        "add", str(mkt)), {"alreadyAdded": lambda v: v is False})  # fmt: skip
+    listed = a.json("list after marketplace add", "list")
+    installed = listed.get("installed") if isinstance(listed, dict) else None
+    by_id = {p.get("pluginId"): p for p in installed or [] if isinstance(p, dict)}
+    check("list shows foo@tack installed again once its marketplace is back",
+          set(by_id) == {"foo@tack"} and by_id["foo@tack"].get("installed") is True,
+          listed)  # fmt: skip
+    a.json("marketplace remove once more", "marketplace", "remove", "tack")
     a.fails_with_error_line("marketplace remove again", "marketplace", "remove", "tack")
 
 

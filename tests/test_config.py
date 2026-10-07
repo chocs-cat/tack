@@ -69,8 +69,14 @@ def test_design_example_manifest_parses(home: Path) -> None:
     assert cfg.roots == (home / "Code",)
     assert cfg.exclude == (home / "Code" / "Archive", home / "Code" / "cruzainet")
     assert cfg.owners == ("johnfoland", "cruzainet", "chocs-cat")
-    assert [s.name for s in cfg.sources] == ["mine", "cloudflare", "vercel", "corral"]
-    mine, cloudflare, vercel, _ = cfg.sources
+    assert [s.name for s in cfg.sources] == [
+        "mine",
+        "cloudflare",
+        "vercel",
+        "corral",
+        "claude-plugins-official",
+    ]
+    mine, cloudflare, vercel, _, official = cfg.sources
     assert mine.path == home / "Code" / "skills"
     assert mine.autocommit
     assert mine.autopush
@@ -80,6 +86,8 @@ def test_design_example_manifest_parses(home: Path) -> None:
     assert cloudflare.skills
     assert SkillSpec("wrangler") in cloudflare.skills
     assert vercel.ref is None
+    assert official.skills == ()
+    assert official.plugins == (SkillSpec("skill-creator"),)
     # A built-in's `ignore` adds to its own.
     assert cfg.harnesses["claude-code"].ignore == {"synced", "codebase-memory"}
     assert cfg.harnesses["codex"].ignore == {"codebase-memory"}
@@ -101,6 +109,7 @@ skills = ["a", { name = "b", harnesses = ["codex"] }]
     assert src.path == home / ".config" / "tack" / "rel" / "skills-repo"
     assert src.subdir == "."
     assert src.skills == (SkillSpec("a"), SkillSpec("b", ("codex",)))
+    assert src.plugins == ()
 
 
 def test_new_harness_needs_every_field(home: Path) -> None:
@@ -187,7 +196,7 @@ def test_config_dir_argument(home: Path, tmp_path: Path) -> None:
     assert cfg.roots == (home / "src",)
 
 
-# --- the `plugins` field, not yet accepted (P0001) -----------------------------------
+# --- the `plugins` field ------------------------------------------------------------
 
 PI = """
 [harness.pi]
@@ -285,10 +294,40 @@ def test_a_source_selects_no_plugins_by_default() -> None:
     assert Source("x").skills is None
 
 
-@pytest.mark.parametrize("value", ["'*'", "[]", "['a']"])
-def test_the_manifest_does_not_accept_plugins_yet(home: Path, value: str) -> None:
-    with pytest.raises(ConfigError, match="unknown key 'plugins' in source 'x'"):
-        load(home, f"[[source]]\nname = 'x'\npath = '/x'\nplugins = {value}\n")
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ('"*"', None),
+        ("[]", ()),
+        ('["a"]', (SkillSpec("a"),)),
+        (
+            '["a", { name = "b", harnesses = ["codex"] }]',
+            (SkillSpec("a"), SkillSpec("b", ("codex",))),
+        ),
+    ],
+)
+def test_the_manifest_accepts_plugins(
+    home: Path, value: str, expected: tuple[SkillSpec, ...] | None
+) -> None:
+    cfg = load(home, f"[[source]]\nname = 'x'\npath = '/x'\nplugins = {value}\n")
+    assert cfg.sources[0].plugins == expected
+
+
+@pytest.mark.parametrize(
+    ("fields", "message"),
+    [
+        (
+            'plugins = [{ name = "a", harnesses = ["pi"] }]',
+            "only claude-code and codex take plugins",
+        ),
+        ('harnesses = ["pi"]\nplugins = "*"', "selects plugins but targets neither"),
+        ('plugins = ["a", { name = "a" }]', "lists plugin 'a' twice"),
+    ],
+)
+def test_manifest_plugin_errors_name_the_manifest(home: Path, fields: str, message: str) -> None:
+    with pytest.raises(ConfigError, match=message) as exc:
+        load(home, PI + "\n[[source]]\nname = 'x'\npath = '/x'\n" + fields)
+    assert str(home / ".config" / "tack" / "tack.toml") in str(exc.value)
 
 
 def test_the_harnesses_that_take_plugins_are_those_with_a_cli() -> None:

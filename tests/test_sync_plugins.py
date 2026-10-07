@@ -1,9 +1,9 @@
 """`sync`'s plugin pass (design.md §9 *Deploying*, *Plugin ownership*),
-against the stand-in agents. The manifest doesn't take `plugins` yet, so the
-selections are set as `parse_plugins` reads them (`helpers.configure`)."""
+against the stand-in agents, with selections loaded through the manifest."""
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import shlex
@@ -15,10 +15,10 @@ from typing import Any
 
 import pytest
 
-from tack import agents, cli, deploy, plugins, sync, text
+from tack import agents, cli, config, deploy, plugins, sync, text
 from tack.config import Config
 from tack.deploy import Install
-from tests.helpers import configure, link, market, skill, tree, write
+from tests.helpers import commit, configure, link, load, market, repo, skill, tree, write
 from tests.standin import Call, Standins
 
 WHEN = datetime(2026, 10, 5, 12, 0, 0, tzinfo=UTC)
@@ -293,7 +293,7 @@ def test_deselecting_the_last_plugin_unregisters_then_deletes_the_marketplace(
     ]
     assert changes(result)[-1] == ("delete", None, text.tilde(m))
     assert [a for a, _, _ in changes(result)] == [
-        "uninstall", "unregister", "uninstall", "unregister", "delete",
+        "write", "uninstall", "unregister", "uninstall", "unregister", "delete",
     ]  # fmt: skip
     assert not os.path.lexists(m)
     assert record(cfg) == {}
@@ -306,6 +306,44 @@ def test_deselecting_the_last_plugin_unregisters_then_deletes_the_marketplace(
     again = run(configure(home, "one"))
     assert (again.changes, again.problems) == ([], [])
     assert len(standins.calls()) == calls
+
+
+def test_a_failed_unregister_leaves_a_catalog_matching_the_remaining_copies(
+    home: Path, standins: Standins
+) -> None:
+    source(home, "one", "a")
+    cfg = configure(home, "one", one="*")
+    assert run(cfg).problems == []
+    m = cfg.paths.marketplace_dir
+    assert set(plugins.copies(cfg.paths)) == {"a"}
+    standins.fail("codex", ["plugin", "marketplace", "remove", "tack"], "busy")
+    calls = len(standins.calls())
+
+    result = run(configure(home, "one"))
+
+    (problem,) = result.problems
+    assert (problem.kind, problem.harness, problem.message) == (
+        "agent",
+        "codex",
+        "unregistering tack's marketplace failed: busy",
+    )
+    assert changes(result)[0] == ("write", None, text.tilde(m / plugins.CATALOG))
+    assert ran(standins, since=calls) == [
+        claude("uninstall", "a@tack"),
+        claude("marketplace", "remove", "tack"),
+        codex("remove", "a@tack"),
+        codex("marketplace", "remove", "tack"),
+    ]
+    assert m.is_dir()
+    assert (
+        set(plugins.copies(cfg.paths))
+        == {p["name"] for p in json.loads((m / plugins.CATALOG).read_text())["plugins"]}
+        == set()
+    )
+    assert record(cfg) == {}
+    assert "tack" in registered(standins, "codex")
+    for cli_name in ("claude", "codex"):
+        assert installed(standins, cli_name) == {}
 
 
 def test_a_plugin_limited_to_codex_leaves_claude_code_unregistered(
@@ -651,6 +689,150 @@ def test_a_broken_plugin_fails_alone_and_keeps_its_copy_and_installs(
         assert set(installed(standins, cli_name)) == {"a@tack", "b@tack"}
 
 
+# --- sources that keep their plugins (DEC-12) ------------------------------------------------
+
+
+@pytest.mark.parametrize("broken", ["missing-path", "broken-catalog", "missing-skills"])
+def test_an_unavailable_path_source_keeps_its_recorded_plugins(
+    home: Path, standins: Standins, broken: str
+) -> None:
+    one = source(home, "one", "a", "b")
+    cfg = configure(home, "one", one="*")
+    assert run(cfg).problems == []
+    m = cfg.paths.marketplace_dir
+    before = tree(m), record(cfg), (cfg.paths.state_dir / deploy.RECORD).read_bytes()
+    moved = home / "one-moved"
+    if broken == "missing-path":
+        one.rename(moved)
+    elif broken == "missing-skills":
+        (one / "skills").rmdir()
+    else:
+        write(one / ".claude-plugin" / "marketplace.json", "{")
+    calls = len(standins.calls())
+    cfg = configure(home, "one", one=["a"])  # b is deselected while the source is unavailable
+
+    result = run(cfg)
+
+    assert [(p.kind, p.source) for p in result.problems] == [("source", "one")]
+    if broken == "broken-catalog":
+        assert result.problems[0].path == one / ".claude-plugin" / "marketplace.json"
+    assert (tree(m), record(cfg), (cfg.paths.state_dir / deploy.RECORD).read_bytes()) == before
+    for cli_name in ("claude", "codex"):
+        assert set(installed(standins, cli_name)) == {"a@tack", "b@tack"}
+    assert "tack" in registered(standins, "claude")  # removing it would uninstall (DEC-13)
+    if broken == "missing-skills":
+        assert ran(standins, since=calls) == []  # selected plugins still target both agents
+    else:
+        assert ran(standins, since=calls) == [codex("marketplace", "remove", "tack")]
+        assert registered(standins, "codex") == {}
+
+    if broken == "missing-path":
+        moved.rename(one)
+        preview = run(cfg, dry_run=True)
+        assert not {"install", "reinstall"} & {c.action for c in preview.changes}
+        calls = len(standins.calls())
+        result = run(cfg)
+        assert result.problems == []
+        assert ran(standins, since=calls) == [
+            claude("uninstall", "b@tack"),
+            codex("marketplace", "add", str(m)),
+            codex("remove", "b@tack"),
+        ]  # unchanged a is neither installed nor reinstalled on recovery
+        for cli_name in ("claude", "codex"):
+            assert set(installed(standins, cli_name)) == {"a@tack"}
+            assert "tack" in registered(standins, cli_name)
+        assert set(record(cfg)["claude-code"]) == set(record(cfg)["codex"]) == {"a"}
+        assert set(plugins.copies(cfg.paths)) == {"a"}
+
+
+def test_recovery_installs_a_recorded_codex_plugin_removed_while_unregistered(
+    home: Path, standins: Standins
+) -> None:
+    one = source(home, "one", "a")
+    cfg = configure(home, "one", one=["a"])
+    assert run(cfg).problems == []
+    moved = home / "one-moved"
+    one.rename(moved)
+    assert [p.kind for p in run(cfg).problems] == ["source"]
+    assert registered(standins, "codex") == {}
+    state = standins.state()
+    del state["codex"]["plugins"]["a@tack"]
+    write(standins.directory / "state.json", json.dumps(state))
+    moved.rename(one)
+    calls = len(standins.calls())
+
+    result = run(cfg)
+
+    assert result.problems == []
+    assert ran(standins, since=calls) == [
+        codex("marketplace", "add", str(cfg.paths.marketplace_dir)),
+        codex("add", "a@tack"),
+    ]
+    assert set(installed(standins, "codex")) == {"a@tack"}
+
+
+@pytest.mark.parametrize("failure", ["refused-checkout", "failed-fetch"])
+def test_a_held_git_source_keeps_recorded_and_newly_selected_plugins(
+    home: Path, tmp_path: Path, standins: Standins, failure: str
+) -> None:
+    one = source(home, "one", "a", "b", "c")
+    up = repo(tmp_path / "up", {p: v for p, v in tree(one).items() if v != "/"})
+    cfg = configure(home, "one", one=["a", "b"])
+    src = dataclasses.replace(cfg.sources[0], path=None, git=str(up))
+    cfg = dataclasses.replace(cfg, sources=(src,))
+    assert run(cfg).problems == []
+    before = tree(cfg.paths.marketplace_dir), record(cfg)
+    checkout = cfg.paths.sources_dir / "one"
+    if failure == "refused-checkout":
+        write(checkout / "plugins" / "a" / "skills" / "a" / "SKILL.md", "Local edit.\n")
+    else:
+        tip = commit(up, {"README.md": "New pin.\n"})
+        lock = config.load_lock(cfg.paths)
+        lock["one"] = dataclasses.replace(lock["one"], commit=tip)
+        config.save_lock(cfg.paths, lock)
+        up.rename(tmp_path / "up-moved")
+    cfg = configure(home, "one", one=["a", "c"])
+    cfg = dataclasses.replace(
+        cfg, sources=(dataclasses.replace(cfg.sources[0], path=None, git=str(up)),)
+    )
+    calls = len(standins.calls())
+
+    result = run(cfg)
+
+    assert [(p.kind, p.source) for p in result.problems] == [("source", "one")]
+    assert ("local changes" if failure == "refused-checkout" else "can't fetch") in (
+        result.problems[0].message
+    )
+    assert result.changes == []
+    assert ran(standins, since=calls) == []
+    assert (tree(cfg.paths.marketplace_dir), record(cfg)) == before
+    assert not (cfg.paths.marketplace_dir / "plugins" / "c").exists()
+    for cli_name in ("claude", "codex"):
+        assert set(installed(standins, cli_name)) == {"a@tack", "b@tack"}
+
+
+def test_a_dry_run_keeps_recorded_plugins_from_a_git_source_not_yet_cloned(
+    home: Path, tmp_path: Path, standins: Standins
+) -> None:
+    one = source(home, "one", "a")
+    up = repo(tmp_path / "up", {p: v for p, v in tree(one).items() if v != "/"})
+    cfg = configure(home, "one", one=["a"])
+    cfg = dataclasses.replace(
+        cfg, sources=(dataclasses.replace(cfg.sources[0], path=None, git=str(up), skills=()),)
+    )
+    assert run(cfg).problems == []
+    shutil.rmtree(cfg.paths.sources_dir / "one")
+    before, agent_before, calls = tree(home), standins.state(), len(standins.calls())
+
+    result = run(cfg, dry_run=True)
+
+    assert result.problems == []
+    assert not {"uninstall", "delete"} & {c.action for c in result.changes}
+    assert all(listing(c) for c in standins.calls()[calls:])
+    assert tree(home) == before
+    assert standins.state() == agent_before
+
+
 # --- a dry run, and a manifest without plugins ------------------------------------------------
 
 
@@ -659,9 +841,10 @@ def test_a_dry_run_runs_only_list_and_writes_nothing(home: Path, standins: Stand
     cfg = configure(home, "one", one=["a", "b"])
     run(cfg)
     write(one / "plugins" / "a" / "skills" / "a" / "SKILL.md", "Changed.\n")
+    cfg = configure(home, "one", one=["a", "c"])
     before, agents_before, calls = tree(home), standins.state(), len(standins.calls())
 
-    result = run(configure(home, "one", one=["a", "c"]), dry_run=True)
+    result = run(cfg, dry_run=True)
 
     assert result.problems == []
     assert all(listing(c) for c in standins.calls()[calls:])
@@ -752,3 +935,84 @@ def test_the_text_output(home: Path, standins: Standins) -> None:
     assert f"claude-code ran {claude('marketplace', 'remove', 'tack')}" in out
     assert f"codex ran {codex('marketplace', 'remove', 'tack')}" in out
     assert f"deleted {text.tilde(m)}" in out
+
+
+# --- the manifest through the CLI ----------------------------------------------------------
+
+
+@pytest.fixture
+def plugin_config(home: Path) -> Config:
+    one = source(home, "one", "a")
+    (one / "skills").rmdir()  # a plugin-only source needs no skills directory
+    return load(
+        home,
+        '[[source]]\nname = "one"\npath = "~/one"\nskills = []\nplugins = ["a"]\n',
+    )
+
+
+def test_cli_sync_deploys_manifest_plugins_as_json(
+    plugin_config: Config, capsys: pytest.CaptureFixture[str], standins: Standins
+) -> None:
+    assert cli.main(["sync", "--json"]) == 0
+    data = json.loads(capsys.readouterr().out)
+    m = str(plugin_config.paths.marketplace_dir)
+    assert data["problems"] == []
+    assert [(c["action"], c["harness"], c["detail"]) for c in data["changes"] if c["harness"]] == [
+        ("register", "claude-code", claude("marketplace", "add", m)),
+        ("install", "claude-code", claude("install", "a@tack")),
+        ("register", "codex", codex("marketplace", "add", m)),
+        ("install", "codex", codex("add", "a@tack")),
+    ]
+    for cli_name in ("claude", "codex"):
+        assert set(installed(standins, cli_name)) == {"a@tack"}
+
+
+def test_cli_plugin_dry_run_lists_commands_and_writes_nothing(
+    home: Path, plugin_config: Config, capsys: pytest.CaptureFixture[str], standins: Standins
+) -> None:
+    before, agent_before = tree(home), standins.state()
+
+    assert cli.main(["sync", "--dry-run"]) == 0
+
+    out = " ".join(capsys.readouterr().out.split())
+    m = str(plugin_config.paths.marketplace_dir)
+    assert f"claude-code would run {claude('marketplace', 'add', m)}" in out
+    assert f"codex would run {codex('add', 'a@tack')}" in out
+    assert tree(home) == before
+    assert standins.state() == agent_before
+    assert all(listing(c) for c in standins.calls())
+
+
+@pytest.mark.parametrize("missing", [False, True])
+def test_cli_remove_uninstalls_the_sources_plugins_even_if_its_path_is_gone(
+    home: Path,
+    plugin_config: Config,
+    capsys: pytest.CaptureFixture[str],
+    standins: Standins,
+    missing: bool,
+) -> None:
+    assert cli.main(["sync", "--json"]) == 0
+    capsys.readouterr()
+    assert set(record(plugin_config)) == {"claude-code", "codex"}
+    one = home / "one"
+    before = tree(one)
+    if missing:
+        moved = home / "one-moved"
+        one.rename(moved)
+        one = moved
+    calls = len(standins.calls())
+
+    assert cli.main(["remove", "one"]) == 0
+
+    assert ran(standins, since=calls) == [
+        claude("uninstall", "a@tack"),
+        claude("marketplace", "remove", "tack"),
+        codex("remove", "a@tack"),
+        codex("marketplace", "remove", "tack"),
+    ]
+    for cli_name in ("claude", "codex"):
+        assert installed(standins, cli_name) == registered(standins, cli_name) == {}
+    assert not plugin_config.paths.marketplace_dir.exists()
+    assert "plugins" not in json.loads((plugin_config.paths.state_dir / deploy.RECORD).read_text())
+    assert config.load().sources == ()
+    assert tree(one) == before  # a path source's files are never removed

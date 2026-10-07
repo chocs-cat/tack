@@ -71,6 +71,7 @@ _SOURCE_KEYS = {
     "ref",
     "subdir",
     "skills",
+    "plugins",
     "harnesses",
     "autocommit",
     "autopush",
@@ -336,6 +337,7 @@ def _source(raw: Any, i: int, file: Path, base: Path, harnesses: dict[str, Harne
         ref=raw.get("ref"),
         subdir=subdir,
         skills=_specs("skill", raw.get("skills", "*"), source_harnesses, harnesses, file, where),
+        plugins=parse_plugins(raw.get("plugins", []), source_harnesses, harnesses, file, where),
         harnesses=source_harnesses,
         autocommit=raw.get("autocommit", False),
         autopush=raw.get("autopush", False),
@@ -351,10 +353,7 @@ def parse_plugins(
 ) -> tuple[SkillSpec, ...] | None:
     """A source's `plugins` (design.md *Selecting plugins*): read as `skills`
     is, and only the harnesses that take plugins may be named (DEC-8). A
-    source that selects any must target one of them (DEC-10).
-
-    Nothing calls it yet: `plugins` stays an unknown key until `sync` deploys
-    plugins (P0001)."""
+    source that selects any must target one of them (DEC-10)."""
     specs = _specs("plugin", value, source_harnesses, harnesses, file, where)
     for spec in specs or ():
         if others := [h for h in spec.harnesses or () if h not in PLUGIN_HARNESSES]:

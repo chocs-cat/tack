@@ -35,7 +35,7 @@ class Selected:
 class SourceState:
     source: Source
     root: Path
-    present: bool  # False: the skills dir isn't there (missing path, no checkout yet)
+    present: bool  # `skills = []` needs only the root; otherwise the skills directory
     selected: list[Selected]
     missing: list[str]  # listed in the manifest but not in the (present) source
 
@@ -68,7 +68,13 @@ def plan(cfg: Config) -> Plan:
                 path = offered[spec.name] if offered is not None else skills_dir / spec.name
                 selected.append(Selected(src, spec.name, path, spec.harnesses or default))
         states.append(
-            SourceState(src, sources.root(src, cfg.paths), offered is not None, selected, missing)
+            SourceState(
+                src,
+                sources.root(src, cfg.paths),
+                sources.present(src, cfg.paths),
+                selected,
+                missing,
+            )
         )
 
     by_harness: dict[str, dict[str, list[Selected]]] = defaultdict(lambda: defaultdict(list))
