@@ -132,6 +132,51 @@ project_hooks = [".pi/hooks.json"]
         load(home, table.replace('project_hooks = [".pi/hooks.json"]', ""))
 
 
+# --- `ignore_marketplaces` (design.md *Harness fields*) -----------------------------
+
+CLAUDE_MARKETS = {"builtin", "inline", "skills-dir", "synced"}
+CODEX_MARKETS = {"openai-bundled", "openai-curated-remote", "openai-primary-runtime"}
+
+
+def test_builtin_ignore_marketplaces(home: Path) -> None:
+    for cfg in (load(home), load(home, "[harness.codex]\nimports = false\n")):
+        assert cfg.harnesses["claude-code"].ignore_marketplaces == CLAUDE_MARKETS
+        assert cfg.harnesses["codex"].ignore_marketplaces == CODEX_MARKETS
+
+
+@pytest.mark.parametrize(
+    ("harness", "builtin"), [("claude-code", CLAUDE_MARKETS), ("codex", CODEX_MARKETS)]
+)
+def test_ignore_marketplaces_adds_to_the_builtin_list(
+    home: Path, harness: str, builtin: set[str]
+) -> None:
+    cfg = load(home, f'[harness.{harness}]\nignore_marketplaces = ["mine", "theirs"]\n')
+    assert cfg.harnesses[harness].ignore_marketplaces == builtin | {"mine", "theirs"}
+    other = "codex" if harness == "claude-code" else "claude-code"
+    assert cfg.harnesses[other].ignore_marketplaces == (
+        CODEX_MARKETS if other == "codex" else CLAUDE_MARKETS
+    )
+
+
+NEW_HARNESS = """
+[harness.pi]
+skills_dir = "~/.pi/skills"
+project_skills_dir = ".pi/skills"
+instructions = "~/.pi/AGENTS.md"
+project_instructions = "AGENTS.md"
+hooks = "~/.pi/hooks.json"
+project_hooks = [".pi/hooks.json"]
+"""
+
+
+def test_a_manifest_defined_harness_takes_no_ignore_marketplaces(home: Path) -> None:
+    assert load(home, NEW_HARNESS).harnesses["pi"].ignore_marketplaces == frozenset()
+    with pytest.raises(
+        ConfigError, match=r"\[harness.pi\] ignore_marketplaces: only the built-in harnesses"
+    ):
+        load(home, NEW_HARNESS + 'ignore_marketplaces = ["x"]\n')
+
+
 def test_builtin_harness_override(home: Path) -> None:
     cfg = load(home, '[harness.codex]\nskills_dir = "~/elsewhere"\nhooks = "~/h.json"\n')
     codex = cfg.harnesses["codex"]
@@ -174,6 +219,14 @@ def test_builtin_harness_override(home: Path) -> None:
         ("[harness.codex]\nproject_skills_dir = '/abs'", "relative to a project"),
         ("[harness.codex]\nskill_dir = '~/x'", "unknown key 'skill_dir'"),
         ("[harness.codex]\nignore = 'synced'", "ignore must be a list"),
+        (
+            "[harness.codex]\nignore_marketplaces = 'mine'",
+            r"\[harness.codex\] ignore_marketplaces must be a list of strings",
+        ),
+        (
+            "[harness.claude-code]\nignore_marketplaces = ['ok', 1]",
+            r"\[harness.claude-code\] ignore_marketplaces must be a list of strings",
+        ),
         ("[tui]\ngroup_by_source = 'yes'", "group_by_source must be true or false"),
         ("[tui]\ngroup = true", "unknown key 'group' in \\[tui\\]"),
         ("[[source]\n", "tack.toml"),  # invalid TOML

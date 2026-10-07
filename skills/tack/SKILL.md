@@ -183,7 +183,13 @@ plugin; selecting its skills as well gives an agent two copies of each skill.
 
 `[harness.<name>] ignore = [...]` names entries in a harness's skills
 directory that belong to another program; tack leaves them alone and `doctor`
-doesn't report them. `[projects] roots`, `exclude` and `owners` set what
+doesn't report them. `[harness.claude-code]` and `[harness.codex]` also take
+`ignore_marketplaces = [...]`: marketplaces whose plugins belong to the agent
+or to another program, so `doctor` doesn't report them as unmanaged. Like
+`ignore`, it adds to the built-in list (Claude Code's `builtin`, `inline`,
+`skills-dir` and `synced`; Codex's `openai-bundled`, `openai-curated-remote`
+and `openai-primary-runtime`); a harness defined in the manifest can't take
+it, since only the built-in ones take plugins. `[projects] roots`, `exclude` and `owners` set what
 `doctor` audits (a repo whose `origin` belongs to someone not in `owners` is
 skipped as a clone).
 

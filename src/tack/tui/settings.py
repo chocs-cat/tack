@@ -128,8 +128,8 @@ class SettingsScreen(ModalScreen[bool]):
             with TabPane("Harnesses", id="tab-harnesses"), VerticalScroll():
                 yield Static(
                     "Entries in a harness's skills directory that belong to someone else: "
-                    "tack never touches them, and doctor doesn't report them. Harness paths "
-                    "and new harnesses are edited in tack.toml by hand.",
+                    "tack never touches them, and doctor doesn't report them. Harness paths, "
+                    "ignore_marketplaces and new harnesses are edited in tack.toml by hand.",
                     classes="note",
                 )
                 for i, h in enumerate(self.harnesses):

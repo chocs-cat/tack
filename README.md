@@ -125,6 +125,19 @@ state isn't `ok`, `sync` first holds it or checks out its pin.
 copy in tack's marketplace, or null), and gives each source `plugins`, the
 names it selects.
 
+Built-in harnesses need no table; `[harness.claude-code]` or
+`[harness.codex]` appears only to change a setting. Their
+`ignore_marketplaces` lists marketplaces whose plugins belong to the agent or
+to another program, which `doctor` doesn't report as unmanaged; it adds to
+the built-in list (Claude Code's `builtin`, `inline`, `skills-dir` and
+`synced`; Codex's `openai-bundled`, `openai-curated-remote` and
+`openai-primary-runtime`). Only these two harnesses take it:
+
+```toml
+[harness.claude-code]
+ignore_marketplaces = ["company-tools"]
+```
+
 ## Agent skill
 
 [`skills/tack/SKILL.md`](skills/tack/SKILL.md) teaches coding agents to run

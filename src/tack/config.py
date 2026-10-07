@@ -39,6 +39,8 @@ BUILTIN_HARNESSES: dict[str, dict[str, Any]] = {
         "project_hooks": [".claude/settings.json"],
         "imports": True,
         "ignore": ["synced"],
+        # claude.ai's synced plugins and the plugins Claude Code ships with.
+        "ignore_marketplaces": ["builtin", "inline", "skills-dir", "synced"],
     },
     "codex": {
         "skills_dir": "~/.agents/skills",
@@ -49,6 +51,11 @@ BUILTIN_HARNESSES: dict[str, dict[str, Any]] = {
         "project_hooks": [".codex/hooks.json", ".codex/config.toml"],
         "imports": False,
         "ignore": [],
+        "ignore_marketplaces": [
+            "openai-bundled",
+            "openai-curated-remote",
+            "openai-primary-runtime",
+        ],
     },
 }
 # The harnesses that take plugins: the built-in ones, whose CLIs tack drives
@@ -63,7 +70,7 @@ _HARNESS_REQUIRED = (
     "hooks",
     "project_hooks",
 )
-_HARNESS_KEYS = {*_HARNESS_REQUIRED, "imports", "ignore"}
+_HARNESS_KEYS = {*_HARNESS_REQUIRED, "imports", "ignore", "ignore_marketplaces"}
 _SOURCE_KEYS = {
     "name",
     "path",
@@ -140,6 +147,9 @@ class Harness:
     project_hooks: tuple[str, ...]
     imports: bool
     ignore: frozenset[str]
+    # Marketplaces whose plugins aren't reported as unmanaged (design.md
+    # *Harness fields*); empty for a harness the manifest defines (DEC-8).
+    ignore_marketplaces: frozenset[str]
 
     def ignores(self, entry: str) -> bool:
         """Whether an entry in `skills_dir` belongs to someone else."""
@@ -255,16 +265,24 @@ def _harnesses(tables: dict[str, Any], file: Path) -> dict[str, Harness]:
         if builtin is None:
             if not _NAME.fullmatch(name):
                 raise ConfigError(f"{file}: {name!r} isn't a valid harness name")
+            if "ignore_marketplaces" in table:
+                raise ConfigError(
+                    f"{file}: {where} ignore_marketplaces: only the built-in harnesses "
+                    f"({' and '.join(PLUGIN_HARNESSES)}) take plugins (DEC-8)"
+                )
             missing = [k for k in _HARNESS_REQUIRED if k not in table]
             if missing:
                 raise ConfigError(
                     f"{file}: {where} is a new harness and needs {', '.join(missing)}"
                 )
-            fields = {"imports": False, "ignore": [], **table}
+            fields = {"imports": False, "ignore": [], "ignore_marketplaces": [], **table}
         else:
-            # A built-in's `ignore` adds to its own list rather than replacing it.
-            extra = _str_list(table.get("ignore", []), file, f"{where} ignore")
-            fields = {**builtin, **table, "ignore": [*builtin["ignore"], *extra]}
+            # A built-in's `ignore` and `ignore_marketplaces` add to its own
+            # lists rather than replacing them.
+            fields = {**builtin, **table}
+            for key in ("ignore", "ignore_marketplaces"):
+                extra = _str_list(table.get(key, []), file, f"{where} {key}")
+                fields[key] = [*builtin[key], *extra]
         out[name] = _harness(name, fields, file, where)
     return out
 
@@ -297,6 +315,7 @@ def _harness(name: str, f: dict[str, Any], file: Path, where: str) -> Harness:
         project_hooks=tuple(relative("project_hooks", h) for h in strings("project_hooks")),
         imports=f["imports"],
         ignore=frozenset(_str_list(f["ignore"], file, f"{where} ignore")),
+        ignore_marketplaces=frozenset(f["ignore_marketplaces"]),
     )
 
 
