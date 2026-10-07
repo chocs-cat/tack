@@ -9,7 +9,7 @@ import pytest
 
 from tack import __version__
 from tack.cli import main
-from tests.helpers import commit, git, link, repo, skill, skill_md, upstream, write
+from tests.helpers import commit, git, link, market, repo, skill, skill_md, upstream, write
 
 
 def run(capsys: pytest.CaptureFixture[str], *argv: str) -> tuple[int, str, str]:
@@ -167,6 +167,56 @@ def test_sync_and_status(home: Path, capsys: pytest.CaptureFixture[str]) -> None
         "harnesses": {"claude-code": "linked", "codex": "linked"},
         "path": str(home / "mine" / "skills" / "b"),
     }
+
+
+def test_status_shows_plugins(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    skill(home / "mine" / "skills", "a")
+    for name in ("p", "q"):
+        write(home / "plugs" / "plugins" / name / "plugin.json", json.dumps({"name": name}))
+    market(home / "plugs", "p", "q")
+    manifest(
+        home,
+        '[[source]]\nname = "mine"\npath = "~/mine"\n'
+        '[[source]]\nname = "plugs"\npath = "~/plugs"\nskills = []\n'
+        'plugins = ["p", { name = "q", harnesses = ["codex"] }]\n',
+    )
+    assert run(capsys, "sync")[0] == 0
+    (home / ".agents" / "skills" / "a").unlink()
+
+    code, out, _ = run(capsys, "status")
+    assert code == 0
+    assert out.splitlines() == [
+        "sources",
+        "  mine   ~/mine",
+        "         1 skill",
+        "  plugs  ~/plugs",
+        "         0 skills; 2 plugins",
+        "",
+        "skill  source  claude-code  codex",
+        "a      mine    linked       missing",
+        "",
+        "plugin  source  claude-code  codex",
+        "p       plugs   installed    installed",
+        "q       plugs   -            installed",
+    ]
+
+
+def test_status_shows_plugins_in_place_of_skills(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    market(home / "plugs", {"name": "x", "source": {"source": "npm", "package": "x"}})
+    manifest(home, '[[source]]\nname = "plugs"\npath = "~/plugs"\nskills = []\nplugins = "*"\n')
+
+    code, out, _ = run(capsys, "status")
+    assert code == 0
+    assert out.splitlines() == [
+        "sources",
+        "  plugs  ~/plugs",
+        "         0 skills; 1 plugin",
+        "",
+        "plugin  source  claude-code  codex",
+        "x       plugs   missing      missing",
+    ]
 
 
 def test_tracking(home: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

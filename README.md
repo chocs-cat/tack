@@ -9,7 +9,7 @@ pinned third-party ones — and audit your projects so either agent sees the sam
 skills, and hooks.
 
 `tack sync` deploys skills and selected plugins from the manifest's sources,
-`tack status` shows which skills are where, `tack outdated` and `tack update`
+`tack status` shows which skills and plugins are where, `tack outdated` and `tack update`
 track upstream, `tack add` and `tack remove` edit the manifest, `tack doctor`
 audits, and `tack scaffold` applies the fixes it suggests. A `path` source with
 `autocommit = true` (and `autopush`) has its skill edits committed, and
@@ -48,7 +48,7 @@ tack                      # the TUI
 tack add https://github.com/cloudflare/skills.git --skill wrangler
 tack sync --dry-run       # what would change
 tack sync                 # fetch pinned sources, link skills into every harness
-tack status               # sources, pins, and which skills are linked where
+tack status               # sources, pins, and where skills and plugins are deployed
 tack outdated --diff      # what upstream changed in the skills you deploy
 tack update cloudflare    # take it: move the pin, then sync
 tack remove cloudflare    # its table, pin, links and checkout
@@ -102,7 +102,25 @@ copy in place. Deselected plugins are uninstalled, including through
 enables or disables plugins, and a source sync can't reach keeps its
 existing plugins. A sync with no plugin selections, marketplace directory,
 or recorded installs runs no agent CLI. Plugin selections are edited by
-hand; `status`, `doctor`, and the TUI don't show plugins yet.
+hand; `doctor` and the TUI don't show plugins yet.
+
+`tack status` shows each selected plugin's state in each agent it targets,
+read through `claude plugin list` and `codex plugin list` (and their
+`marketplace list`), which it runs only for an agent a selected plugin
+targets; it changes nothing. A plugin is in the first of these that applies:
+
+- `collision`: two sources select the name; tack deploys neither.
+- `unavailable`: the agent's CLI isn't on `PATH`, or listing its plugins fails.
+- `conflict`: the agent has a marketplace named `tack` that isn't tack's.
+- `missing`: not installed.
+- `disabled`: installed, but turned off in the agent; tack leaves it off.
+- `stale`: tack's copy, or Codex's, predates the plugin's files; `sync` refreshes it.
+- `installed`: installed from tack's marketplace, enabled, and current.
+
+`tack status --json` adds `plugins`, one object per selected plugin with
+`name`, `source`, `harnesses` (agent → state), `version` and `path` (its
+copy in tack's marketplace, or null), and gives each source `plugins`, the
+names it selects.
 
 ## Agent skill
 
