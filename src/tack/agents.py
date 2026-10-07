@@ -213,6 +213,17 @@ def is_tack(harness: str, m: Marketplace, paths: Paths) -> bool:
     )
 
 
+def tack_plugins(harness: str, inv: Inventory) -> dict[str, bool]:
+    """The plugins the harness has from tack's marketplace, enabled or not
+    (DEC-5): name -> enabled. Claude Code's only at user scope, where tack
+    installs them. `sync`'s step 2 and `status` both read installs here."""
+    return {
+        p.name: p.enabled
+        for p in inv.plugins
+        if p.marketplace == plugins.NAME and (harness != "claude-code" or p.scope == "user")
+    }
+
+
 def inventory(harness: str, paths: Paths) -> Inventory | Outcome:
     """What the harness has installed and registered, from its `plugin list`
     and `plugin marketplace list`; or the outcome of the one that failed.

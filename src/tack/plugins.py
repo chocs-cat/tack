@@ -107,7 +107,7 @@ def update(
         copy = plugins_dir / w.name
         try:
             digest = tree_hash(w.directory)
-            stale = digest != _hash_or_none(copy)
+            stale = digest != copy_hash(copy)
             if stale and not dry_run:
                 _copy(w.directory, copy)
         except (PluginError, OSError) as e:
@@ -221,7 +221,9 @@ def tree_hash(directory: Path) -> str:
     return h.hexdigest()
 
 
-def _hash_or_none(copy: Path) -> str | None:
+def copy_hash(copy: Path) -> str | None:
+    """The hash of a plugin's copy in tack's marketplace; None when there is
+    no copy, or one that can't be read, which is stale either way."""
     if not copy.is_dir():
         return None
     try:
