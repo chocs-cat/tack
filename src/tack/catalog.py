@@ -7,8 +7,8 @@ plugin's files are: in the source, in another git repository at a commit, or
 somewhere tack can't pin, which makes it not deployable (DEC-4).
 
 `parse` is pure: it reads the decoded JSON only, never the filesystem, so the
-same reading serves a catalog taken from git at any commit. Whether a plugin's
-directory exists is found when tack copies it.
+same reading serves a catalog taken from git at any commit (`read_at`, for
+`outdated`). Whether a plugin's directory exists is found when tack copies it.
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from tack import git
 from tack.config import valid_name
 
 CATALOGS = (".claude-plugin/marketplace.json", ".agents/plugins/marketplace.json")
@@ -31,6 +32,13 @@ PLUGIN_JSONS = (".claude-plugin/plugin.json", "plugin.json", ".codex-plugin/plug
 _SHA = re.compile(r"[0-9a-f]{40}")
 _SHORTHAND = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")  # owner/repo
 _UNPINNABLE = ("npm", "archive", "command")
+# What a catalog path at a commit is when it isn't a file (git.Object.kind).
+_NOT_A_FILE = {
+    "tree": "a directory, not a file",
+    "dangling": "a link to nowhere",
+    "loop": "a symlink loop",
+    "symlink": "a link out of the repository",
+}
 
 
 class CatalogError(Exception):
@@ -106,6 +114,25 @@ def read(root: Path) -> Catalog | None:
     except (OSError, UnicodeDecodeError, ValueError) as e:
         raise CatalogError(f"{file}: {e}") from e
     return parse(data, str(file))
+
+
+def read_at(repo: Path, commit: str) -> Catalog | None:
+    """The catalog of the source whose git repository is `repo`, as it is at
+    `commit`: `read` through git, the same files in the same order (design.md
+    *Tracking plugins upstream*). Its `file`, and its errors' label, is the
+    catalog's path in the repository."""
+    for rel in CATALOGS:
+        obj = git.cat(repo, commit, rel)
+        if obj.kind == "missing":
+            continue
+        if obj.kind != "blob":
+            raise CatalogError(f"{rel}: {_NOT_A_FILE.get(obj.kind, 'not a file')}")
+        try:
+            data = json.loads(obj.data.decode("utf-8"))
+        except (UnicodeDecodeError, ValueError) as e:
+            raise CatalogError(f"{rel}: {e}") from e
+        return parse(data, rel)
+    return None
 
 
 def parse(data: Any, file: str) -> Catalog:
@@ -262,5 +289,16 @@ def files(directory: Path) -> Callable[[str], bytes | None]:
             return (directory / rel).read_bytes()
         except OSError:
             return None
+
+    return read
+
+
+def files_at(repo: Path, commit: str, directory: str) -> Callable[[str], bytes | None]:
+    """A `read` for `version` over the plugin directory `directory` (relative
+    to the root of the git repository `repo`, "." for the root) at `commit`."""
+
+    def read(rel: str) -> bytes | None:
+        obj = git.cat(repo, commit, posixpath.normpath(posixpath.join(directory, rel)))
+        return obj.data if obj.kind == "blob" else None
 
     return read
