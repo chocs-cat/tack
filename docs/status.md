@@ -25,9 +25,9 @@ Last review: 2026-10-07 (P0001-C05).
 ## In flight
 
 - **Chunk:** P0001-C06
-- **State:** executing
+- **State:** awaiting review
 - **Branch:** `chunk/p0001-c06`
-- **Pull request:** `#41` (draft)
+- **Pull request:** `#41` (ready)
 - **Units committed:** a, b, c, d
 
 (Fixed shape. `State` ∈ `ready for an executor` · `executing` ·
