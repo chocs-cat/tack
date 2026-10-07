@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import json
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
-from tack import config, sources, sync, update
+from tack import config, deploy, plugins, sources, sync, update
 from tack.config import Config, UsageError
-from tests.helpers import commit, git, load, skill_md, tree, upstream
+from tests.helpers import commit, git, load, repo, skill_md, tree, upstream
+from tests.standin import Standins
 
 WHEN = datetime(2026, 9, 27, 12, 0, 0, tzinfo=UTC)
 LATER = datetime(2026, 10, 1, 9, 30, 0, tzinfo=UTC)
@@ -110,3 +112,36 @@ def test_usage_errors(home: Path, tmp_path: Path) -> None:
         update.update(cfg, ["mine"])
     with pytest.raises(UsageError, match="no source named 'nope'"):
         update.update(cfg, ["nope"])
+
+
+def test_update_carries_a_plugin_change_to_codex(
+    home: Path, tmp_path: Path, standins: Standins
+) -> None:
+    """A changed plugin file is copied and reinstalled in Codex, whose copy
+    is its own; Claude Code loads tack's copy in place, so nothing runs
+    there but the two lists (design.md *Deploying*, step 3)."""
+    catalog = json.dumps({"plugins": [{"name": "a", "source": "./plugins/a"}]})
+    up = repo(
+        tmp_path / "up",
+        {".claude-plugin/marketplace.json": catalog, "plugins/a/README.md": "a\n"},
+    )
+    cfg = pinned(home, source(up, extra='skills = []\nplugins = ["a"]\n'))
+    before = deploy.load_record(cfg.paths).plugins
+    claude = len(standins.calls("claude"))
+    commit(up, {"plugins/a/README.md": "changed\n"})
+
+    result = update.update(cfg, now=LATER)
+    assert result.problems == []
+    assert [(c.action, c.harness, c.detail) for c in result.changes[3:]] == [
+        ("copy", None, "a from ~/.local/share/tack/sources/up/plugins/a"),
+        ("reinstall", "codex", "codex plugin add a@tack --json"),
+    ]
+    assert [c.action for c in result.changes[:3]] == ["update", "checkout", "write"]
+    after = deploy.load_record(cfg.paths).plugins
+    copy = cfg.paths.marketplace_dir / "plugins" / "a"
+    assert after["codex"]["a"].hash == plugins.tree_hash(copy) != before["codex"]["a"].hash
+    assert after["claude-code"]["a"] == before["claude-code"]["a"]
+    assert sorted(" ".join(c.args) for c in standins.calls("claude")[claude:]) == [
+        "plugin list --json",
+        "plugin marketplace list --json",
+    ]

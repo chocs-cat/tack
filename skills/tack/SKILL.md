@@ -53,7 +53,7 @@ tack status --json            # sources (state, pin, pending edits), skills and 
 tack doctor --json            # audit the harnesses and the projects under [projects] roots
 tack doctor --json ~/Code/app # audit one project (or search one directory)
 tack outdated --json          # how far each git source is behind upstream
-tack outdated SOURCE --diff   # the diff of the skills that changed
+tack outdated SOURCE --diff   # the diff of the skills and plugins that changed
 ```
 
 `status` lists each skill with `harnesses: {"claude-code": "linked", ...}`;
@@ -85,11 +85,18 @@ runs only those two `list` commands, for each agent a selected plugin
 targets, and changes nothing.
 
 `outdated` reports each git source as `current`, `behind` (with `behind`, the
-`commits` and the changed `skills`), `not pinned`, `manifest changed`,
-`not checked out` or `error`, with the command that fixes it in `message`.
+`commits` and the changed `skills` and `plugins`), `not pinned`,
+`manifest changed`, `not checked out` or `error`, with the command that
+fixes it in `message`. For a source that selects plugins, each changed one
+is `{"name", "change", "version": {"from", "to"}}` (`change` is `modified`,
+`added` or `removed`; a version is null at the end without one), compared
+from its catalog read at the pin and at the tip; `plugins_error` says why
+they weren't compared (a catalog broken at either end), else null. Each
+commit has `skills` and `plugins`, the selected ones it touches. `--diff`
+adds each changed plugin's files and catalog entry after the skills.
 
-The TUI doesn't show plugins yet, and upstream reports still track skills.
-Plugin selections are edited in the manifest by hand.
+The TUI doesn't show plugins yet. Plugin selections are edited in the
+manifest by hand.
 
 ## Changing things
 

@@ -105,11 +105,14 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[common],
         help="how far each git source's pin is behind upstream",
         description="Fetch each git source and compare its pin with the tip of its ref: "
-        "the commits between them and the selected skills that changed. Moves nothing. "
+        "the commits between them and the selected skills and plugins that changed. "
+        "Moves nothing. "
         "Exits 1 when a source is behind or can't be compared.",
     )
     p.add_argument("sources", nargs="*", metavar="SOURCE", help="these sources (default: all)")
-    p.add_argument("--diff", action="store_true", help="show the diff of the changed skills")
+    p.add_argument(
+        "--diff", action="store_true", help="show the diff of the changed skills and plugins"
+    )
     p.set_defaults(func=cmd_outdated)
 
     p = sub.add_parser(

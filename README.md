@@ -49,7 +49,7 @@ tack add https://github.com/cloudflare/skills.git --skill wrangler
 tack sync --dry-run       # what would change
 tack sync                 # fetch pinned sources, link skills into every harness
 tack status               # sources, pins, and where skills and plugins are deployed
-tack outdated --diff      # what upstream changed in the skills you deploy
+tack outdated --diff      # what upstream changed in the skills and plugins you deploy
 tack update cloudflare    # take it: move the pin, then sync
 tack remove cloudflare    # its table, pin, links and checkout
 tack doctor               # audit the harnesses and the projects under projects.roots
@@ -124,6 +124,19 @@ state isn't `ok`, `sync` first holds it or checks out its pin.
 `name`, `source`, `harnesses` (agent → state), `version` and `path` (its
 copy in tack's marketplace, or null), and gives each source `plugins`, the
 names it selects.
+
+`tack outdated` compares a git source's selected plugins between its pin and
+the tip, from its catalog at each end: each one *modified* (its catalog
+entry changed, or a file under its directory), *added* or *removed*, with
+its version at each end (`plugins modified: a (1.0 -> 1.1)`); the commits
+it lists include those touching selected plugins; and `--diff` adds each
+changed plugin's diff after the skills', its files and then its catalog
+entry. A catalog broken at either end leaves the plugins uncompared and says
+why. `--json` gives each source `plugins` (`name`, `change`, and `version`
+as `{"from", "to"}`) and `plugins_error` (null unless the catalog is
+broken), and each commit `plugins`. A source that selects no plugins is
+reported as before. `tack update` then takes the change: tack's copy is
+refreshed and the plugin reinstalled in Codex.
 
 `tack doctor` audits plugins too. It lists every installed agent's plugins
 (the same two `list` commands, for each agent whose CLI is on `PATH`),

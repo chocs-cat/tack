@@ -578,3 +578,130 @@ def test_outdated_text_when_nothing_selected_changed() -> None:
         "    added: s",
         "    why",
     ]
+
+
+# --- commits touching plugins, and `--diff` ---------------------------------------------
+
+
+def listed(r: outdated.SourceReport) -> dict[str, tuple[list[str], list[str]]]:
+    return {c.subject: (c.skills, c.plugins) for c in r.commits}
+
+
+def test_commits_touching_plugins(home: Path, tmp_path: Path) -> None:
+    """A file under a plugin's directory, or its entry changed in a catalog
+    file (one that can't be read having no entries); only selected plugins."""
+    up = plugin_upstream(tmp_path / "up", "a", "b", "c", skills=("s",))
+    cfg = tracking(home, up, '["a", "b"]', skills='"*"')
+    described = {"name": "b", "source": "./plugins/b", "version": "1.0", "description": "B."}
+    commit(up, {"plugins/a/README.md": "changed\n"}, "File a")
+    commit(up, {CATALOG: catalog_json("a", described, "c")}, "Entry b")
+    commit(up, {CATALOG: catalog_json("a", described, {"name": "c", "source": "./c"})}, "Entry c")
+    commit(up, {CATALOG: "{"}, "Break")
+    commit(up, {CATALOG: catalog_json("a", described, "c")}, "Fix")
+    commit(up, {"skills/s/SKILL.md": "changed\n", "plugins/a/README.md": "again\n"}, "Both")
+    commit(up, {"plugins/c/README.md": "changed\n", "README.md": "docs\n"}, "Neither")
+
+    r = only(cfg)
+    assert r.plugins_error is None
+    assert [(c.subject, c.skills, c.plugins) for c in r.commits] == [
+        ("Both", ["s"], ["a"]),
+        ("Fix", [], ["a", "b"]),
+        ("Break", [], ["a", "b"]),
+        ("Entry b", [], ["b"]),
+        ("File a", [], ["a"]),
+    ]
+
+
+def test_a_merge_touches_no_plugin(home: Path, tmp_path: Path) -> None:
+    up = plugin_upstream(tmp_path / "up", "a", "b")
+    cfg = tracking(home, up)
+    git(up, "checkout", "-qb", "side")
+    commit(up, {"plugins/b/README.md": "side\n"}, "Side b")
+    git(up, "checkout", "-q", "master")
+    commit(up, {"plugins/a/README.md": "main\n"}, "Main a")
+    git(up, "merge", "-q", "--no-ff", "-m", "Merge side", "side")
+
+    r = only(cfg)
+    assert listed(r) == {"Side b": ([], ["b"]), "Main a": ([], ["a"])}
+    assert [p.name for p in r.plugins] == ["a", "b"]
+
+
+def test_no_commit_is_attributed_to_plugins_not_compared(home: Path, tmp_path: Path) -> None:
+    up = plugin_upstream(tmp_path / "up", "a", skills=("s",))
+    cfg = tracking(home, up, skills='"*"')
+    commit(up, {"plugins/a/README.md": "changed\n"}, "File a")
+    commit(up, {"skills/s/SKILL.md": "changed\n", "plugins/a/README.md": "x\n"}, "Both")
+    commit(up, {CATALOG: "{"}, "Break")
+
+    r = only(cfg)
+    assert r.plugins_error is not None
+    assert listed(r) == {"Both": (["s"], [])}
+
+
+def test_a_source_selecting_no_plugins_lists_its_commits_as_before(
+    home: Path, tmp_path: Path
+) -> None:
+    up = plugin_upstream(tmp_path / "up", "a", skills=("s",))
+    cfg = pinned(home, source(up))
+    commit(up, {"plugins/a/README.md": "changed\n"}, "File a")
+    commit(up, {"skills/s/SKILL.md": "changed\n"}, "Skill s")
+    assert listed(only(cfg)) == {"Skill s": (["s"], [])}
+
+
+def test_diff_adds_each_changed_plugin(home: Path, tmp_path: Path) -> None:
+    """After the skills' diff, each changed plugin's in name order: its files
+    at either end, then its entry's, JSON in the catalog's key order."""
+    up = plugin_upstream(tmp_path / "up", "a", "b", "gone", "same", "other", skills=("s",))
+    cfg = tracking(home, up, '["a", "b", "gone", "same", "new"]', skills='"*"')
+    described = {"name": "b", "source": "./plugins/b", "version": "1.0", "description": "B."}
+    new = {"source": "./plugins/new", "name": "new"}
+    git(up, "rm", "-rq", "plugins/gone")
+    commit(
+        up,
+        {
+            CATALOG: catalog_json("a", described, "same", "other", new),
+            "skills/s/SKILL.md": "changed\n",
+            "plugins/a/README.md": "changed a\n",
+            "plugins/other/README.md": "changed other\n",
+            **plugin_files("new"),
+        },
+    )
+
+    r = only(cfg, diff=True)
+    assert [p.name for p in r.plugins] == ["a", "b", "gone", "new"]
+    diff = r.diff
+    assert diff is not None
+    heads = [
+        "diff --git a/skills/s/SKILL.md b/skills/s/SKILL.md",
+        "diff --git a/plugins/a/README.md b/plugins/a/README.md",
+        "--- a/.claude-plugin/marketplace.json#b\n+++ b/.claude-plugin/marketplace.json#b\n",
+        "diff --git a/plugins/gone/README.md b/plugins/gone/README.md\ndeleted file",
+        "--- a/.claude-plugin/marketplace.json#gone\n+++ /dev/null\n",
+        "diff --git a/plugins/new/README.md b/plugins/new/README.md\nnew file",
+        "--- /dev/null\n+++ b/.claude-plugin/marketplace.json#new\n",
+    ]
+    at = [diff.index(h) for h in heads]
+    assert at == sorted(at)
+    assert '+  "description": "B."\n' in diff
+    assert (
+        "--- /dev/null\n"
+        "+++ b/.claude-plugin/marketplace.json#new\n"
+        "@@ -0,0 +1,4 @@\n"
+        "+{\n"
+        '+  "source": "./plugins/new",\n'
+        '+  "name": "new"\n'
+        "+}\n"
+    ) in diff
+    for unchanged in ("plugins/same", "plugins/other", "marketplace.json#a", "#same"):
+        assert unchanged not in diff
+    assert only(cfg).diff is None
+
+
+def test_diff_of_plugins_alone(home: Path, tmp_path: Path) -> None:
+    up = plugin_upstream(tmp_path / "up", "a")
+    cfg = tracking(home, up)
+    commit(up, {"plugins/a/README.md": "changed\n"})
+    diff = only(cfg, diff=True).diff
+    assert diff is not None
+    assert diff.startswith("diff --git a/plugins/a/README.md b/plugins/a/README.md\n")
+    assert "+changed" in diff
