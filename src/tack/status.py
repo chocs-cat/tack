@@ -72,7 +72,10 @@ class Status:
     plugins: list[PluginStatus] = field(default_factory=list)
 
 
-def status(cfg: Config) -> Status:
+def status(cfg: Config, inventories: Inventories | None = None) -> Status:
+    """`inventories`, when given, holds the agents' inventories the caller
+    has read (the TUI reads each agent once for this and the audit, design.md
+    *The TUI*); a targeted harness it lacks is read here."""
     lock = config.load_lock(cfg.paths)
     plan = deploy.plan(cfg)
     record = deploy.load_record(cfg.paths)
@@ -116,7 +119,7 @@ def status(cfg: Config) -> Status:
                 links[h] = _LINK.get(st, "conflict")
             skills.append(SkillStatus(sel.name, ss.source.name, links, sel.path))
     skills.sort(key=lambda k: (k.name, k.source))
-    return Status(out_sources, skills, _plugins(cfg, plugin_plan, record))
+    return Status(out_sources, skills, _plugins(cfg, plugin_plan, record, inventories or {}))
 
 
 def name_collides(plan: deploy.Plan, name: str, harness: str) -> bool:
@@ -176,13 +179,19 @@ def _harness(h: str, inv: agents.Inventory | agents.Outcome, paths: config.Paths
     return _Harness(tack=agents.tack_plugins(h, inv))
 
 
-def _plugins(cfg: Config, plan: plugins.Plan, record: deploy.Record) -> list[PluginStatus]:
+def _plugins(
+    cfg: Config, plan: plugins.Plan, record: deploy.Record, read: Inventories
+) -> list[PluginStatus]:
     """Only a harness a selected plugin targets is listed, so a manifest
-    without plugins runs no agent (DEC-3)."""
-    targeted = {h for state in plan.sources for sel in state.selected for h in sel.harnesses}
-    inventories = {
-        h: agents.inventory(h, cfg.paths) for h in config.PLUGIN_HARNESSES if h in targeted
-    }
+    without plugins runs no agent (DEC-3); it is taken from `read` when that
+    has it."""
+    targeted = [
+        h
+        for h in config.PLUGIN_HARNESSES
+        if any(h in sel.harnesses for state in plan.sources for sel in state.selected)
+    ]
+    inventories = {h: read[h] for h in targeted if h in read}
+    inventories |= agents.inventories(cfg.paths, [h for h in targeted if h not in read])
     return plugin_states(cfg, plan, record, inventories)
 
 

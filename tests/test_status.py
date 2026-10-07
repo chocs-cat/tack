@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from tack import cli, deploy, status, sync
+from tack import agents, cli, deploy, status, sync
 from tack.config import Config
 from tack.deploy import Install
 from tests.helpers import configure, git, link, load, market, repo, skill, tree, upstream, write
@@ -418,6 +418,22 @@ def test_status_reads_plugins_without_writing(home: Path, standins: Standins) ->
         "claude plugin marketplace list --json",
         "codex plugin list --json",
         "codex plugin marketplace list --json",
+    ]
+
+
+def test_status_takes_the_inventories_it_is_given(home: Path, standins: Standins) -> None:
+    """Handed an agent's inventory (the TUI's one reading), `status` doesn't
+    list that agent again; it lists a targeted one it wasn't handed."""
+    cfg = _disabled(home, standins)
+    inventories = agents.inventories(cfg.paths, BOTH)
+    start = len(standins.calls())
+
+    assert states(status.status(cfg, inventories)) == FIXTURES["disabled"][1]
+    assert standins.calls()[start:] == []
+    assert states(status.status(cfg, {"codex": inventories["codex"]})) == FIXTURES["disabled"][1]
+    assert sorted(" ".join([c.cli, *c.args]) for c in standins.calls()[start:]) == [
+        "claude plugin list --json",
+        "claude plugin marketplace list --json",
     ]
 
 

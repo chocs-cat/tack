@@ -14,6 +14,7 @@ from tack.config import Config
 from tack.doctor import hooks, instructions, plugins, project_skills, skills
 from tack.doctor.findings import SEVERITIES, Finding, Severity
 from tack.doctor.projects import discover, is_clone
+from tack.status import Inventories
 
 __all__ = ["Finding", "Report", "check_project", "run"]
 
@@ -44,13 +45,16 @@ def run(
     *,
     global_checks: bool = True,
     project_checks: bool = True,
+    inventories: Inventories | None = None,
 ) -> Report:
     """Audit. `paths` replaces the configured project roots when given; a path
-    naming a repository is audited even if it is a clone."""
+    naming a repository is audited even if it is a clone. `inventories`, when
+    given, is every agent's inventory, already read (the TUI shares one
+    reading with `status`)."""
     findings: list[Finding] = []
     if global_checks:
         findings += skills.check(cfg)
-        findings += plugins.check(cfg)
+        findings += plugins.check(cfg, inventories)
         findings += instructions.check_global(cfg)
         findings += hooks.check_global(cfg)
     projects: list[Path] = []

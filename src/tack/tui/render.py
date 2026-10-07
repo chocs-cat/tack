@@ -11,7 +11,7 @@ from rich.text import Text
 from tack import outdated, text
 from tack.doctor.findings import Finding
 from tack.doctor.skills import frontmatter, skill_problem
-from tack.status import SkillStatus, SourceStatus
+from tack.status import PluginStatus, SkillStatus, SourceStatus
 from tack.sync import Result
 from tack.text import plural, tilde
 
@@ -23,6 +23,20 @@ LINK_STYLE = {
     "conflict": "red",
     "collision": "red",
 }
+# design.md *The TUI*, *The Plugins tab*.
+PLUGIN_STYLE = {
+    "installed": "green",
+    "stale": "yellow",
+    "disabled": "yellow",
+    "missing": "yellow",
+    "unavailable": "red",
+    "conflict": "red",
+    "collision": "red",
+}
+NO_PLUGINS = (
+    "No plugin is selected.\n\nA source's `plugins` in the manifest, or the plugins field "
+    "of `a` on Sources, selects them."
+)
 _PROBLEM_KINDS = (
     "source", "conflict", "collision", "after-save", "commit", "push", "refused", "error",
 )  # fmt: skip
@@ -72,6 +86,19 @@ def skill_detail(k: SkillStatus) -> Text:
     except (OSError, UnicodeDecodeError):
         meta = {}
     out.append(meta.get("description", ""))
+    return out
+
+
+# --- plugins --------------------------------------------------------------------
+
+
+def plugin_detail(p: PluginStatus) -> Text:
+    out = Text()
+    out.append(p.name, style="bold")
+    out.append(f"  from {p.source}\n\n")
+    for harness, state in p.harnesses.items():
+        out.append(f"{harness}: ")
+        out.append(f"{state}\n", style=PLUGIN_STYLE[state])
     return out
 
 
