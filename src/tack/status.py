@@ -6,6 +6,7 @@ nothing else is run (design.md §9 *Plugin states*)."""
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -152,6 +153,11 @@ def plugin_state(
     return "installed"
 
 
+# What `agents.inventory` gave for each harness read: its plugins and
+# marketplaces, or the outcome of the `list` command that failed.
+Inventories = Mapping[str, agents.Inventory | agents.Outcome]
+
+
 @dataclass(frozen=True)
 class _Harness:
     """What one harness that takes plugins has, as `sync` reads it."""
@@ -161,8 +167,7 @@ class _Harness:
     tack: dict[str, bool] = field(default_factory=dict)  # tack's plugins: name -> enabled
 
 
-def _harness(h: str, paths: config.Paths) -> _Harness:
-    inv = agents.inventory(h, paths)
+def _harness(h: str, inv: agents.Inventory | agents.Outcome, paths: config.Paths) -> _Harness:
     if isinstance(inv, agents.Outcome):
         return _Harness(unavailable=True)
     market = inv.marketplace(plugins.NAME)
@@ -172,15 +177,26 @@ def _harness(h: str, paths: config.Paths) -> _Harness:
 
 
 def _plugins(cfg: Config, plan: plugins.Plan, record: deploy.Record) -> list[PluginStatus]:
+    """Only a harness a selected plugin targets is listed, so a manifest
+    without plugins runs no agent (DEC-3)."""
+    targeted = {h for state in plan.sources for sel in state.selected for h in sel.harnesses}
+    inventories = {
+        h: agents.inventory(h, cfg.paths) for h in config.PLUGIN_HARNESSES if h in targeted
+    }
+    return plugin_states(cfg, plan, record, inventories)
+
+
+def plugin_states(
+    cfg: Config, plan: plugins.Plan, record: deploy.Record, inventories: Inventories
+) -> list[PluginStatus]:
     """Each selected plugin's state in each harness it targets (design.md §9
-    *Plugin states*). Only a harness a selected plugin targets is listed, so
-    a manifest without plugins runs no agent (DEC-3)."""
-    selected = [sel for state in plan.sources for sel in state.selected]
-    targeted = {h for sel in selected for h in sel.harnesses}
-    seen = {h: _harness(h, cfg.paths) for h in config.PLUGIN_HARNESSES if h in targeted}
+    *Plugin states*), sorted by name and then source. `inventories` holds
+    each targeted harness's inventory, read once by the caller: `status` reads
+    the targeted harnesses, `doctor` every one (DEC-18). Runs nothing."""
+    seen = {h: _harness(h, inv, cfg.paths) for h, inv in inventories.items()}
     out: list[PluginStatus] = []
-    for sel in selected:
-        digest = _digest(sel.directory)
+    for sel in (sel for state in plan.sources for sel in state.selected):
+        digest = plugin_digest(sel.directory)
         copy = cfg.paths.marketplace_dir / "plugins" / sel.name
         # What `sync` would copy: the copy is missing, or isn't the plugin's files.
         copy_stale = digest is not None and plugins.copy_hash(copy) != digest
@@ -207,7 +223,7 @@ def _plugins(cfg: Config, plan: plugins.Plan, record: deploy.Record) -> list[Plu
     return out
 
 
-def _digest(directory: Path | None) -> str | None:
+def plugin_digest(directory: Path | None) -> str | None:
     """The hash of a plugin's files; None when it has no directory to compare,
     or one whose files can't be read (its copy would fail), so it is never
     `stale`."""

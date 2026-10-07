@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from tack.config import Config
-from tack.doctor import hooks, instructions, project_skills, skills
+from tack.doctor import hooks, instructions, plugins, project_skills, skills
 from tack.doctor.findings import SEVERITIES, Finding, Severity
 from tack.doctor.projects import discover, is_clone
 
@@ -50,6 +50,7 @@ def run(
     findings: list[Finding] = []
     if global_checks:
         findings += skills.check(cfg)
+        findings += plugins.check(cfg)
         findings += instructions.check_global(cfg)
         findings += hooks.check_global(cfg)
     projects: list[Path] = []

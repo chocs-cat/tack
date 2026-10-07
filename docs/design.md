@@ -828,9 +828,12 @@ targets it. Project-scoped plugins aren't audited: in Claude Code only
 - **Leftovers.** `not-synced` for each of tack's plugins in a harness that
   `sync` would uninstall there (step 4 of [Deploying](#deploying)): one the
   manifest no longer deploys to it and that `sync` doesn't keep, a kept one
-  being a collided name, a plugin from another repository, or one whose
-  recorded source's catalog can't be read (its root isn't there, or the
-  catalog is broken).
+  being a collided name, a plugin from another repository, one whose files
+  can't be read (its copy would fail), or one whose recorded source's catalog
+  can't be read (its root isn't there, or the catalog is broken). There are
+  none in a harness whose CLI `sync` wouldn't run (no selected plugin targets
+  it, the record lists none there, and tack's marketplace directory doesn't
+  exist).
 - **Collisions.** `name-collision` once per plugin name two sources select,
   located at the manifest.
 - **Others' plugins.** `unmanaged-plugin` for each plugin installed from a
