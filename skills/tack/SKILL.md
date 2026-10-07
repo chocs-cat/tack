@@ -217,8 +217,10 @@ in its `message`, which says what fixes it:
   an agent (`path` is its directory), or `unavailable` or in `conflict` there
   (one finding per agent, naming the plugins, with the agent's error or the
   foreign marketplace); a plugin a source lists that its catalog lacks, one
-  tack can't deploy, or a broken catalog (`path` is the catalog file); and
-  one of tack's plugins that `sync` would uninstall from an agent.
+  tack can't deploy, or a broken catalog (`path` is the catalog file); a
+  plugin whose files can't be read, so that `sync` can't copy it (`path` is
+  its directory, and the message has `sync`'s reason); and one of tack's
+  plugins that `sync` would uninstall from an agent.
 - `name-collision` (error): two sources select one plugin name.
 - `duplicate-plugin` (warn): a plugin tack deploys to an agent is also
   installed there from another marketplace, so the agent loads both.
@@ -226,8 +228,13 @@ in its `message`, which says what fixes it:
   select it from its source, or add its marketplace to the harness's
   `ignore_marketplaces`.
 
-An agent whose CLI isn't on `PATH` is a finding only when a selected plugin
-targets it.
+An agent's problem is a finding wherever `sync` reports it: a CLI that
+isn't on `PATH` when a selected plugin targets the agent, a failing `list`
+whenever `sync` would run the agent at all (a selected plugin targets it,
+tack has recorded installs there, or tack's marketplace exists), and a
+foreign `tack` marketplace when a selected plugin targets the agent or tack
+has recorded installs there. It names the plugins it stops that have no
+finding of their own; with none, it says only what is wrong and the fix.
 
 The conventions it checks: `AGENTS.md` is the project's instructions and
 `CLAUDE.md` imports it (`@AGENTS.md`); `.agents/skills` is the one real

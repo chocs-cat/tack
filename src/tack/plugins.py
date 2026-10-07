@@ -105,17 +105,20 @@ def update(
         if w.name in kept:
             continue
         copy = plugins_dir / w.name
-        try:
-            digest = tree_hash(w.directory)
-            stale = digest != copy_hash(copy)
-            if stale and not dry_run:
-                _copy(w.directory, copy)
-        except (PluginError, OSError) as e:
-            message = str(e) if isinstance(e, PluginError) else _os_message(e)
-            out.failures.append(Failure(w.name, message, w.directory))
-            stale = False
+        digest = files_hash(w.directory)
+        stale = False
+        if isinstance(digest, Unreadable):
+            out.failures.append(Failure(w.name, digest.reason, w.directory))
         else:
-            out.hashes[w.name] = digest
+            try:
+                stale = digest != copy_hash(copy)
+                if stale and not dry_run:
+                    _copy(w.directory, copy)
+            except (PluginError, OSError) as e:
+                out.failures.append(Failure(w.name, _failure(e), w.directory))
+                stale = False
+            else:
+                out.hashes[w.name] = digest
         if stale:
             out.changes.append(Change("copy", f"{w.name} from {tilde(w.directory)}", w.name, copy))
         if stale or copy.is_dir():
@@ -219,6 +222,22 @@ def tree_hash(directory: Path) -> str:
         h.update(os.fsencode(rel) + b"\0" + (b"x" if executable else b"-") + b"\0")
         h.update(digest.encode() + b"\0")
     return h.hexdigest()
+
+
+@dataclass(frozen=True)
+class Unreadable:
+    """Why a plugin's files can't be read, so that its copy would fail."""
+
+    reason: str
+
+
+def files_hash(directory: Path) -> str | Unreadable:
+    """The plugin's `tree_hash`, or why its files can't be read: the message
+    `update` gives the plugin's failure, which `doctor` reports too."""
+    try:
+        return tree_hash(directory)
+    except (PluginError, OSError) as e:
+        return Unreadable(_failure(e))
 
 
 def copy_hash(copy: Path) -> str | None:
@@ -325,7 +344,10 @@ def _remove(path: Path) -> None:
         shutil.rmtree(path)
 
 
-def _os_message(e: OSError) -> str:
+def _failure(e: PluginError | OSError) -> str:
+    """What a plugin's failed hash or copy is reported as."""
+    if isinstance(e, PluginError):
+        return str(e)
     where = f"{tilde(e.filename)}: " if e.filename else ""
     return f"{where}{e.strerror or e}"
 

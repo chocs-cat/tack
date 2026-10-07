@@ -133,8 +133,9 @@ A finding about an agent's plugins names the agent:
 - `not-synced` (warn): a selected plugin that is `missing`, `disabled` or
   `stale` in an agent, or that an agent can't take (`unavailable`,
   `conflict`); a listed plugin the source's catalog lacks, one tack can't
-  deploy, or a broken catalog; one of tack's plugins that `sync` would
-  uninstall.
+  deploy, a broken catalog, or a plugin whose files can't be read, so that
+  `sync` can't copy it (at its directory, with the reason `sync` gives); one
+  of tack's plugins that `sync` would uninstall.
 - `name-collision` (error): two sources select the same plugin name.
 - `duplicate-plugin` (warn): a plugin tack deploys to an agent is also
   installed there from another marketplace, so the agent loads both.
@@ -142,8 +143,13 @@ A finding about an agent's plugins names the agent:
   hand or by another manager; selecting it from its source keeps it the same
   across agents and machines.
 
-A CLI that isn't on `PATH` is a finding only when a selected plugin targets
-that agent.
+An agent's problem is a finding wherever `sync` reports it: a CLI that isn't
+on `PATH` when a selected plugin targets that agent, a failing `list`
+whenever `sync` would run that agent at all (a selected plugin targets it,
+tack has recorded installs there, or tack's marketplace exists), and a
+foreign `tack` marketplace when a selected plugin targets the agent or tack
+has recorded installs there. Its finding names the plugins it stops that
+have no finding of their own, or says only what is wrong with the agent.
 
 Built-in harnesses need no table; `[harness.claude-code]` or
 `[harness.codex]` appears only to change a setting. Their
