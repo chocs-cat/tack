@@ -123,19 +123,24 @@ it would commit and push.
 ### Editing the manifest by hand
 
 `add` and `remove` cover sources; for anything else, edit `tack.toml` and
-then run `tack sync --dry-run`. The source fields:
+then run `tack sync --dry-run`. The source fields, for a git source and a
+`path` source:
 
 ```toml
 [[source]]
 name = "vendor"
-git = "https://github.com/org/skills.git"   # or: path = "~/Code/my-skills"
-ref = "main"                  # git: the branch or tag to follow (default: the remote's)
+git = "https://github.com/org/skills.git"
+ref = "main"                  # the branch or tag to follow (default: the remote's)
 subdir = "skills"             # where the skill directories are
 skills = ["a", { name = "b", harnesses = ["codex"] }]         # default "*": all of them
 plugins = ["p", { name = "q", harnesses = ["codex"] }]       # default []: none
 harnesses = ["codex"]         # limit the whole source (default: every harness)
-autocommit = true             # path: commit skill edits when tack runs
-autopush = true               # path: and push them
+
+[[source]]
+name = "mine"
+path = "~/Code/my-skills"     # a local directory, used as it is
+autocommit = true             # commit skill edits when tack runs (path sources only)
+autopush = true               # and push them
 ```
 
 `plugins` is `"*"` or a list shaped like `skills`; plugin harnesses may name
