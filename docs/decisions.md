@@ -235,3 +235,33 @@ A dry run cannot register to reveal them, so it assumes recorded plugins
 are installed; the next real run checks them.
 
 *Where:* design.md, *Plugins* (*Deploying*, step 2).
+
+## DEC-15: A plugin is in the first state that applies (2026-10)
+
+Added at the cut of P0001-C05. A plugin's states can overlap in a harness: a
+collided name in a harness whose CLI isn't installed, a disabled plugin whose
+copy is out of date. `status`, the TUI's cell and `doctor`'s `not-synced`
+each take one state, so the first that applies wins: `collision`,
+`unavailable`, `conflict`, `missing`, `disabled`, `stale`, `installed`. A
+manifest error comes first, since no agent fixes it; then what stops tack
+reading the harness at all (with no CLI it can't see a conflict either);
+then whether the plugin is installed, and only then how fresh it is.
+`disabled` comes before `stale` because a disabled plugin loads in neither
+case, and turning it back on is the user's choice (DEC-5), while `sync`
+refreshes a stale copy unasked. Listing every state that applies was the
+alternative; none of the three readers has room for more than one.
+
+*Where:* design.md, *Plugins* (*Plugin states*).
+
+## DEC-16: A harness whose plugin list fails is `unavailable` (2026-10)
+
+Added at the cut of P0001-C05. `unavailable` meant a CLI that isn't on
+`PATH`. One that is there but whose `plugin list` or `plugin marketplace
+list` fails (a broken install, output tack can't read) leaves tack just as
+unable to say what the harness has, and `sync` stops that harness's steps
+the same way. A state of its own would be one more for the TUI's sort and
+`doctor`'s mapping to place, for a case they treat alike; `status` has no
+problems list to carry the agent's message, which `sync` reports as an
+`agent` problem.
+
+*Where:* design.md, *Plugins* (*Plugin states*), *`doctor` checks*.

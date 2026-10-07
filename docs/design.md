@@ -10,8 +10,9 @@ this document left open are logged in [decisions.md](decisions.md) and cited
 as `(DEC-n)`.
 
 **Plugins** are designed here and being built by project
-[P0001](projects/P0001-plugins.md). Text marked *(P0001)* describes behavior
-that is not released yet; the mark comes off when the project completes.
+[P0001](projects/P0001-plugins.md). Text marked *(P0001)* belongs to that
+project, and some of it isn't built yet (the project's chunk ledger says what
+is); the mark comes off when the project completes.
 
 ## Contents
 
@@ -615,7 +616,7 @@ the commands it would run, and writes nothing. `--adopt` doesn't apply to
 plugins.
 
 A source `sync` holds (a missing `path`, a failed fetch, a refused checkout,
-a `path` source whose skills directory isn't there; see
+a `path` source that is missing as [Source fields](#source-fields) says; see
 [Ownership and conflicts](#ownership-and-conflicts)), a source whose root
 isn't there (a git source a dry run hasn't cloned), and a source whose
 catalog is broken keep their plugins as they are: `sync` copies, installs,
@@ -682,13 +683,33 @@ harness it targets:
 | `disabled` | Installed but turned off in the agent. |
 | `conflict` | The harness has a foreign marketplace named `tack`. |
 | `collision` | Two sources select the name, for this harness or another (DEC-11). |
-| `unavailable` | The agent's CLI isn't on `PATH`. |
+| `unavailable` | The agent's CLI isn't on `PATH`, or its `plugin list` or `plugin marketplace list` fails (DEC-16). |
 
-`status --json` adds `plugins`, one object per selected plugin: `name`,
-`source`, `harnesses` (harness → state, for the harnesses it targets),
-`version` (as [Catalogs](#catalogs) says, or null) and
-`path` (its copy in tack's marketplace). Each source's object gains `plugins`,
-the names it selects, beside `skills`.
+A plugin is in the first of these states that applies, in this order:
+`collision`, `unavailable`, `conflict`, `missing`, `disabled`, `stale`,
+`installed` (DEC-15). Each reads what `sync` reads:
+
+- *Installed* is what step 2 of [Deploying](#deploying) means: the agent's
+  `plugin list` shows the plugin from tack's marketplace (Claude Code's at
+  user scope), enabled or not. `disabled` is such a plugin with `enabled`
+  false.
+- `stale` is exactly what `sync` would copy or reinstall: tack's copy is
+  missing or its hash (see [Plugin ownership](#plugin-ownership)) isn't the
+  plugin's directory's, in any harness; and in Codex also when the record has
+  no hash for the plugin there, or one that isn't the plugin's directory's.
+  A plugin with no directory to compare (one tack can't deploy, or one
+  whose files can't be read, so that its copy would fail) is never `stale`.
+- `status` runs a harness's two `list` commands once, and only when a
+  selected plugin targets that harness, so a manifest without plugins runs
+  no agent (DEC-3). It writes nothing and still exits `0`.
+
+`status --json` adds `plugins`, one object per selected plugin, sorted by
+name and then source as skills are: `name`, `source`, `harnesses` (harness →
+state, for the harnesses it targets), `version` (as [Catalogs](#catalogs)
+says, read from the plugin's directory in its source, or null) and `path`
+(its copy in tack's marketplace, or null when there is none). A name two
+sources select is one object per source. Each source's object gains
+`plugins`, the names it selects, beside `skills`.
 
 ### Plugins from other repositories
 
@@ -778,9 +799,10 @@ read wrong), **warn** (will drift or break later), **info**.
 
 *(P0001)* The plugin checks read each agent's plugins through its CLI
 (`claude plugin list --json`, `codex plugin list --json`, and their
-`marketplace list`), as `sync` runs it. A harness whose CLI isn't on `PATH`
-has no plugins to report; it is a `not-synced` finding only when a selected
-plugin targets it. Project-scoped plugins aren't audited.
+`marketplace list`), as `sync` runs it. A harness whose CLI isn't on `PATH`,
+or whose `list` fails, has no plugins to report; it is a `not-synced`
+finding (its plugins are `unavailable`, DEC-16) only when a selected plugin
+targets it. Project-scoped plugins aren't audited.
 
 ### Per project
 
@@ -1158,7 +1180,9 @@ scratch `HOME`:
   `installed` and `enabled`. It lists only plugins of registered marketplaces
   whose catalog still has them: one left installed after its entry or its
   marketplace was removed is missing from the list (though still in
-  `config.toml`), and `remove` still uninstalls it.
+  `config.toml`), and `remove` still uninstalls it. Registering the
+  marketplace again lists it again, still installed (DEC-14; checked
+  2026-10-07 against codex-cli 0.160.1 by `tools/agent_facts.py`).
 - **`codex plugin marketplace list --json`** prints `{"marketplaces": […]}`,
   each with `name`, `root`, and `marketplaceSource` (`sourceType` `local` or
   `git`, and `source`, a path or URL).

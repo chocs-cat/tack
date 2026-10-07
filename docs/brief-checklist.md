@@ -89,3 +89,25 @@ would uninstall a kept plugin there; the executor logged DEC-13. The sweep
 of P0001-C04's brief checked each step against the wider set of kept
 plugins a held source adds: step 4 and the copies skip them, DEC-13 covers
 step 5, and the record keeps the directory.
+
+### §4 A multi-run expectation not walked through what each run reads
+
+A *Tests* line expects an outcome after a sequence of runs (break the
+source, sync, restore it, sync again) and the *Build* says nothing new is
+needed, but nobody traced the later run's steps through the inputs the
+earlier run changed: a list the agent now filters, a record entry it
+dropped, a directory it removed. Each run is right on its own; the sequence
+needs a step the brief ruled out. Before committing a brief with such an
+expectation, walk each run's steps in order and, for each, name what it
+reads and whether an earlier run (or a harness fact) changed it.
+
+*Provenance:* P0001-C04-b. The brief had a held source's plugins kept with
+"no special case in any step", and expected the sync after the path came
+back to register Codex again and install nothing. Codex had been
+unregistered by the run before, and *Harness facts* already said Codex's
+`plugin list` hides the plugins of a marketplace that isn't registered, so
+step 2 saw them as not installed and would have installed them again; the
+executor logged DEC-14 for a second inventory. The sweep of P0001-C05's
+brief walked its one multi-run expectation, `status` agreeing with a `sync`
+dry run and then a real one, and found the DEC-14 shape it had to leave
+out.

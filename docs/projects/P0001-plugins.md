@@ -4,7 +4,7 @@
 - **Created:** 2026-10-05
 - **Ready:** 2026-10-05
 - **Completed:** —
-- **Decisions:** DEC-1 – DEC-13
+- **Decisions:** DEC-1 – DEC-16
 
 ## 1. Problem and outcome
 
@@ -118,6 +118,9 @@ skills and gain plugin cases (DEC-7).
 | design.md, *Harness facts tack relies on* (P0001-C02 review) | No `codex plugin` command takes `--scope`. | Checked against codex-cli 0.157.1's `--help`; the stand-in enforces it. |
 | design.md, *Deploying* step 5; decisions.md (P0001-C03 execution) | Claude Code keeps tack's marketplace registered while a kept plugin is installed there (DEC-13). | Its `marketplace remove` uninstalls the marketplace's plugins; the brief's step 5 would have uninstalled kept ones (brief-checklist §3). |
 | design.md, *Deploying*, *Plugin ownership*, *Source fields*; decisions.md (P0001-C03 review) | tack's marketplace is brought up to date whenever a plugin is selected or it exists (#33); which sources keep their plugins (held, no root, broken catalog) and which plugins (recorded and selected), named *kept*; DEC-12 clarified to match; the record's source follows the manifest; Claude Code's recorded hash; a `skills = []` source is missing only without its root. | What P0001-C04 would otherwise invent, and the shapes C03's executor chose where the docs were silent. |
+| design.md, *Deploying* step 2; decisions.md (P0001-C04 execution) | Codex's inventory is read again after registering when the record lists plugins there; a dry run assumes them installed (DEC-14). | Codex hides an unregistered marketplace's plugins, so the brief's recovery would have reinstalled them (brief-checklist §4). |
+| design.md, header, *Deploying*, *Harness facts tack relies on* (P0001-C04 review) | What the *(P0001)* mark means once part is built; a `path` source is held when missing as *Source fields* says; Codex lists a kept plugin again once its marketplace is registered again, checked against codex-cli 0.160.1. | The header and the held-source list had gone stale with C04; DEC-14's assumption needed the real agent. |
+| design.md, *Plugin states*; decisions.md (P0001-C05 cut) | The order states apply in (DEC-15); a failing `list` is `unavailable` (DEC-16); what *installed* and `stale` read, matching `sync`; when `status` runs the agents; the `--json` objects' order, `version`'s source, and `path` null without a copy. | What P0001-C05's executor would otherwise invent. |
 
 ## 5. Delivery plan
 
@@ -313,8 +316,9 @@ the diff between the two commits.
 |---|---|---|---|---|
 | [P0001-C01](../chunks/P0001-C01.md) | D1 (catalogs), D2 (tack's marketplace, the agents' CLIs, stand-ins): unwired groundwork | accepted with follow-ups (#29; C02-a) | 2026-10-05 | #28, `4c3bcac` |
 | [P0001-C02](../chunks/P0001-C02.md) | D1 (the `plugins` selection, unwired; the plan); C01 review follow-up | accepted with follow-ups (DEC-11 as C03-a; #31) | 2026-10-05 | #30, `3d4bcf5` |
-| [P0001-C03](../chunks/P0001-C03.md) | D2 (`sync`'s plugin steps and the record, not yet reachable); C02 review follow-up (DEC-11) | accepted with follow-ups (#33 as C04-a) | 2026-10-06 | #32 |
-| [P0001-C04](../chunks/P0001-C04.md) | D2 (#33; DEC-12's held sources; `remove`; docs), D1 (`skills = []`; the `plugins` field) | ready for an executor | — | — |
+| [P0001-C03](../chunks/P0001-C03.md) | D2 (`sync`'s plugin steps and the record, not yet reachable); C02 review follow-up (DEC-11) | accepted with follow-ups (#33 as C04-a) | 2026-10-06 | #32, `91feded` |
+| [P0001-C04](../chunks/P0001-C04.md) | D2 (#33; DEC-12's held sources; `remove`; docs), D1 (`skills = []`; the `plugins` field): D1 and D2 done | accepted with follow-ups (#35 as C05-a) | 2026-10-07 | #34 |
+| [P0001-C05](../chunks/P0001-C05.md) | D3 (`status` reports plugins); C04 review follow-up (#35) | ready for an executor | — | — |
 
 ## 8. Closeout
 
