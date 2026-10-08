@@ -21,7 +21,7 @@ import shlex
 import shutil
 import subprocess
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -222,6 +222,11 @@ def tack_plugins(harness: str, inv: Inventory) -> dict[str, bool]:
         for p in inv.plugins
         if p.marketplace == plugins.NAME and (harness != "claude-code" or p.scope == "user")
     }
+
+
+def inventories(paths: Paths, harnesses: Iterable[str]) -> dict[str, Inventory | Outcome]:
+    """Each of `harnesses`' `inventory`, read once."""
+    return {h: inventory(h, paths) for h in harnesses}
 
 
 def inventory(harness: str, paths: Paths) -> Inventory | Outcome:

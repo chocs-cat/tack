@@ -107,7 +107,7 @@ def _sources(cfg: Config, plan: Plan) -> Iterator[Finding]:
             skills_dir = sources.skills_dir(src, cfg.paths)
             if src.git is not None and not state.root.exists():
                 why = "is not checked out yet; `tack sync` fetches it"
-            elif not state.root.exists():
+            elif not state.root.is_dir():  # a file there too, as `text.source_note` says (#43)
                 why = f"has no directory at {tilde(state.root)}"
             else:
                 why = f"has no skills directory at {tilde(skills_dir)}"

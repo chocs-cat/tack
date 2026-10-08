@@ -26,7 +26,7 @@ import shutil
 import stat
 import tempfile
 from collections import defaultdict
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -450,6 +450,32 @@ def undeployable(plugin: catalog.Plugin) -> str | None:
     if isinstance(where, catalog.InRepository):
         return f"is in another repository ({where.url}), and tack doesn't deploy those yet"
     return None
+
+
+def collision(name: str, harnesses: Sequence[str], srcs: Sequence[str]) -> str:
+    """A plugin name two sources select, as `sync` reports it (DEC-11)."""
+    return (
+        f"plugin {name!r} is selected from sources {', '.join(srcs)} for "
+        f"{', '.join(harnesses)}; none of them is deployed -- deselect all but one"
+    )
+
+
+def problems(sel: Selected, plan: Plan) -> list[str]:
+    """What `sync` reports about a selected plugin, each as `sync` words it:
+    a name another source selects too, one tack can't deploy or from another
+    repository, and one whose files can't be read, so that its copy would
+    fail (a collided name is kept, not copied). It reads the plugin's files
+    as they are now, as the states do (DEC-17)."""
+    out: list[str] = []
+    if sel.name in plan.collisions:
+        out.append(collision(sel.name, *plan.collisions[sel.name]))
+    if why := undeployable(sel.plugin):
+        out.append(f"plugin {sel.name!r} {why}")
+    elif sel.directory is not None and sel.name not in plan.collisions:
+        digest = files_hash(sel.directory)
+        if isinstance(digest, Unreadable):
+            out.append(f"plugin {sel.name!r}: {digest.reason}")
+    return out
 
 
 def _source_state(src: Source, cfg: Config) -> SourceState:

@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from tack import cli, doctor, status, sync
+from tack import agents, cli, config, doctor, status, sync
 from tack.config import Config
 from tack.doctor import plugins as doctor_plugins
 from tack.doctor.findings import Finding
@@ -729,6 +729,21 @@ def test_projects_only_runs_no_agent(home: Path, standins: Standins) -> None:
     assert calls(standins, start) == []
     doctor.run(cfg, project_checks=False)  # the same manifest does run them
     assert calls(standins, start) == LISTS
+
+
+@pytest.mark.parametrize("fixture", ["installed", "conflict", "list fails"])
+def test_doctor_takes_the_inventories_it_is_given(
+    home: Path, standins: Standins, fixture: str
+) -> None:
+    """Handed every agent's inventory (the TUI's one reading), `doctor` runs
+    no agent and finds what it finds reading them itself."""
+    cfg = FIXTURES[fixture][0](home, standins)
+    own = doctor.run(cfg, project_checks=False).findings
+    inventories = agents.inventories(cfg.paths, config.PLUGIN_HARNESSES)
+    start = len(standins.calls())
+
+    assert doctor.run(cfg, project_checks=False, inventories=inventories).findings == own
+    assert calls(standins, start) == []
 
 
 def test_doctor_json_lists_plugin_findings(

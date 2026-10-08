@@ -385,10 +385,7 @@ class _Plugins:
         for name, (harnesses, srcs) in self.plan.collisions.items():
             self.result.problems.append(
                 Problem(
-                    "collision",
-                    f"plugin {name!r} is selected from sources {', '.join(srcs)} for "
-                    f"{', '.join(harnesses)}; none of them is deployed -- deselect all but one",
-                    path=self.cfg.manifest,
+                    "collision", plugins.collision(name, harnesses, srcs), path=self.cfg.manifest
                 )
             )
         for state in self.plan.sources:

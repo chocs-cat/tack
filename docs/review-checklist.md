@@ -58,3 +58,25 @@ to `x"y.md` wasn't listed, though the plugin read *modified* (its diff used
 `-z`). The sweep found the same parse in `outdated`'s skills log and
 `sources.unpushed` (#47), and #46 is the rename half for skills; both
 scheduled as P0001-C08-a.
+
+### §3 A test snapshots a tree holding a repository it just committed to
+
+A test runs git inside a directory it then compares before and after (a
+`tree(home)` snapshot, a listing of tack's data directory), and git's
+automatic maintenance, which a commit or a fetch (tack's own included)
+starts in the background, adds or removes a lock file under that
+repository's `.git` between the two snapshots. The test passes locally and fails now and then on CI, with a
+`.git` path as the only difference, though nothing tack did changed. Look
+for any snapshot taken over a repository a test created; the fix belongs
+where the suite configures git (`tests/conftest.py`'s scratch config), not
+in each test.
+
+*Provenance:* P0001-C09-a. `test_a_git_dry_run_ignores_a_leftover_checkout`
+committed a leftover checkout under the scratch home and snapshotted it;
+macOS CI failed on three heads with `objects/maintenance.lock` in the
+difference, and the branch carried on red. `42be0cb` turned maintenance
+off for that one test. The sweep: every `tree(home)` snapshot in the
+suite (`test_edit`, `test_sync`, `test_sync_plugins`, `test_status`,
+`test_update`, `test_plugin_plan`) can follow a commit or a fetch under the
+scratch home; the scratch config's fix, scheduled as P0001-C10-a, covers
+them all.

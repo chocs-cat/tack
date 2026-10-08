@@ -137,6 +137,19 @@ def test_path_source_presence_without_a_skills_directory(home: Path, selection: 
     )
 
 
+@pytest.mark.parametrize("selection", ["[]", '"*"'])
+def test_a_source_whose_root_is_a_file(home: Path, selection: str) -> None:
+    """A file where the source's directory should be: it has no directory
+    there, as `status` says, not "no skills directory" (#43)."""
+    write(home / "mine", "not a directory\n")
+    (finding,) = findings(home, MINE + f"skills = {selection}\n")
+    assert (finding.id, finding.message, finding.path) == (
+        "not-synced",
+        "source 'mine' has no directory at ~/mine",
+        home / "mine",
+    )
+
+
 def test_name_collision(home: Path) -> None:
     skill(home / "one" / "skills", "dup")
     skill(home / "two" / "skills", "dup")

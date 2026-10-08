@@ -29,10 +29,13 @@ _STATES = {
 }
 
 
-def check(cfg: Config) -> Iterator[Finding]:
+def check(cfg: Config, inventories: status.Inventories | None = None) -> Iterator[Finding]:
+    """`inventories`, when given, holds every harness's inventory, read by the
+    caller (the TUI shares it with `status`); otherwise each is read here."""
     plan = plugins.plan(cfg)
     record = deploy.load_record(cfg.paths)
-    inventories = {h: agents.inventory(h, cfg.paths) for h in config.PLUGIN_HARNESSES}
+    if inventories is None:
+        inventories = agents.inventories(cfg.paths, config.PLUGIN_HARNESSES)
     kept = _kept(plan, record)
     unreadable = _unreadable(plan, kept)
     kept |= set(unreadable)

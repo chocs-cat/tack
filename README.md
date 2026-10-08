@@ -14,9 +14,9 @@ skills, and hooks.
 `tack doctor` audits, and `tack scaffold` applies the fixes it suggests. A
 `path` source with `autocommit = true` (and `autopush`) has its skill edits
 committed, and pushed, whenever a command that changes things runs. A bare
-`tack` opens a TUI over all of it: Skills (grouped by source, and sortable),
-Sources and Doctor tabs, and a Settings screen for the manifest, with every
-action previewed before it runs.
+`tack` opens a TUI over all of it: Skills, Plugins (each grouped by source,
+and sortable), Sources and Doctor tabs, keyed `1` to `4`, and a Settings
+screen for the manifest, with every action previewed before it runs.
 
 ## Install
 
@@ -116,7 +116,10 @@ is written by hand.
 enables or disables plugins, and a source sync can't reach keeps its
 existing plugins. A sync with no plugin selections, marketplace directory,
 or recorded installs runs no agent CLI. Beyond `add`, plugin selections are
-edited by hand; the TUI doesn't show plugins yet.
+edited by hand. The TUI's Plugins tab shows each selected plugin's state in
+each agent, grouped and sorted as Skills is but on its own; a plugin's detail
+gives its source and pin, tack's copy, its version and description, and any
+problem `sync` reports about it.
 
 `tack status` shows each selected plugin's state in each agent it targets,
 read through `claude plugin list` and `codex plugin list` (and their
