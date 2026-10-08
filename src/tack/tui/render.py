@@ -6,6 +6,7 @@ without running the app.
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from dataclasses import dataclass, field
 
 from rich.text import Text
@@ -103,16 +104,18 @@ class PluginAbout:
     problems: list[str] = field(default_factory=list)
 
 
-def plugin_abouts(plan: plugins.Plan) -> dict[tuple[str, str], PluginAbout]:
-    """Each selected plugin's, by source and name. Its description is the
-    first string `description` among its `plugin.json` files, else its
-    catalog entry's (design.md *The Plugins tab*)."""
+def plugin_abouts(plan: plugins.Plan, kept: Collection[str]) -> dict[tuple[str, str], PluginAbout]:
+    """Each selected plugin's, by source and name, `kept` naming the plugins
+    `sync` keeps (`plugins.kept`). Its description is the first string
+    `description` among its `plugin.json` files, else its catalog entry's
+    (design.md *The Plugins tab*)."""
     out: dict[tuple[str, str], PluginAbout] = {}
     for state in plan.sources:
         for sel in state.selected:
             read = catalog.files(sel.directory) if sel.directory else lambda _: None
             description = catalog.description(sel.plugin.entry, read)
-            out[sel.source.name, sel.name] = PluginAbout(description, plugins.problems(sel, plan))
+            problems = plugins.problems(sel, plan, kept)
+            out[sel.source.name, sel.name] = PluginAbout(description, problems)
     return out
 
 

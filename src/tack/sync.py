@@ -331,14 +331,8 @@ class _Plugins:
         self, cfg: Config, record: Record, result: Result, held: set[str], *, dry_run: bool
     ) -> None:
         self.cfg, self.paths, self.record, self.result = cfg, cfg.paths, record, result
-        self.dry_run = dry_run
+        self.dry_run, self.held = dry_run, held
         self.plan = plugins.plan(cfg)
-        # Both selected and recorded names from these sources are kept (DEC-12).
-        self.kept_sources = held | {
-            state.source.name
-            for state in self.plan.sources
-            if state.catalog_state in ("no-root", "broken")
-        }
         self.selected = [sel for state in self.plan.sources for sel in state.selected]
         # The harnesses a selected plugin targets, deployable or not, collided or not.
         self.targeted = {h for sel in self.selected for h in sel.harnesses}
@@ -355,20 +349,11 @@ class _Plugins:
         if not involved:
             return  # no CLI, no marketplace, no record change (DEC-3)
 
+        kept = plugins.kept(self.plan, self.record, self.held)
         wanted: dict[str, plugins.Selected] = {}
-        kept = set(self.plan.collisions)
-        kept.update(sel.name for sel in self.selected if sel.source.name in self.kept_sources)
-        kept.update(
-            name
-            for by_name in self.record.plugins.values()
-            for name, installed in by_name.items()
-            if installed.source in self.kept_sources
-        )
         for by_name in self.plan.plugins.values():
             for name, sel in by_name.items():
-                if sel.directory is None:
-                    kept.add(name)  # from another repository: not deployed yet (D8)
-                else:
+                if sel.directory is not None:
                     wanted.setdefault(name, sel)
         hashes: dict[str, str] = {}
         if self.selected or exists:

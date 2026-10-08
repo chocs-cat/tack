@@ -32,6 +32,7 @@ from tack import (
     agents,
     commit,
     config,
+    deploy,
     doctor,
     edit,
     outdated,
@@ -247,7 +248,9 @@ class TackApp(App[None]):
             inventories = agents.inventories(cfg.paths, config.PLUGIN_HARNESSES)
             st = status.status(cfg, inventories)
             audit = doctor.run(cfg, inventories=inventories)
-            abouts = render.plugin_abouts(plugins.plan(cfg))
+            plan = plugins.plan(cfg)
+            kept = plugins.kept(plan, deploy.load_record(cfg.paths))
+            abouts = render.plugin_abouts(plan, kept)
         except ConfigError as e:
             self.call_from_thread(self.notify, str(e), severity="error")
             return
