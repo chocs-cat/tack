@@ -95,8 +95,10 @@ they weren't compared (a catalog broken at either end), else null. Each
 commit has `skills` and `plugins`, the selected ones it touches. `--diff`
 adds each changed plugin's files and catalog entry after the skills.
 
-The TUI doesn't show plugins yet. `tack add … --plugin` selects plugins for
-a new source; otherwise plugin selections are edited in the manifest by hand.
+`tack add … --plugin` selects plugins for a new source; otherwise plugin
+selections are edited in the manifest by hand. The TUI shows them on a
+Plugins tab (its tabs, keyed `1`–`4`, are Skills, Plugins, Sources and
+Doctor); for an agent, `status --json` has the same states.
 
 ## Changing things
 

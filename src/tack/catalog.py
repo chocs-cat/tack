@@ -267,6 +267,16 @@ def version(entry: Mapping[str, Any], read: Callable[[str], bytes | None]) -> st
     (`files`) or from git at a commit. A file that can't be read, isn't JSON,
     or has no string `version` is passed over.
     """
+    return _first("version", entry, read)
+
+
+def description(entry: Mapping[str, Any], read: Callable[[str], bytes | None]) -> str | None:
+    """A plugin's description, read as its `version` is (design.md *The
+    TUI*, *The Plugins tab*)."""
+    return _first("description", entry, read)
+
+
+def _first(key: str, entry: Mapping[str, Any], read: Callable[[str], bytes | None]) -> str | None:
     for rel in PLUGIN_JSONS:
         data = read(rel)
         if data is None:
@@ -275,9 +285,9 @@ def version(entry: Mapping[str, Any], read: Callable[[str], bytes | None]) -> st
             doc = json.loads(data.decode("utf-8"))
         except (UnicodeDecodeError, ValueError):
             continue
-        if isinstance(doc, dict) and isinstance(doc.get("version"), str):
-            return doc["version"]
-    v = entry.get("version")
+        if isinstance(doc, dict) and isinstance(doc.get(key), str):
+            return doc[key]
+    v = entry.get(key)
     return v if isinstance(v, str) else None
 
 

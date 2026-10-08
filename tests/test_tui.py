@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import subprocess
 import sys
 from collections import Counter
@@ -18,15 +19,16 @@ from textual.widgets import DataTable, Input, Static, TabbedContent
 from textual.widgets._header import HeaderTitle
 from textual.widgets._tabbed_content import ContentTab, ContentTabs
 
-from tack import __version__, config, edit, outdated, status, sync
+from tack import __version__, cli, config, edit, outdated, status, sync
 from tack.status import SourceStatus
+from tack.text import tilde
 from tack.tui import render
 from tack.tui.app import FixedHeader, TackApp
 from tack.tui.dialogs import ActionScreen, AddScreen
 from tests import standin
 from tests.helpers import commit, configure, load, market, repo, skill, skill_md, upstream, write
 from tests.standin import Standins
-from tests.test_status import BOTH, FIXTURES, plugin_source, run_sync
+from tests.test_status import BOTH, FIXTURES, NPM, WHEN, plugin_source, run_sync
 
 Scenario = Callable[[TackApp, Pilot[None]], Awaitable[None]]
 
@@ -568,6 +570,172 @@ def test_each_refresh_lists_each_agents_plugins_once(home: Path, standins: Stand
             "codex plugin marketplace list --json",
         ]
         assert rows(app, "plugins")[1] == ["  a", "installed", "installed"]
+
+    drive(scenario)
+
+
+def test_a_plugins_detail(home: Path, tmp_path: Path, standins: Standins) -> None:
+    """Where it comes from (the source, its pin or directory, tack's copy),
+    its version and description, and its state in each harness, colored."""
+    write(
+        home / "one" / "plugins" / "a" / ".claude-plugin" / "plugin.json",
+        json.dumps({"name": "a", "version": "3.1", "description": "A, from plugin.json."}),
+    )
+    write(home / "one" / "plugins" / "b" / "README.md", "b\n")
+    market(
+        home / "one",
+        {"name": "a", "source": "./plugins/a", "version": "1.0", "description": "From the entry."},
+        {"name": "b", "source": "./plugins/b", "description": "B, from the entry."},
+    )
+    up = repo(
+        tmp_path / "up",
+        {
+            "plugins/g/README.md": "g\n",
+            ".claude-plugin/marketplace.json": json.dumps(
+                {"plugins": [{"name": "g", "source": "./plugins/g", "version": "2.0"}]}
+            ),
+        },
+    )
+    cfg = load(
+        home,
+        '[[source]]\nname = "one"\npath = "~/one"\nskills = []\nplugins = ["a", "b"]\n'
+        f'[[source]]\nname = "up"\ngit = "{up}"\nref = "master"\nskills = []\nplugins = ["g"]\n',
+    )
+    run_sync(cfg)
+    standins.plugin("claude", "b@tack", enabled=False)
+    copies = tilde(cfg.paths.marketplace_dir / "plugins")
+    pin = config.load_lock(cfg.paths)["up"]
+
+    async def scenario(app: TackApp, pilot: Pilot[None]) -> None:
+        await pilot.press("2", "down")
+        assert detail(app, "plugins") == (
+            "a  from one\n"
+            "source: ~/one\n"
+            f"copy: {copies}/a\n"
+            "version: 3.1\n\n"
+            "claude-code: installed\n"
+            "codex: installed\n\n"
+            "A, from plugin.json.\n"
+        )
+        await pilot.press("down")
+        shown = app.query_one("#plugins-detail", Static).content
+        assert isinstance(shown, Text)
+        assert shown.plain.splitlines()[3:] == [
+            "version: none",
+            "",
+            "claude-code: disabled",
+            "codex: installed",
+            "",
+            "B, from the entry.",
+        ]
+        colors = {shown.plain[x.start : x.end].strip(): str(x.style) for x in shown.spans}
+        assert (colors["disabled"], colors["installed"]) == ("yellow", "green")
+        await pilot.press("down", "down")
+        assert detail(app, "plugins") == (
+            "g  from up\n"
+            f"source: {up} (master), pinned {pin.commit[:12]} on {pin.locked.date().isoformat()}\n"
+            f"copy: {copies}/g\n"
+            "version: 2.0\n\n"
+            "claude-code: installed\n"
+            "codex: installed\n"
+        )
+
+    drive(scenario)
+
+
+ELSEWHERE = {"source": "github", "repo": "acme/r", "sha": "0" * 40}
+
+
+@pytest.mark.parametrize("plugin", ["u", "r", "gone", "a"])
+def test_a_plugins_detail_gives_the_problem_sync_reports(home: Path, plugin: str) -> None:
+    """One tack can't deploy, one from another repository, one whose
+    directory is gone, and a name two sources select: each from a `path`
+    source whose state is `ok`, with the message a `sync` dry run reports."""
+    entries = ({"name": "u", "source": NPM}, {"name": "r", "source": ELSEWHERE}, "gone")
+    plugin_source(home, "one", "a", entries=entries)
+    plugin_source(home, "two", "a")
+    cfg = configure(home, "one", "two", one=[plugin], two=["a"] if plugin == "a" else [])
+    (problem,) = sync.sync(cfg, dry_run=True, now=WHEN).problems
+
+    async def scenario(app: TackApp, pilot: Pilot[None]) -> None:
+        assert app.status is not None
+        assert [s.state for s in app.status.sources] == ["ok", "ok"]
+        await pilot.press("2", "down")
+        assert app._selected("plugins") == f"one/{plugin}"
+        assert f"\n{problem.message}\n" in detail(app, "plugins")
+
+    drive(scenario)
+
+
+@pytest.mark.parametrize("change", ["plugins", "a broken catalog"])
+def test_the_sources_detail_gives_what_outdated_does(
+    home: Path, tmp_path: Path, change: str
+) -> None:
+    """A git source behind upstream: its changed plugins, or its
+    `plugins_error`, line for line as `outdated`'s text; and the plugins it
+    selects, after its skills."""
+
+    def catalog(*names: str) -> str:
+        return json.dumps({"plugins": [{"name": n, "source": f"./plugins/{n}"} for n in names]})
+
+    up = repo(
+        tmp_path / "up",
+        {
+            "plugins/m/plugin.json": json.dumps({"version": "1.0"}),
+            "plugins/r/README.md": "r\n",
+            ".claude-plugin/marketplace.json": catalog("m", "r"),
+        },
+    )
+    cfg = load(
+        home,
+        f'[[source]]\nname = "up"\ngit = "{up}"\nref = "master"\nskills = []\nplugins = "*"\n',
+    )
+    run_sync(cfg)
+    if change == "plugins":
+        files = {
+            "plugins/m/plugin.json": json.dumps({"version": "1.1"}),
+            "plugins/n/README.md": "n\n",
+            ".claude-plugin/marketplace.json": catalog("m", "n"),
+        }
+    else:
+        files = {".claude-plugin/marketplace.json": "{"}
+    commit(up, files, "change the plugins")
+    report = outdated.outdated(cfg, diff=True)
+    (source,) = report.sources
+    printed = cli._outdated_text(report, {"up"}).splitlines()
+    shas = tuple(c.commit[:12] for c in source.commits)
+    changes = [line.strip() for line in printed[1:]]
+    # The source's lines up to its commits (none touch a plugin of a broken
+    # catalog's), then a blank line and the summary.
+    changes = changes[
+        : next(i for i, line in enumerate(changes) if not line or line.startswith(shas))
+    ]
+    expected = {
+        "plugins": ["plugins modified: m (1.0 -> 1.1)", "plugins added: n", "plugins removed: r"],
+        "a broken catalog": [source.plugins_error, "no selected skill changed"],
+    }
+    assert changes == expected[change]
+
+    async def scenario(app: TackApp, pilot: Pilot[None]) -> None:
+        await pilot.press("3")
+        lines = detail(app, "sources").splitlines()
+        assert lines[2:4] == ["0 skills: ", "2 plugins: m, r"]
+        at = next(i for i, line in enumerate(lines) if "1 commit behind" in line) + 1
+        assert lines[at : at + len(changes)] == changes
+        commits = [f"{c.commit[:12]} {c.subject}" for c in source.commits]
+        assert lines[at + len(changes) :][: len(commits)] == commits
+
+    drive(scenario)
+
+
+def test_sync_previews_plugin_commands(home: Path, standins: Standins) -> None:
+    FIXTURES["missing"][0](home, standins)  # `a`, for both agents
+
+    async def scenario(app: TackApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        await settle(pilot)
+        assert "would run claude plugin install a@tack --scope user --json" in body(app)
+        assert "would run codex plugin add a@tack --json" in body(app)
 
     drive(scenario)
 

@@ -35,6 +35,7 @@ from tack import (
     doctor,
     edit,
     outdated,
+    plugins,
     scaffold,
     status,
     sync,
@@ -187,6 +188,7 @@ class TackApp(App[None]):
         self.config_dir = config_dir
         self.cfg: Config | None = None
         self.status: status.Status | None = None
+        self.abouts: dict[tuple[str, str], render.PluginAbout] = {}  # by source and plugin
         self.audit: doctor.Report | None = None
         self.upstream: outdated.Report | None = None
         self.fetching = False
@@ -245,10 +247,11 @@ class TackApp(App[None]):
             inventories = agents.inventories(cfg.paths, config.PLUGIN_HARNESSES)
             st = status.status(cfg, inventories)
             audit = doctor.run(cfg, inventories=inventories)
+            abouts = render.plugin_abouts(plugins.plan(cfg))
         except ConfigError as e:
             self.call_from_thread(self.notify, str(e), severity="error")
             return
-        self.call_from_thread(self._show_local, st, audit)
+        self.call_from_thread(self._show_local, st, audit, abouts)
 
     @work(thread=True, exclusive=True, group="upstream")
     def _load_upstream(self, cfg: Config) -> None:
@@ -260,11 +263,16 @@ class TackApp(App[None]):
                 report = None
         self.call_from_thread(self._show_upstream, report)
 
-    def _show_local(self, st: status.Status, audit: doctor.Report) -> None:
+    def _show_local(
+        self,
+        st: status.Status,
+        audit: doctor.Report,
+        abouts: dict[tuple[str, str], render.PluginAbout],
+    ) -> None:
         # Errors first, then warnings, then info; by project within each.
         order = {s: i for i, s in enumerate(SEVERITIES)}
         audit.findings.sort(key=lambda f: (order[f.severity], str(f.project or "")))
-        self.status, self.audit = st, audit
+        self.status, self.audit, self.abouts = st, audit, abouts
         with contextlib.suppress(NoMatches):  # the app quit while this was loading
             for tab in _KINDS:
                 self._fill(tab)
@@ -549,10 +557,15 @@ class TackApp(App[None]):
             self._detail(tab, render.skill_detail(skill))
         elif tab == "plugins" and "/" in key:
             plugin = next(p for p in self.status.plugins if f"{p.source}/{p.name}" == key)
-            self._detail(tab, render.plugin_detail(plugin))
+            source = next((s for s in self.status.sources if s.name == plugin.source), None)
+            about = self.abouts.get((plugin.source, plugin.name), render.PluginAbout())
+            self._detail(tab, render.plugin_detail(plugin, source, about))
         elif tab in ("skills", "plugins", "sources"):
             source = next(s for s in self.status.sources if s.name == key)
-            self._detail(tab, render.source_detail(source, self._upstream(key)))
+            sources = self.cfg.sources if self.cfg is not None else ()
+            selects = any(s.name == key and s.plugins != () for s in sources)
+            detail = render.source_detail(source, self._upstream(key), selects_plugins=selects)
+            self._detail(tab, detail)
         elif tab == "doctor" and (f := self._finding()) is not None:
             self._detail(tab, render.finding_detail(f))
 

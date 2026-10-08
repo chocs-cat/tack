@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from tack.outdated import ChangedPlugin, SourceReport
     from tack.sync import Result
 
 
@@ -57,6 +58,37 @@ SOURCE_STATES = {
     "local changes": "tack's checkout has local changes",
     "off its pin": "checked out away from its pin; `tack sync` fixes it",
 }
+
+
+def upstream_changes(s: SourceReport, selects_plugins: bool) -> list[str]:
+    """A source behind upstream: its changed skills and plugins, a line per
+    kind of change, its `plugins_error`, or that nothing it selects changed,
+    as `outdated`'s text gives them and the TUI's Sources detail too
+    (design.md *Tracking plugins upstream*). `selects_plugins`: whether the
+    source's `plugins` isn't `[]`."""
+    changes = ("modified", "added", "removed")
+    skills = {c: [k.name for k in s.skills if k.change == c] for c in changes}
+    plugins = {c: [changed_plugin(p) for p in s.plugins if p.change == c] for c in changes}
+    lines = [f"{c}: {', '.join(names)}" for c, names in skills.items() if names]
+    lines += [f"plugins {c}: {', '.join(names)}" for c, names in plugins.items() if names]
+    if s.plugins_error:
+        lines.append(s.plugins_error)
+    if not s.skills and not s.plugins:
+        compared = selects_plugins and not s.plugins_error
+        lines.append(f"no selected skill {'or plugin ' if compared else ''}changed")
+    return lines
+
+
+def changed_plugin(p: ChangedPlugin) -> str:
+    """A changed plugin and its versions (design.md *Tracking plugins
+    upstream*): both for a modified one, a single one when they are equal;
+    the tip's for an added one, the pin's for a removed one."""
+    was, now = p.version["from"], p.version["to"]
+    if p.change == "modified" and (was or now):
+        shown = was if was == now else f"{was or 'none'} -> {now or 'none'}"
+    else:
+        shown = now if p.change == "added" else was if p.change == "removed" else None
+    return f"{p.name} ({shown})" if shown else p.name
 
 
 def source_note(state: str, name: str, root: Path) -> str:

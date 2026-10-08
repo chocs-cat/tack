@@ -405,21 +405,7 @@ def _outdated_text(report: outdated.Report, with_plugins: set[str]) -> str:
         lines.append(f"{s.name:<{width}}  {text.plural(s.behind, 'commit')} behind {on} ({span})")
         if s.rewritten:
             lines.append(f"{pad}upstream rewrote its history: the tip no longer contains the pin")
-        by_change = {
-            change: [k.name for k in s.skills if k.change == change]
-            for change in ("modified", "added", "removed")
-        }
-        lines += [
-            f"{pad}{change}: {', '.join(names)}" for change, names in by_change.items() if names
-        ]
-        for change in ("modified", "added", "removed"):
-            if plugins := [_changed_plugin(p) for p in s.plugins if p.change == change]:
-                lines.append(f"{pad}plugins {change}: {', '.join(plugins)}")
-        if s.plugins_error:
-            lines.append(f"{pad}{s.plugins_error}")
-        if not s.skills and not s.plugins:
-            compared = s.name in with_plugins and not s.plugins_error
-            lines.append(f"{pad}no selected skill {'or plugin ' if compared else ''}changed")
+        lines += [pad + line for line in text.upstream_changes(s, s.name in with_plugins)]
         lines += [f"{pad}{c.commit[:12]} {c.subject}" for c in s.commits[:_SHOWN_COMMITS]]
         if len(s.commits) > _SHOWN_COMMITS:
             lines.append(f"{pad}... and {len(s.commits) - _SHOWN_COMMITS} more")
@@ -441,18 +427,6 @@ def _outdated_text(report: outdated.Report, with_plugins: set[str]) -> str:
         if behind:
             summary += "; `tack update` moves the pins"
     return "\n".join([*lines, "", summary])
-
-
-def _changed_plugin(p: outdated.ChangedPlugin) -> str:
-    """A changed plugin and its versions (design.md *Tracking plugins
-    upstream*): both for a modified one, a single one when they are equal;
-    the tip's for an added one, the pin's for a removed one."""
-    was, now = p.version["from"], p.version["to"]
-    if p.change == "modified" and (was or now):
-        shown = was if was == now else f"{was or 'none'} -> {now or 'none'}"
-    else:
-        shown = now if p.change == "added" else was if p.change == "removed" else None
-    return f"{p.name} ({shown})" if shown else p.name
 
 
 # --- doctor ----------------------------------------------------------------------
