@@ -1,35 +1,38 @@
 # Status
 
 Last updated 2026-10-08 by `relay-next`.
-Last review: 2026-10-08 (P0001-C08).
+Last review: 2026-10-08 (P0001-C09).
 
 ## Where this stands
 
 - The relay workflow was set up on 2026-10-05. Design phases 1–10 are done.
 - Project [P0001](projects/P0001-plugins.md), plugins for Claude Code and
   Codex ([#22](https://github.com/chocs-cat/tack/issues/22)), is active:
-  its design is in design.md (marked *(P0001)*) and DEC-1 – DEC-20.
-- D1–D6 are done: P0001-C01 – C08 (#28, #30, #32, #34, #37, #41, #45,
-  #48), accepted 2026-10-05 to 2026-10-08. `sync` deploys the manifest's
-  `plugins`, `status` shows each one's state per harness, `doctor` audits
-  them and reports every plugin problem `sync` would (DEC-18, DEC-19),
-  `outdated` reports changed plugins with their versions, commits and diff
-  (DEC-20), and `add --plugin` (and the TUI's add form) selects plugins,
-  refusing what `sync` couldn't deploy. The TUI doesn't show plugins yet.
-- P0001-C09, ready for an executor: D7, the TUI's Plugins tab (pinned in
-  *The TUI* at the cut), and #49, #43 (`add`'s git dry run; `doctor`'s
-  message for a root that is a file).
-- Still to come: D8, then the project's completion runs against the real
-  agents (#42 among them).
-- **Do next:** `/relay-execute` to build P0001-C09.
+  its design is in design.md (marked *(P0001)*) and DEC-1 – DEC-21.
+- D1–D7 are done: P0001-C01 – C09 (#28, #30, #32, #34, #37, #41, #45,
+  #48, #50), accepted 2026-10-05 to 2026-10-08. `sync` deploys the
+  manifest's `plugins`, `status` shows each one's state per harness,
+  `doctor` audits them and reports every plugin problem `sync` would
+  (DEC-18, DEC-19), `outdated` reports changed plugins with their versions,
+  commits and diff (DEC-20), `add --plugin` (and the TUI's add form)
+  selects plugins, and the TUI has a Plugins tab (tabs keyed `1`–`4`).
+- P0001-C10, ready for an executor: D8's groundwork, plugins' clones kept
+  as checkouts are (pinned at the cut, DEC-21) and `remove` deleting them,
+  unwired; #29's catalog fixes; and the C09 review's follow-ups (git's
+  background maintenance in the tests, #51, a Plugins-tab test).
+- Still to come in D8: wiring the clones into the plan, `sync`, `status`,
+  `doctor`, the TUI and `add`; then the repository and commit in `status
+  --json` and the TUI, and `outdated --diff` between commits. Then the
+  project's completion runs against the real agents (#42 among them).
+- **Do next:** `/relay-execute` to build P0001-C10.
 
 ## In flight
 
-- **Chunk:** P0001-C09
-- **State:** awaiting review
-- **Branch:** `chunk/p0001-c09`
-- **Pull request:** `#50` (ready)
-- **Units committed:** a, b, c
+- **Chunk:** P0001-C10
+- **State:** ready for an executor
+- **Branch:** —
+- **Pull request:** —
+- **Units committed:** —
 
 (Fixed shape. `State` ∈ `ready for an executor` · `executing` ·
 `awaiting review` · `none`; `Branch`, `Pull request`, and `Units committed` are
@@ -58,4 +61,5 @@ One line per chunk: the decision-log IDs it added.
 - P0001-C06: its cut, DEC-18; its review, DEC-19.
 - P0001-C07: its cut, DEC-20; its review, none.
 - P0001-C08: its cut, none; its review, none.
-- P0001-C09: its cut, none.
+- P0001-C09: its cut, none; its review, none.
+- P0001-C10: its cut, DEC-21.

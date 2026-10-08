@@ -384,7 +384,9 @@ same harness. *(P0001)* It refuses the same way a `--plugin` the catalog
 doesn't have (a source with no catalog has none, and one with a broken
 catalog none either: the refusal gives the catalog's error), one tack can't
 deploy (see [Catalogs](#catalogs)) or whose files can't be read, so that its
-copy would fail (each with the reason `sync` gives), and a plugin another
+copy would fail (each with the reason `sync` gives; a plugin from
+[another repository](#plugins-from-other-repositories) is checked by its
+entry alone), and a plugin another
 source already selects (DEC-11). With `--plugin` and no
 `--skill`, the source's skills aren't checked: it deploys none. Without
 `--plugin`, the refusal of a source with no skills (no skills directory, or
@@ -477,7 +479,10 @@ source, so tack reads both the same way, following the agents' own rules:
   `git-subdir` takes `url` as either, and `path`, the plugin's directory
   inside that repository (a leading `./` allowed, no `..`). Each is deployable
   only with `sha`, 40 lowercase hexadecimal digits; a `ref` beside it is
-  ignored.
+  ignored. A full git URL is what `add` reads as one (a scheme, like
+  `https://` or `file://`, or git's `host:path` form); any other `url`, a
+  local path included, can't be deployed. A `git-subdir` `path` of `.` or
+  `./` is the whole repository, as if the entry were a `url` one (#29).
 - A source object of another type, or missing a field its type needs, can't
   be deployed, and the reason names what is wrong.
 - A catalog file that isn't a JSON object with a `plugins` array is broken:
@@ -712,8 +717,9 @@ A plugin is in the first of these states that applies, in this order:
   missing or its hash (see [Plugin ownership](#plugin-ownership)) isn't the
   plugin's directory's, in any harness; and in Codex also when the record has
   no hash for the plugin there, or one that isn't the plugin's directory's.
-  A plugin with no directory to compare (one tack can't deploy, or one
-  whose files can't be read, so that its copy would fail) is never `stale`.
+  A plugin with no directory to compare (one tack can't deploy, one
+  whose files can't be read, so that its copy would fail, or one from
+  another repository whose clone isn't `ok`) is never `stale`.
 - Each reads the plugin's files as its source has them now (DEC-17), so
   `stale` and `missing` are what `sync` would do for a source whose state is
   `ok`. For any other, `sync` first holds the source or checks out its pin,
@@ -741,6 +747,57 @@ pins the plugin too and the lockfile needs no entry for it (DEC-4). When an
 `update` brings a catalog naming a new commit, the next `sync` fetches it. A
 clone with local changes is refused, as a checkout is, and a clone that has
 gone missing is cloned again. `remove` deletes its source's clones.
+
+Until this is built (P0001's D8), `sync` reports such a plugin as one it
+doesn't deploy yet, and the passages that list it among the problems and
+kept plugins (*`doctor` checks*, *The TUI*) describe that.
+
+A clone is the whole repository, cloned from the entry's URL
+([Catalogs](#catalogs)), and tack keeps it as it keeps a git source's
+checkout, with the same code (DEC-21):
+
+- A clone's **state** is the first of these that applies: `in the way`
+  (something at its path isn't a git checkout), `not cloned` (nothing is
+  there), `local changes` (its tracked files differ from its `HEAD`;
+  untracked files don't count, as for a checkout), `off its commit` (its
+  `HEAD` isn't the entry's commit), and `ok`.
+- `sync` brings a clone to its commit before it copies the plugin. One `not
+  cloned` is cloned and checked out at the commit; one `off its commit` is
+  checked out at it. Either first fetches the commit when the clone lacks
+  it: the remote's branches and tags, then, if none reaches it, the commit
+  by its id. The clone's `origin` follows the entry's URL, as a checkout's
+  follows `git`, so a catalog that moves a plugin to another repository
+  fetches from the new one. These are changes `clone` (detail: the URL) and
+  `checkout` (the commit's first twelve digits), with the plugin's source
+  and the clone's path.
+- A clone `in the way` or with `local changes` is left untouched and fails
+  its plugin, as a clone, a fetch or a checkout that fails does, and as a
+  commit the repository doesn't have after the fetch by id. Each is a
+  problem of kind `source`: `plugin '<name>': ` followed by what a source's
+  checkout says in the same case (`... has local changes; discard or move
+  them`, `... isn't in <url>`). The plugin is kept as one whose copy fails
+  is (DEC-12).
+- A dry run clones and fetches nothing: it lists the `clone` and `checkout`
+  it would make, and keeps a plugin whose clone isn't `ok`, as it keeps the
+  plugins of a source it hasn't cloned.
+- `sync` deletes no clone: a plugin no longer selected keeps its clone, as
+  a source commented out of the manifest keeps its checkout. After its
+  sync, `remove` deletes each clone under `plugins/<source>/` as it deletes
+  the source's checkout (a `delete` change, or, for one with local changes
+  or that isn't a git checkout, a problem, the clone left where it is), then
+  that directory once it is empty; a name only the lockfile has loses its
+  clones the same way.
+- A plugin's files are its clone's (at `path` for `git-subdir`) only while
+  the clone is `ok`. Otherwise, in [Plugin states](#plugin-states), it has
+  no directory to compare and is never `stale`, and the clone's state says
+  what `sync` does first, as a source's state does for its plugins
+  (DEC-17); its files aren't read for a problem either. A
+  clone `in the way` or with `local changes` is a problem `sync` reports,
+  so `doctor` reports it (DEC-19) and the TUI's detail gives it; `not
+  cloned` and `off its commit` are what `sync` fixes, and no problem.
+- `add` checks a plugin from another repository by its entry alone: the
+  clone comes with the `sync` that follows, which reports a clone or copy
+  that fails (exit `1`, the table written).
 
 ### Tracking plugins upstream
 
@@ -1340,7 +1397,8 @@ scratch `HOME`:
 - CLI with `argparse`, `--json` on every command.
 - Checks: `pytest`, `ruff check`, `ruff format --check`, `ty check`.
 - Layout: `src/tack/` with `config.py` (manifest, lock, harnesses),
-  `sources.py` (checkout, pin, fetch), `deploy.py` (links, ownership),
+  `sources.py` (checkout, pin, fetch; *(P0001)* plugins' clones too),
+  `deploy.py` (links, ownership),
   one module per command for `sync`, `status`, `outdated` and `update`,
   `edit.py` (`add`, `remove` and the manifest's text edits),
   `commit.py` (auto-commit), `doctor/` (one module per check group),

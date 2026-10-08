@@ -340,3 +340,26 @@ commit that breaks it and the one that fixes it each touch the plugins whose
 entries they hide or restore.
 
 *Where:* design.md, *Plugins* (*Tracking plugins upstream*).
+
+## DEC-21: A plugin's clone is kept as a source's checkout is (2026-10)
+
+Added at the cut of P0001-C10. A plugin from another repository is a full
+clone of that repository under `plugins/<source>/<plugin>/`, brought to the
+catalog's commit by the code that brings a git source's checkout to its pin:
+cloned when it isn't there, fetched only when it lacks the commit, refused
+with local changes or with something else in the way, its `origin`
+following the entry's URL. A commit no branch or tag reaches is fetched by
+its id, since a catalog may pin a commit off the default branch. `sync`
+deletes no clone, as it deletes no checkout; `remove` deletes a source's
+clones with its checkout. A plugin whose clone isn't at its commit reads its
+state with no directory to compare, as a source that isn't `ok` explains its
+plugins' states (DEC-17). A shallow fetch of the one commit was the
+alternative: smaller for a large repository, but a second implementation of
+fetching and checking out beside the checkouts', and `outdated --diff`
+needs the pin's commit and the tip's in one repository anyway. Deleting a
+deselected plugin's clone, as its copy is deleted, was the other: no agent
+reads a clone (they load tack's copy), so keeping it costs only disk, and a
+plugin selected again comes back without a fetch.
+
+*Where:* design.md, *Plugins* (*Catalogs*, *Plugins from other
+repositories*, *Plugin states*), *Adding and removing sources*.
