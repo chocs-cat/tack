@@ -8,7 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from tack import config, deploy, edit, sync
+from tack import config, deploy, edit, sources, sync
+from tack.catalog import InRepository
 from tack.config import Config, ConfigError, SkillSpec, Source, UsageError
 from tack.sync import Result
 from tests.helpers import git, load, market, repo, skill, tree, upstream, write
@@ -580,6 +581,76 @@ def test_remove_a_name_only_the_lockfile_has(home: Path, tmp_path: Path) -> None
 
     with pytest.raises(UsageError, match=r"no source named 'up' in ~/\.config/tack/tack\.toml"):
         edit.remove(cfg, "up")
+
+
+def clones(cfg: Config, tmp_path: Path, source: str, *names: str) -> dict[str, Path]:
+    """A clone of one remote for each of `source`'s plugins `names`."""
+    r = repo(tmp_path / f"{source}-plugins", {"README.md": "r\n"})
+    where = InRepository(url(r), None, git(r, "rev-parse", "HEAD").strip())
+    out = {}
+    for name in names:
+        clone = sources.Clone.of(cfg.paths, source, name, where)
+        sources.sync_clone(clone)
+        out[name] = clone.path
+    return out
+
+
+def deleted(result: Result) -> list[Path | None]:
+    return [c.path for c in result.changes if c.action == "delete"]
+
+
+def test_remove_keeps_a_clone_with_local_changes(home: Path, tmp_path: Path) -> None:
+    up = upstream(tmp_path / "up", "x")
+    run_add(load(home, ""), url(up))
+    cfg = load(home)
+    made = clones(cfg, tmp_path, "up", "a", "b")
+    write(made["b"] / "README.md", "edited\n")
+    result = edit.remove(cfg, "up", now=WHEN)
+    assert deleted(result) == [cfg.paths.sources_dir / "up", made["a"]]
+    assert [(p.kind, p.source, p.path) for p in result.problems] == [("source", "up", made["b"])]
+    assert "has local changes, so it is left where it is" in result.problems[0].message
+    assert not made["a"].exists()
+    assert made["b"].is_dir()  # and so its source's directory of clones
+
+
+def test_remove_deletes_clean_clones_and_their_directory(home: Path, tmp_path: Path) -> None:
+    """A `path` source's clones too: its own directory is never touched."""
+    skill(home / "mine" / "skills", "s")
+    run_add(load(home, ""), home / "mine")
+    cfg = load(home)
+    made = clones(cfg, tmp_path, "mine", "a", "b")
+    before = tree(home)
+    result = edit.remove(cfg, "mine", dry_run=True)
+    assert tree(home) == before
+    assert deleted(result) == [made["a"], made["b"]]
+
+    result = edit.remove(load(home), "mine", now=WHEN)
+    assert result.problems == []
+    assert deleted(result) == [made["a"], made["b"]]
+    assert not (cfg.paths.clones_dir / "mine").exists()
+    assert (home / "mine" / "skills" / "s" / "SKILL.md").is_file()
+
+
+def test_a_dry_run_leaves_an_empty_directory_of_clones(home: Path) -> None:
+    skill(home / "mine" / "skills", "s")
+    run_add(load(home, ""), home / "mine")
+    cfg = load(home)
+    (cfg.paths.clones_dir / "mine").mkdir(parents=True)
+    edit.remove(cfg, "mine", dry_run=True)
+    assert (cfg.paths.clones_dir / "mine").is_dir()
+    edit.remove(cfg, "mine", now=WHEN)
+    assert not (cfg.paths.clones_dir / "mine").exists()
+
+
+def test_remove_a_name_only_the_lockfile_has_deletes_its_clones(home: Path, tmp_path: Path) -> None:
+    up = upstream(tmp_path / "up", "x")
+    run_add(load(home, ""), url(up))
+    cfg = load(home, "# commented out\n")
+    made = clones(cfg, tmp_path, "up", "a")
+    result = edit.remove(cfg, "up", now=WHEN)
+    assert result.problems == []
+    assert deleted(result) == [cfg.paths.sources_dir / "up", made["a"]]
+    assert not (cfg.paths.clones_dir / "up").exists()
 
 
 # --- settings ---------------------------------------------------------------------

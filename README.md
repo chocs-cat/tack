@@ -52,7 +52,7 @@ tack sync                 # fetch pinned sources, link skills into every harness
 tack status               # sources, pins, and where skills and plugins are deployed
 tack outdated --diff      # what upstream changed in the skills and plugins you deploy
 tack update cloudflare    # take it: move the pin, then sync
-tack remove cloudflare    # its table, pin, links and checkout
+tack remove cloudflare    # its table, pin, links, checkout and plugin clones
 tack doctor               # audit the harnesses and the projects under projects.roots
 tack doctor --json        # for scripts; exit 1 when there is an error or warning
 tack scaffold hooks ~/Code/app --dry-run   # the diff a doctor fix would make
