@@ -4,7 +4,7 @@
 - **Created:** 2026-10-05
 - **Ready:** 2026-10-05
 - **Completed:** —
-- **Decisions:** DEC-1 – DEC-21
+- **Decisions:** DEC-1 – DEC-22
 
 ## 1. Problem and outcome
 
@@ -132,6 +132,7 @@ skills and gain plugin cases (DEC-7).
 | design.md, *Tracking upstream*, *Auto-commit*, *Adding and removing sources* (P0001-C08 cut) | A renamed skill is removed and added, and any file name counts (#46, #47); `--plugin` takes names, written after `skills`; each plugin refusal and its reason, a broken catalog's included, and a plugin whose files can't be read; which plugins the no-skills refusal lists; a dry run checks no git source's plugins. | What P0001-C08's executor would otherwise invent; the unreadable plugin is the member `sync`'s problems had that the refusals' list lacked (brief-checklist §6). |
 | design.md, *Adding and removing sources*, *TUI fields*, *The TUI* (P0001-C08 review, P0001-C09 cut) | A git source's dry run checks neither its skills nor its plugins, whatever tack's checkout holds (#49); the Plugins tab's columns, its own sort, grouping and folds, which sources get a group row and its summary, the state colors, the empty tab, a plugin's detail (pin, copy, version, description and `sync`'s problem, read as the states are), the Sources detail's plugins, and one read of each agent per refresh; `group_by_source` sets both tabs. | What P0001-C09's executor would otherwise invent; the dry run matches the sentence that already said it couldn't check. |
 | design.md, *Catalogs*, *Plugins from other repositories*, *Plugin states*, *Adding and removing sources*, *Implementation*; decisions.md (P0001-C10 cut) | A catalog `url` is a git URL as `add` reads one, and a `git-subdir` `path` of `.` the whole repository (#29); a clone is the whole repository, kept by the checkouts' code: its five states, cloning, fetching (by id as a last resort), refusals and their messages, `origin` following the entry, the dry run, no deletion by `sync`, `remove` deleting clones one by one; a plugin's files read only from an `ok` clone; `add` checks such a plugin by its entry (DEC-21). | What D8's executors would otherwise invent; the section was one paragraph. |
+| design.md, *The lockfile*, *Deploying*, *Plugin states*, *Plugins from other repositories*, *`doctor` checks*, *The TUI*; decisions.md (P0001-C10 review, P0001-C11 cut) | A checkout or clone `sync` makes and can't bring to its commit is deleted (DEC-22, #54); which clones `sync` brings, when, in what order, and its problems' source and path; a copy taken from a clone; a clone that fails among `sync`'s problems and the kept plugins; `version` from an `ok` clone; `doctor`'s source finding for a clone `in the way` or with `local changes`, state findings for one not `ok`, and no leftover for it; the TUI's problems; `add` ignoring a clone already there. The "until D8" paragraph goes. | What P0001-C11's executor would otherwise invent; the passages the C10 cut said this cut rewrites. |
 
 ## 5. Delivery plan
 
@@ -317,6 +318,11 @@ README, the skill). `status --json` and the TUI's detail naming the
 repository and commit, and `outdated --diff` between commits, are pinned at
 their own cut.
 
+Notes from the P0001-C11 cut: C10 was accepted, and C11 wires the clones,
+with #54 (DEC-22) first. What remains of D8 after it: `status --json` and
+the TUI's detail naming the repository and commit, and `outdated --diff`
+between commits.
+
 **Done when:** tests with local git remotes show an entry with a commit
 deployed at that commit, a `git-subdir` entry deploying only its path, an
 `update` that changes the commit fetching it and reinstalling in Codex, a
@@ -358,8 +364,9 @@ the diff between the two commits.
 | [P0001-C06](../chunks/P0001-C06.md) | D4 (`doctor` audits plugins, `ignore_marketplaces`); C05 review follow-up (#40): D4 done | accepted with follow-ups (#44 as C07-a; #42) | 2026-10-07 | #41, `32ca329` |
 | [P0001-C07](../chunks/P0001-C07.md) | D5 (`outdated` tracks plugins, `update` reinstalls in Codex); C06 review follow-up (#44): D5 done | accepted with follow-ups (#46, #47 as C08-a; brief-checklist §7) | 2026-10-07 | #45, `5998bac` |
 | [P0001-C08](../chunks/P0001-C08.md) | D6 (`add --plugin`, the TUI's add form); C07 review follow-ups (#46, #47): D6 done | accepted with follow-ups (#49 as C09-a) | 2026-10-08 | #48, `d51ff10` |
-| [P0001-C09](../chunks/P0001-C09.md) | D7 (the TUI's Plugins tab, its details, one read per refresh); #49 (C08's follow-up), #43: D7 done | accepted with follow-ups (review-checklist §3, a Plugins-tab test, #51 as C10-a; #52) | 2026-10-08 | #50 |
-| [P0001-C10](../chunks/P0001-C10.md) | D8 (#29; plugins' clones and `remove` deleting them: unwired groundwork); C09 review follow-ups (#51) | ready for an executor | — | — |
+| [P0001-C09](../chunks/P0001-C09.md) | D7 (the TUI's Plugins tab, its details, one read per refresh); #49 (C08's follow-up), #43: D7 done | accepted with follow-ups (review-checklist §3, a Plugins-tab test, #51 as C10-a; #52) | 2026-10-08 | #50, `d0d10e6` |
+| [P0001-C10](../chunks/P0001-C10.md) | D8 (#29; plugins' clones and `remove` deleting them: unwired groundwork); C09 review follow-ups (#51) | accepted with follow-ups (#54 as C11-a) | 2026-10-08 | #53 |
+| [P0001-C11](../chunks/P0001-C11.md) | D8 (the clones wired into `sync`, `status`, `doctor`, the TUI and `add`); C10 review follow-up (#54) | ready for an executor | — | — |
 
 ## 8. Closeout
 

@@ -363,3 +363,21 @@ plugin selected again comes back without a fetch.
 
 *Where:* design.md, *Plugins* (*Catalogs*, *Plugins from other
 repositories*, *Plugin states*), *Adding and removing sources*.
+
+## DEC-22: A checkout or clone tack can't bring to its commit is deleted (2026-10)
+
+Added at the cut of P0001-C11, from #54. When `sync` clones a git source's
+checkout, or a plugin's clone, and then can't bring it to its commit (the
+commit isn't in the repository after the fetch, or the checkout fails), it
+deletes what it just cloned, so the path is `not cloned` again. Git's
+`clone --no-checkout` leaves an empty index, which `git status` reads as
+every file deleted, so the next `sync` refused that directory as one with
+local changes, even after the pin or the catalog was fixed, and the user
+had to delete it by hand. Keeping the clone to save the next fetch was the
+alternative; it would need a second test for "local changes" that tells a
+fresh clone from the user's work, and a clone of a repository that lacks
+the commit is cheap to make again. Only a directory this run created goes:
+one that was there before is never deleted by `sync`, whatever it holds.
+
+*Where:* design.md, *The lockfile* (its last paragraph), *Plugins from
+other repositories*.
