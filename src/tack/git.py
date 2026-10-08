@@ -3,11 +3,24 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
 _KINDS = (b"blob", b"tree", b"commit", b"tag")
+_SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://")
+
+
+def is_url(spec: str) -> bool:
+    """Whether git would read `spec` as a URL rather than a path: it has a
+    scheme, or is `[user@]host:path` with no slash before the colon. `add`
+    and a catalog's `url` read it this way (design.md *Adding and removing
+    sources*, *Catalogs*)."""
+    if _SCHEME.match(spec):
+        return True
+    before, colon, _ = spec.partition(":")
+    return bool(colon and before) and "/" not in before
 
 
 def run(cwd: Path | None, *args: str) -> subprocess.CompletedProcess[str]:

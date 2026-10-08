@@ -209,6 +209,9 @@ def _where(entry: Mapping[str, Any], plugin_root: str | Undeployable | None) -> 
             return Undeployable(f"a `{kind}` source needs a `url`")
         if kind == "git-subdir" and _SHORTHAND.fullmatch(url):
             url = _github(url)
+        elif not git.is_url(url):  # a git URL as `add` reads one; not a local path (#29)
+            either = " or owner/repo" if kind == "git-subdir" else ""
+            return Undeployable(f"`url` {url!r} isn't a git URL{either}")
 
     subdir: str | None = None
     if kind == "git-subdir":
@@ -220,6 +223,8 @@ def _where(entry: Mapping[str, Any], plugin_root: str | Undeployable | None) -> 
         subdir = _relative(raw)
         if subdir is None:
             return Undeployable(f"`path` {raw!r} isn't a directory inside the repository")
+        if subdir == ".":
+            subdir = None  # the whole repository, as for a `url` entry (#29)
 
     sha = source.get("sha")
     if sha is None:

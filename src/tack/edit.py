@@ -26,6 +26,7 @@ from typing import Any
 
 from tack import catalog, config, deploy, plugins, sources, sync
 from tack.config import Config, LockEntry, Source, UsageError
+from tack.git import is_url
 from tack.sources import SourceError
 from tack.sync import Change, Problem, Result
 from tack.text import tilde
@@ -313,17 +314,6 @@ def _write(cfg: Config, file: Path, text: str, result: Result, diff: str | None 
 
 
 # --- what an argument names -------------------------------------------------------
-
-_SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://")
-
-
-def is_url(spec: str) -> bool:
-    """Whether git would read `spec` as a URL rather than a path: it has a
-    scheme, or is `[user@]host:path` with no slash before the colon."""
-    if _SCHEME.match(spec):
-        return True
-    before, colon, _ = spec.partition(":")
-    return bool(colon and before) and "/" not in before
 
 
 def default_name(url: str) -> str:

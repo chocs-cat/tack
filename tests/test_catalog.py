@@ -163,7 +163,19 @@ def test_dotdot_wins_over_plugin_root() -> None:
         ),
         (
             {"source": "git-subdir", "url": "git@example.com:m.git", "path": "./", "sha": SHA},
-            InRepository("git@example.com:m.git", ".", SHA),
+            InRepository("git@example.com:m.git", None, SHA),
+        ),
+        (
+            {"source": "git-subdir", "url": "https://example.com/m.git", "path": ".", "sha": SHA},
+            InRepository("https://example.com/m.git", None, SHA),
+        ),
+        (
+            {"source": "url", "url": "git@example.com:o/r.git", "sha": SHA},
+            InRepository("git@example.com:o/r.git", None, SHA),
+        ),
+        (
+            {"source": "url", "url": "file:///srv/git/p.git", "sha": SHA},
+            InRepository("file:///srv/git/p.git", None, SHA),
         ),
         (
             {"source": "url", "url": "https://example.com/p.git", "ref": "main", "sha": SHA},
@@ -173,6 +185,21 @@ def test_dotdot_wins_over_plugin_root() -> None:
 )
 def test_other_repositories_pinned_by_sha(source: Any, where: InRepository) -> None:
     assert one(source) == where
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        {"source": "url", "url": "owner/repo", "sha": SHA},
+        {"source": "url", "url": "/abs/repo", "sha": SHA},
+        {"source": "url", "url": "./repo", "sha": SHA},
+        {"source": "git-subdir", "url": "/abs/repo", "path": "a", "sha": SHA},
+    ],
+)
+def test_a_url_that_isnt_a_git_url_cannot_be_deployed(source: dict[str, Any]) -> None:
+    """A git URL is what `add` reads as one: a scheme, or git's host:path
+    (#29); a local path, or `url`'s owner/repo, isn't one."""
+    undeployable(one(source), f"`url` {source['url']!r}", "git URL")
 
 
 @pytest.mark.parametrize(
