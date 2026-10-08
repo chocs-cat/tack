@@ -12,6 +12,7 @@ text parses to the old manifest with exactly those changes.
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import dataclasses
 import difflib
@@ -26,6 +27,7 @@ from typing import Any
 
 from tack import catalog, config, deploy, plugins, sources, sync
 from tack.config import Config, LockEntry, Source, UsageError
+from tack.git import is_url
 from tack.sources import SourceError
 from tack.sync import Change, Problem, Result
 from tack.text import tilde
@@ -212,8 +214,8 @@ def _names(word: str, names: Sequence[str]) -> str:
 
 
 def remove(cfg: Config, name: str, *, dry_run: bool = False, now: datetime | None = None) -> Result:
-    """Remove a source: its table, its lock entry, its links (by syncing), and
-    tack's checkout of it."""
+    """Remove a source: its table, its lock entry, its links and plugins (by
+    syncing), and tack's checkout of it and its plugins' clones."""
     file = cfg.manifest or cfg.paths.manifest
     lock = config.load_lock(cfg.paths)
     index = next((i for i, s in enumerate(cfg.sources) if s.name == name), None)
@@ -237,11 +239,30 @@ def remove(cfg: Config, name: str, *, dry_run: bool = False, now: datetime | Non
     checkout = cfg.paths.sources_dir / name
     if checkout.exists():
         _delete(checkout, name, result)
+    _delete_clones(cfg.paths.clones_dir / name, name, result)
     return result
 
 
+def _delete_clones(clones: Path, name: str, result: Result) -> None:
+    """Delete each of a removed source's plugins' clones as its checkout is,
+    then their directory once it is empty (design.md *Plugins from other
+    repositories*)."""
+    try:
+        with os.scandir(clones) as it:
+            # A plugin's name never starts with a dot (config.valid_name).
+            found = sorted(Path(e.path) for e in it if not e.name.startswith("."))
+    except (FileNotFoundError, NotADirectoryError):
+        return
+    for clone in found:
+        _delete(clone, name, result)
+    if not result.dry_run:
+        with contextlib.suppress(OSError):  # it still holds something
+            clones.rmdir()
+
+
 def _delete(checkout: Path, name: str, result: Result) -> None:
-    """Delete tack's checkout of a removed source, unless it holds work."""
+    """Delete tack's checkout of a removed source, or a clone of one of its
+    plugins, unless it holds work."""
     where = tilde(checkout)
     why = (
         "isn't a git checkout"
@@ -313,17 +334,6 @@ def _write(cfg: Config, file: Path, text: str, result: Result, diff: str | None 
 
 
 # --- what an argument names -------------------------------------------------------
-
-_SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://")
-
-
-def is_url(spec: str) -> bool:
-    """Whether git would read `spec` as a URL rather than a path: it has a
-    scheme, or is `[user@]host:path` with no slash before the colon."""
-    if _SCHEME.match(spec):
-        return True
-    before, colon, _ = spec.partition(":")
-    return bool(colon and before) and "/" not in before
 
 
 def default_name(url: str) -> str:

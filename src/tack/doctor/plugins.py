@@ -36,7 +36,7 @@ def check(cfg: Config, inventories: status.Inventories | None = None) -> Iterato
     record = deploy.load_record(cfg.paths)
     if inventories is None:
         inventories = agents.inventories(cfg.paths, config.PLUGIN_HARNESSES)
-    kept = _kept(plan, record)
+    kept = plugins.kept(plan, record)
     unreadable = _unreadable(plan, kept)
     kept |= set(unreadable)
     yield from _collisions(cfg, plan)
@@ -151,24 +151,6 @@ def _unavailable(h: str, inv: agents.Outcome, stopped: Sequence[Selected]) -> Fi
             "until it succeeds"
         )
     return Finding("not-synced", "warn", message, harness=h)
-
-
-def _kept(plan: Plan, record: deploy.Record) -> set[str]:
-    """The plugins `sync` keeps as they are wherever they are installed
-    (DEC-12), short of those whose copy would fail: a collided name, a plugin
-    from another repository (D8), and one whose recorded source's catalog
-    can't be read."""
-    unread = {s.source.name for s in plan.sources if s.catalog_state in ("no-root", "broken")}
-    kept = set(plan.collisions)
-    kept.update(
-        name
-        for by_name in record.plugins.values()
-        for name, install in by_name.items()
-        if install.source in unread
-    )
-    for by_name in plan.plugins.values():
-        kept.update(name for name, sel in by_name.items() if sel.directory is None)
-    return kept
 
 
 def _unreadable(plan: Plan, kept: set[str]) -> dict[str, str]:

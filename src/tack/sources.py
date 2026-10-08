@@ -3,6 +3,10 @@
 A `path` source is its directory; a `git` source is tack's checkout of it
 under the data directory, detached at the commit the lockfile pins. A skill
 is a directory in the source's `subdir`, named by its directory name.
+
+*(P0001)* A plugin from another repository is a clone of that repository
+under `<data>/plugins/<source>/<plugin>/`, kept at the commit its catalog
+names by the same code that keeps a checkout at its pin (DEC-21).
 """
 
 from __future__ import annotations
@@ -14,7 +18,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
-from tack import git
+from tack import catalog, git
 from tack.config import Config, LockEntry, Paths, Source, UsageError
 from tack.text import tilde
 
@@ -96,13 +100,23 @@ def fetch(checkout: Path, source: Source, commit: str) -> bool:
     """Fetch the source into tack's checkout of it, unless the checkout has
     `commit` already; whether it has it now."""
     assert source.git is not None
+    return _fetch(checkout, source.git, commit)
+
+
+def _fetch(checkout: Path, url: str, commit: str, *, by_id: bool = False) -> bool:
+    """Fetch `url`'s branches and tags into the checkout, unless it has
+    `commit` already, `origin` following `url`; then, `by_id`, the commit by
+    its id if none of them reaches it. Whether it has the commit now."""
     if has_commit(checkout, commit):
         return True
-    if git.run(checkout, "remote", "get-url", "origin").stdout.strip() != source.git:
-        git.run(checkout, "remote", "set-url", "origin", source.git)
+    if git.run(checkout, "remote", "get-url", "origin").stdout.strip() != url:
+        git.run(checkout, "remote", "set-url", "origin", url)
     r = git.run(checkout, "fetch", "--quiet", "--tags", "origin")
     if r.returncode != 0:
-        raise SourceError(f"can't fetch {source.git}: {git.error(r)}")
+        raise SourceError(f"can't fetch {url}: {git.error(r)}")
+    if by_id and not has_commit(checkout, commit):
+        # A remote that doesn't have it refuses; the caller says so.
+        git.run(checkout, "fetch", "--quiet", "origin", commit)
     return has_commit(checkout, commit)
 
 
@@ -110,6 +124,63 @@ def local_changes(checkout: Path) -> bool:
     """Edits to tracked files (untracked ones, like a .DS_Store, don't count)."""
     r = git.run(checkout, "status", "--porcelain", "--untracked-files=no")
     return r.returncode != 0 or bool(r.stdout.strip())
+
+
+Blocked = Literal["in the way", "local changes"]
+
+
+def _blocked(d: Path) -> Blocked | None:
+    """What keeps tack from moving its checkout at `d`: something there that
+    isn't a git checkout, or local changes; None when nothing does."""
+    if not d.exists():
+        return None
+    if not (d / ".git").exists():
+        return "in the way"
+    return "local changes" if local_changes(d) else None
+
+
+def _refuse(d: Path) -> bool:
+    """Whether tack's checkout at `d` is there, refusing one it can't move
+    (design.md *The lockfile*): the checkout is left as it is."""
+    match _blocked(d):
+        case "in the way":
+            raise SourceError(f"{tilde(d)} is in the way and isn't a git checkout")
+        case "local changes":
+            raise SourceError(
+                f"tack's checkout at {tilde(d)} has local changes; discard or move them"
+            )
+    return d.exists()
+
+
+def _bring(
+    d: Path, url: str, commit: str, *, there: bool, dry_run: bool, by_id: bool = False
+) -> list[tuple[Step, str]]:
+    """Bring tack's checkout at `d` (`there` or not, as `_refuse` found it)
+    to `commit` from `url`: clone it when it isn't there, fetch only when it
+    lacks the commit, and check the commit out detached. The steps it took,
+    or, in a dry run, which clones and fetches nothing, would take."""
+    steps: list[tuple[Step, str]] = []
+    if not there:
+        steps.append(("clone", url))
+        if not dry_run:
+            d.parent.mkdir(parents=True, exist_ok=True)
+            r = git.run(None, "clone", "--quiet", "--no-checkout", url, str(d))
+            if r.returncode != 0:
+                raise SourceError(f"can't clone {url}: {git.error(r)}")
+
+    if dry_run:
+        if not there or head(d) != commit:
+            steps.append(("checkout", commit[:12]))
+        return steps
+    if not _fetch(d, url, commit, by_id=by_id):
+        raise SourceError(f"pinned commit {commit[:12]} isn't in {url}")
+    # A fresh --no-checkout clone has HEAD at the tip but no files: always check out.
+    if not there or head(d) != commit:
+        r = git.run(d, "checkout", "--quiet", "--detach", commit)
+        if r.returncode != 0:
+            raise SourceError(f"can't check out {commit[:12]} in {tilde(d)}: {git.error(r)}")
+        steps.append(("checkout", commit[:12]))
+    return steps
 
 
 def sync_git(
@@ -129,37 +200,11 @@ def sync_git(
             f"`tack update {source.name}` re-pins it"
         )
     d = root(source, paths)
-    exists = d.exists()
-    if exists and not (d / ".git").exists():
-        raise SourceError(f"{tilde(d)} is in the way and isn't a git checkout")
-    if exists and local_changes(d):
-        raise SourceError(f"tack's checkout at {tilde(d)} has local changes; discard or move them")
-
+    there = _refuse(d)
     out = Checkout(entry) if entry is not None else Checkout(pin(source, now))
     if entry is None:
         out.steps.append(("pin", pin_detail(out.entry)))
-    commit = out.entry.commit
-
-    if not exists:
-        out.steps.append(("clone", source.git))
-        if not dry_run:
-            d.parent.mkdir(parents=True, exist_ok=True)
-            r = git.run(None, "clone", "--quiet", "--no-checkout", source.git, str(d))
-            if r.returncode != 0:
-                raise SourceError(f"can't clone {source.git}: {git.error(r)}")
-
-    if dry_run:
-        if not exists or head(d) != commit:
-            out.steps.append(("checkout", commit[:12]))
-        return out
-    if not fetch(d, source, commit):
-        raise SourceError(f"pinned commit {commit[:12]} isn't in {source.git}")
-    # A fresh --no-checkout clone has HEAD at the tip but no files: always check out.
-    if not exists or head(d) != commit:
-        r = git.run(d, "checkout", "--quiet", "--detach", commit)
-        if r.returncode != 0:
-            raise SourceError(f"can't check out {commit[:12]} in {tilde(d)}: {git.error(r)}")
-        out.steps.append(("checkout", commit[:12]))
+    out.steps += _bring(d, source.git, out.entry.commit, there=there, dry_run=dry_run)
     return out
 
 
@@ -185,6 +230,51 @@ def git_sources(cfg: Config, names: Sequence[str]) -> list[Source]:
         if by_name[name].git is None:
             raise UsageError(f"{name!r} is a path source; only git sources are pinned")
     return [s for s in cfg.sources if s.git is not None and (not names or s.name in names)]
+
+
+# --- plugins' clones (design.md *Plugins from other repositories*) ---------------
+
+# A clone's state, the first that applies (in DEC-21's terms, a checkout's):
+#   in the way      something at its path isn't a git checkout
+#   not cloned      nothing is there
+#   local changes   its tracked files differ from its HEAD
+#   off its commit  its HEAD isn't the catalog's commit
+CloneState = Literal["in the way", "not cloned", "local changes", "off its commit", "ok"]
+
+
+@dataclass(frozen=True)
+class Clone:
+    """A plugin's clone of another repository, kept as a source's checkout
+    is (DEC-21)."""
+
+    path: Path  # <data>/plugins/<source>/<plugin>
+    where: catalog.InRepository
+
+    @classmethod
+    def of(cls, paths: Paths, source: str, plugin: str, where: catalog.InRepository) -> Clone:
+        return cls(paths.clones_dir / source / plugin, where)
+
+    @property
+    def directory(self) -> Path:
+        """The plugin's files: the clone, or the entry's `path` inside it."""
+        return self.path if self.where.path is None else self.path / self.where.path
+
+    def state(self) -> CloneState:
+        if (blocked := _blocked(self.path)) is not None:
+            return blocked
+        if not self.path.exists():
+            return "not cloned"
+        return "ok" if head(self.path) == self.where.commit else "off its commit"
+
+
+def sync_clone(clone: Clone, *, dry_run: bool = False) -> list[tuple[Step, str]]:
+    """Bring a plugin's clone to its catalog's commit, as `sync_git` brings a
+    checkout to its pin, fetching the commit by its id when no branch or tag
+    reaches it (DEC-21). Raises SourceError as `sync_git` does in the same
+    case, leaving a clone in the way or with local changes as it is."""
+    there = _refuse(clone.path)
+    w = clone.where
+    return _bring(clone.path, w.url, w.commit, there=there, dry_run=dry_run, by_id=True)
 
 
 # --- pending edits in path sources ------------------------------------------------

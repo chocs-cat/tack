@@ -26,12 +26,12 @@ import shutil
 import stat
 import tempfile
 from collections import defaultdict
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
-from tack import catalog, config, sources
+from tack import catalog, config, deploy, sources
 from tack.config import Config, Paths, Source
 from tack.text import tilde
 
@@ -460,18 +460,41 @@ def collision(name: str, harnesses: Sequence[str], srcs: Sequence[str]) -> str:
     )
 
 
-def problems(sel: Selected, plan: Plan) -> list[str]:
+def kept(plan: Plan, record: deploy.Record, held: Collection[str] = ()) -> set[str]:
+    """The plugins `sync` keeps as they are wherever they are installed
+    (DEC-12), short of those whose copy fails: a collided name, a plugin from
+    another repository (D8), and each plugin a source selects, or the record
+    lists from it, when `sync` holds that source (`held`) or can't read its
+    catalog (its root isn't there, or the catalog is broken). `doctor` and the
+    TUI read each source as it is now (DEC-17), so they name none `held`."""
+    unread = set(held) | {
+        s.source.name for s in plan.sources if s.catalog_state in ("no-root", "broken")
+    }
+    out = set(plan.collisions)
+    out.update(sel.name for s in plan.sources if s.source.name in unread for sel in s.selected)
+    out.update(
+        name
+        for by_name in record.plugins.values()
+        for name, install in by_name.items()
+        if install.source in unread
+    )
+    for by_name in plan.plugins.values():
+        out.update(name for name, sel in by_name.items() if sel.directory is None)
+    return out
+
+
+def problems(sel: Selected, plan: Plan, kept: Collection[str]) -> list[str]:
     """What `sync` reports about a selected plugin, each as `sync` words it:
     a name another source selects too, one tack can't deploy or from another
     repository, and one whose files can't be read, so that its copy would
-    fail (a collided name is kept, not copied). It reads the plugin's files
-    as they are now, as the states do (DEC-17)."""
+    fail (a `kept` plugin, a collided name among them, isn't copied). It
+    reads the plugin's files as they are now, as the states do (DEC-17)."""
     out: list[str] = []
     if sel.name in plan.collisions:
         out.append(collision(sel.name, *plan.collisions[sel.name]))
     if why := undeployable(sel.plugin):
         out.append(f"plugin {sel.name!r} {why}")
-    elif sel.directory is not None and sel.name not in plan.collisions:
+    elif sel.directory is not None and sel.name not in kept:
         digest = files_hash(sel.directory)
         if isinstance(digest, Unreadable):
             out.append(f"plugin {sel.name!r}: {digest.reason}")

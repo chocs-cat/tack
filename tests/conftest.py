@@ -32,8 +32,11 @@ def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     for var in _ENV:
         monkeypatch.delenv(var, raising=False)
     gitconfig = tmp_path / "gitconfig"
+    # No automatic maintenance: a commit or fetch would start it in the
+    # background, changing a .git a test compares (review-checklist §3).
     gitconfig.write_text(
         "[user]\n\tname = Test\n\temail = test@example.com\n[init]\n\tdefaultBranch = master\n"
+        "[maintenance]\n\tauto = false\n"
     )
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(gitconfig))
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")

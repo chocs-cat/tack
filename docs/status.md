@@ -1,14 +1,14 @@
 # Status
 
 Last updated 2026-10-08 by `relay-next`.
-Last review: 2026-10-08 (P0001-C09).
+Last review: 2026-10-08 (P0001-C10).
 
 ## Where this stands
 
 - The relay workflow was set up on 2026-10-05. Design phases 1–10 are done.
 - Project [P0001](projects/P0001-plugins.md), plugins for Claude Code and
   Codex ([#22](https://github.com/chocs-cat/tack/issues/22)), is active:
-  its design is in design.md (marked *(P0001)*) and DEC-1 – DEC-21.
+  its design is in design.md (marked *(P0001)*) and DEC-1 – DEC-22.
 - D1–D7 are done: P0001-C01 – C09 (#28, #30, #32, #34, #37, #41, #45,
   #48, #50), accepted 2026-10-05 to 2026-10-08. `sync` deploys the
   manifest's `plugins`, `status` shows each one's state per harness,
@@ -16,19 +16,19 @@ Last review: 2026-10-08 (P0001-C09).
   (DEC-18, DEC-19), `outdated` reports changed plugins with their versions,
   commits and diff (DEC-20), `add --plugin` (and the TUI's add form)
   selects plugins, and the TUI has a Plugins tab (tabs keyed `1`–`4`).
-- P0001-C10, ready for an executor: D8's groundwork, plugins' clones kept
-  as checkouts are (pinned at the cut, DEC-21) and `remove` deleting them,
-  unwired; #29's catalog fixes; and the C09 review's follow-ups (git's
-  background maintenance in the tests, #51, a Plugins-tab test).
-- Still to come in D8: wiring the clones into the plan, `sync`, `status`,
-  `doctor`, the TUI and `add`; then the repository and commit in `status
-  --json` and the TUI, and `outdated --diff` between commits. Then the
-  project's completion runs against the real agents (#42 among them).
-- **Do next:** `/relay-execute` to build P0001-C10.
+- P0001-C10 (#53), accepted 2026-10-08: plugins' clones kept as checkouts
+  are (DEC-21), unwired, and `remove` deleting them; #29's catalog URL
+  fixes; #51.
+- P0001-C11, ready for an executor: #54 (DEC-22), then the clones wired
+  into `sync`, `status`, `doctor`, the TUI and `add`.
+- Still to come in D8: the repository and commit in `status --json` and
+  the TUI, and `outdated --diff` between commits. Then the project's
+  completion runs against the real agents (#42 among them).
+- **Do next:** `/relay-execute` to build P0001-C11.
 
 ## In flight
 
-- **Chunk:** P0001-C10
+- **Chunk:** P0001-C11
 - **State:** ready for an executor
 - **Branch:** —
 - **Pull request:** —
@@ -62,4 +62,5 @@ One line per chunk: the decision-log IDs it added.
 - P0001-C07: its cut, DEC-20; its review, none.
 - P0001-C08: its cut, none; its review, none.
 - P0001-C09: its cut, none; its review, none.
-- P0001-C10: its cut, DEC-21.
+- P0001-C10: its cut, DEC-21; its review, none.
+- P0001-C11: its cut, DEC-22.

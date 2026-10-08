@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
 import subprocess
 import sys
 from collections import Counter
@@ -28,6 +29,7 @@ from tack.tui.dialogs import ActionScreen, AddScreen
 from tests import standin
 from tests.helpers import commit, configure, load, market, repo, skill, skill_md, upstream, write
 from tests.standin import Standins
+from tests.test_plugin_plan import PI
 from tests.test_status import BOTH, FIXTURES, NPM, WHEN, plugin_source, run_sync
 
 Scenario = Callable[[TackApp, Pilot[None]], Awaitable[None]]
@@ -663,6 +665,47 @@ def test_a_plugins_detail_gives_the_problem_sync_reports(home: Path, plugin: str
         await pilot.press("2", "down")
         assert app._selected("plugins") == f"one/{plugin}"
         assert f"\n{problem.message}\n" in detail(app, "plugins")
+
+    drive(scenario)
+
+
+def test_a_plugins_detail_gives_no_problem_for_a_name_sync_keeps(home: Path) -> None:
+    """#51: `two`, whose catalog is now broken, installed `a`, which `one`
+    selects from a directory that is gone. `sync` keeps `a` as it is
+    (DEC-12), copying nothing, so it reports nothing about `a`, and neither
+    does `a`'s detail."""
+    plugin_source(home, "one", "a")
+    plugin_source(home, "two", "a", "b")
+    run_sync(configure(home, "two", two=["a", "b"]))
+    write(home / "two" / ".claude-plugin" / "marketplace.json", "{")
+    shutil.rmtree(home / "one" / "plugins" / "a")
+    cfg = configure(home, "one", "two", one=["a"], two=["b"])
+    problems = sync.sync(cfg, dry_run=True, now=WHEN).problems
+    assert [p.source for p in problems] == ["two"]  # its broken catalog
+    about_a = [p.message for p in problems if "'a'" in p.message]
+
+    async def scenario(app: TackApp, pilot: Pilot[None]) -> None:
+        await pilot.press("2", "down")
+        assert app._selected("plugins") == "one/a"
+        assert app.abouts["one", "a"].problems == about_a == []
+        assert "plugin 'a'" not in detail(app, "plugins")
+
+    drive(scenario)
+
+
+def test_a_harness_the_manifest_defines_has_no_plugins_column(home: Path) -> None:
+    """Skills has a column for every harness; Plugins one for each harness
+    that takes plugins (DEC-8), in the order Skills shows them."""
+    plugin_source(home, "one", "a")
+    load(home, PI + '[[source]]\nname = "one"\npath = "~/one"\nplugins = ["a"]\n')
+
+    async def scenario(app: TackApp, pilot: Pilot[None]) -> None:
+        def columns(name: str) -> list[str]:
+            return [label.split(" ")[0] for label in labels(app, name)]
+
+        assert columns("skills") == ["skill", "claude-code", "codex", "pi"]
+        await pilot.press("2")
+        assert columns("plugins") == ["plugin", "claude-code", "codex"]
 
     drive(scenario)
 

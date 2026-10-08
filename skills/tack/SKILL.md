@@ -112,7 +112,7 @@ tack add https://github.com/org/skills.git --skill a b   # a git source, only sk
 tack add ~/Code/my-skills           # a local directory of the user's own skills
 tack add https://github.com/org/plugins.git --plugin p q   # only plugins p and q (skills = [])
 tack update SOURCE                  # move a git source's pin to the tip of its ref, then sync
-tack remove SOURCE                  # its manifest table, lock entry, links and checkout
+tack remove SOURCE                  # its manifest table, lock entry, links, checkout and plugin clones
 ```
 
 - **`sync`** fetches git sources at their pins (pinning a new one to its
@@ -147,8 +147,9 @@ tack remove SOURCE                  # its manifest table, lock entry, links and 
 - **`update`** takes in upstream changes; run `outdated SOURCE --diff` first
   and let the user see what they are taking. A source whose `git` or `ref`
   changed in the manifest shows `manifest changed` until `update` re-pins it.
-- **`remove`** keeps a checkout that has local changes, and never touches a
-  `path` source's directory. Its sync uninstalls that source's plugins too.
+- **`remove`** keeps a checkout, or a plugin's clone of another repository,
+  that has local changes, and never touches a `path` source's directory. Its
+  sync uninstalls that source's plugins too.
 
 **Auto-commit.** A `path` source with `autocommit = true` has its skill edits
 committed (and with `autopush = true`, pushed) by every changing command:

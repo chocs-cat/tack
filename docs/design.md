@@ -302,7 +302,10 @@ locked = 2026-09-27T12:00:00Z
 
 A checkout is tack's, but `sync` still refuses to move one with local
 changes (it reports them instead of discarding them). A checkout that has
-gone missing is cloned again at its pin.
+gone missing is cloned again at its pin. A checkout `sync` clones and then
+can't bring to its pin (the pin isn't in the repository, or the checkout
+fails) is deleted again, so the next `sync` clones it afresh rather than
+refusing a checkout that holds no files (DEC-22, #54).
 
 ## Commands
 
@@ -547,7 +550,9 @@ tack keeps one marketplace of its own, named `tack`, in
 `$XDG_DATA_HOME/tack/marketplace/` (DEC-1):
 
 - `plugins/<name>/` holds a copy of each selected plugin, taken from the
-  source's checkout at its pin, or from a `path` source as it is: everything
+  source's checkout at its pin, from a `path` source as it is, or from the
+  plugin's clone at its commit
+  ([another repository](#plugins-from-other-repositories)): everything
   but `.git` (at any depth), with each symlink copied as the file or
   directory it points to (DEC-2). A symlink that points nowhere, or to a
   directory that contains it (a loop), fails that plugin, as does a plugin
@@ -629,8 +634,10 @@ problem of kind `agent` (exit `1`), and its skills still deploy. Elsewhere a
 missing CLI is passed over, and the record keeps that harness's entries. A
 command that fails is reported the same way, with the agent's message, and
 the other plugins carry on; a `list` command that fails stops that harness's
-steps. A selected plugin tack can't deploy, a broken catalog, and a plugin
-whose copy fails are problems of kind `source`; a plugin name two sources
+steps. A selected plugin tack can't deploy, a broken catalog, a plugin
+whose copy fails, and one whose clone `sync` can't bring to its commit
+([Plugins from other repositories](#plugins-from-other-repositories)) are
+problems of kind `source`; a plugin name two sources
 select is a `collision`. `--dry-run` runs only the `list` commands, lists
 the commands it would run, and writes nothing. `--adopt` doesn't apply to
 plugins.
@@ -645,7 +652,9 @@ them or that they select, and keeps their copies and their entries in
 tack's catalog (DEC-12). So, as with a held source's skills, a plugin such a
 source selects that isn't installed yet waits until the source is reachable,
 and a dry run lists no uninstall for a source it hasn't cloned. These are
-*kept* plugins, as are a collided name's and a plugin whose copy fails.
+*kept* plugins, as are a collided name's, a plugin whose copy fails, and a
+plugin from another repository whose clone isn't `ok` once `sync` has
+brought it to its commit (in a dry run, one whose clone isn't `ok`).
 
 tack installs and uninstalls plugins but never enables or disables one
 (DEC-5). Turning a tack plugin off in an agent (`/plugin`) is the user's
@@ -732,7 +741,8 @@ A plugin is in the first of these states that applies, in this order:
 `status --json` adds `plugins`, one object per selected plugin, sorted by
 name and then source as skills are: `name`, `source`, `harnesses` (harness →
 state, for the harnesses it targets), `version` (as [Catalogs](#catalogs)
-says, read from the plugin's directory in its source, or null) and `path`
+says, read from the plugin's directory in its source, or in its clone
+while the clone is `ok`, or null) and `path`
 (its copy in tack's marketplace, or null when there is none). A name two
 sources select is one object per source. Each source's object gains
 `plugins`, the names it selects, beside `skills`.
@@ -748,10 +758,6 @@ pins the plugin too and the lockfile needs no entry for it (DEC-4). When an
 clone with local changes is refused, as a checkout is, and a clone that has
 gone missing is cloned again. `remove` deletes its source's clones.
 
-Until this is built (P0001's D8), `sync` reports such a plugin as one it
-doesn't deploy yet, and the passages that list it among the problems and
-kept plugins (*`doctor` checks*, *The TUI*) describe that.
-
 A clone is the whole repository, cloned from the entry's URL
 ([Catalogs](#catalogs)), and tack keeps it as it keeps a git source's
 checkout, with the same code (DEC-21):
@@ -761,7 +767,12 @@ checkout, with the same code (DEC-21):
   there), `local changes` (its tracked files differ from its `HEAD`;
   untracked files don't count, as for a checkout), `off its commit` (its
   `HEAD` isn't the entry's commit), and `ok`.
-- `sync` brings a clone to its commit before it copies the plugin. One `not
+- `sync` brings a clone to its commit before it copies the plugin: the
+  clone of each such plugin it would copy (selected, a name no other source
+  selects, from a source it doesn't keep as it is), after the sources and
+  before tack's marketplace, in name order. A plugin another source also
+  selects, or that a held source or one whose catalog can't be read
+  selects, leaves its clone as it is. One `not
   cloned` is cloned and checked out at the commit; one `off its commit` is
   checked out at it. Either first fetches the commit when the clone lacks
   it: the remote's branches and tags, then, if none reaches it, the commit
@@ -769,14 +780,15 @@ checkout, with the same code (DEC-21):
   follows `git`, so a catalog that moves a plugin to another repository
   fetches from the new one. These are changes `clone` (detail: the URL) and
   `checkout` (the commit's first twelve digits), with the plugin's source
-  and the clone's path.
+  and the clone's path. A clone `sync` makes and then can't bring to the
+  commit is deleted again, as a checkout is (DEC-22).
 - A clone `in the way` or with `local changes` is left untouched and fails
   its plugin, as a clone, a fetch or a checkout that fails does, and as a
   commit the repository doesn't have after the fetch by id. Each is a
   problem of kind `source`: `plugin '<name>': ` followed by what a source's
   checkout says in the same case (`... has local changes; discard or move
-  them`, `... isn't in <url>`). The plugin is kept as one whose copy fails
-  is (DEC-12).
+  them`, `... isn't in <url>`), with the plugin's source and the clone's
+  path. The plugin is kept as one whose copy fails is (DEC-12).
 - A dry run clones and fetches nothing: it lists the `clone` and `checkout`
   it would make, and keeps a plugin whose clone isn't `ok`, as it keeps the
   plugins of a source it hasn't cloned.
@@ -793,9 +805,14 @@ checkout, with the same code (DEC-21):
   what `sync` does first, as a source's state does for its plugins
   (DEC-17); its files aren't read for a problem either. A
   clone `in the way` or with `local changes` is a problem `sync` reports,
-  so `doctor` reports it (DEC-19) and the TUI's detail gives it; `not
-  cloned` and `off its commit` are what `sync` fixes, and no problem.
-- `add` checks a plugin from another repository by its entry alone: the
+  so `doctor` reports it (DEC-19) and the TUI's detail gives it, for a
+  plugin whose clone `sync` would bring (see above); `not cloned` and `off
+  its commit` are what `sync` fixes, and no problem. Such a plugin's state
+  is read as any other's (`missing`, `disabled` or `installed`, never
+  `stale`), and, as in a dry run, it is kept: `doctor` reports no leftover
+  for it in a harness it no longer targets.
+- `add` checks a plugin from another repository by its entry alone, even
+  when a clone by that name is already there (one `remove` left): the
   clone comes with the `sync` that follows, which reports a clone or copy
   that fails (exit `1`, the table written).
 
@@ -930,7 +947,8 @@ the harness, a failing `list` when `sync` runs the harness's CLI at all (see
   for `missing`, `disabled` and `stale`, and one per harness for
   `unavailable` (with the agent's message) and for `conflict`. A `collision`
   is `name-collision`'s, and a plugin with a source finding (one tack can't
-  deploy, or whose files can't be read) is reported once, for its source,
+  deploy, whose files can't be read, or whose clone is `in the way` or has
+  `local changes`) is reported once, for its source,
   instead.
 - **A harness.** The per-harness `unavailable` comes as the paragraph above
   says, and `conflict` (with the foreign marketplace's location) where a
@@ -944,11 +962,14 @@ the harness, a failing `list` when `sync` runs the harness's CLI at all (see
   catalog file, or the source root when there is none; and for each plugin
   the manifest deploys from it whose files can't be read, so that its copy
   would fail (with the reason, as `sync` gives it), located at the plugin's
-  directory.
+  directory; and for each plugin from another repository whose clone is `in
+  the way` or has `local changes`, where `sync` would bring it (with the
+  message `sync` gives), located at the clone.
 - **Leftovers.** `not-synced` for each of tack's plugins in a harness that
   `sync` would uninstall there (step 4 of [Deploying](#deploying)): one the
   manifest no longer deploys to it and that `sync` doesn't keep, a kept one
-  being a collided name, a plugin from another repository, one whose files
+  being a collided name, a plugin from another repository whose clone isn't
+  `ok`, one whose files
   can't be read (its copy would fail), or one whose recorded source's catalog
   can't be read (its root isn't there, or the catalog is broken). There are
   none in a harness whose CLI `sync` wouldn't run (no selected plugin targets
@@ -1167,7 +1188,8 @@ selects them. A plugin's detail names its source and that source's pin (a
 `path` source's directory), tack's copy of the plugin if there is one, its
 version, its description, and its state in each harness it targets; for a
 plugin `sync` reports a problem about (one tack can't deploy, one from
-another repository, one whose files can't be read, or a name two sources
+another repository whose clone is `in the way` or has `local changes`, one
+whose files can't be read, or a name two sources
 select), it gives that problem as `sync` words it, reading the source as it
 is now, as the states do (DEC-17). A plugin's description
 is the first string `description` among its `plugin.json` files, read as its

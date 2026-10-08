@@ -118,6 +118,11 @@ class Paths:
         """tack's marketplace, the one it registers with each agent (DEC-1)."""
         return self.data_dir / "marketplace"
 
+    @property
+    def clones_dir(self) -> Path:
+        """Plugins' clones of other repositories, `<source>/<plugin>` (DEC-21)."""
+        return self.data_dir / "plugins"
+
     @classmethod
     def from_env(cls, config_dir: Path | None = None) -> Paths:
         return cls(
