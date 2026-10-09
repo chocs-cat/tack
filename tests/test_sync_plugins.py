@@ -15,10 +15,22 @@ from typing import Any
 
 import pytest
 
-from tack import agents, cli, config, deploy, plugins, sync, text
+from tack import agents, cli, config, deploy, edit, plugins, sync, text, update
 from tack.config import Config
 from tack.deploy import Install
-from tests.helpers import commit, configure, link, load, market, repo, skill, tree, write
+from tests.helpers import (
+    Elsewhere,
+    commit,
+    configure,
+    elsewhere,
+    link,
+    load,
+    market,
+    repo,
+    skill,
+    tree,
+    write,
+)
 from tests.standin import Call, Standins
 
 WHEN = datetime(2026, 10, 5, 12, 0, 0, tzinfo=UTC)
@@ -636,8 +648,7 @@ def test_claude_code_stays_registered_while_a_kept_plugin_is_installed(
 
 
 def test_plugins_tack_cannot_deploy(home: Path, standins: Standins) -> None:
-    remote = {"name": "r", "source": {"source": "github", "repo": "acme/r", "sha": SHA}}
-    source(home, "one", "a", entries=({"name": "n", "source": NPM}, remote))
+    source(home, "one", "a", entries=({"name": "n", "source": NPM},))
     broken = home / "broken"
     (broken / "skills").mkdir(parents=True)
     write(broken / ".claude-plugin" / "marketplace.json", "{")
@@ -648,12 +659,10 @@ def test_plugins_tack_cannot_deploy(home: Path, standins: Standins) -> None:
     catalog_file = home / "one" / ".claude-plugin" / "marketplace.json"
     assert [(p.kind, p.source, p.path) for p in result.problems] == [
         ("source", "one", catalog_file),
-        ("source", "one", catalog_file),
         ("source", "broken", broken / ".claude-plugin" / "marketplace.json"),
     ]
-    n, r, b = (p.message for p in result.problems)
+    n, b = (p.message for p in result.problems)
     assert n == "plugin 'n' can't be deployed: `npm` sources can't be pinned"
-    assert r.startswith("plugin 'r' is in another repository (https://github.com/acme/r.git)")
     assert b.startswith(str(broken / ".claude-plugin" / "marketplace.json"))
     for cli_name in ("claude", "codex"):
         assert set(installed(standins, cli_name)) == {"a@tack"}
@@ -831,6 +840,205 @@ def test_a_dry_run_keeps_recorded_plugins_from_a_git_source_not_yet_cloned(
     assert all(listing(c) for c in standins.calls()[calls:])
     assert tree(home) == before
     assert standins.state() == agent_before
+
+
+# --- plugins from other repositories (design.md *Plugins from other repositories*) ----------
+# Every remote is a `file://` repository: nothing here reaches a host.
+
+
+def from_elsewhere(home: Path, tmp_path: Path, path: str | None = None) -> tuple[Config, Elsewhere]:
+    """A `path` source `one` selecting `r`, a plugin in another repository
+    whose catalog entry names the older of its two commits."""
+    r = elsewhere(tmp_path / "r", "r", path)
+    source(home, "one", entries=(r.entry(),))
+    return configure(home, "one", one=["r"]), r
+
+
+def clone_of(cfg: Config, src: str = "one", name: str = "r") -> Path:
+    return cfg.paths.clones_dir / src / name
+
+
+@pytest.mark.parametrize("path", [None, "sub/r"], ids=["url", "git-subdir"])
+def test_a_plugin_from_another_repository_is_cloned_copied_and_installed(
+    home: Path, tmp_path: Path, standins: Standins, path: str | None
+) -> None:
+    cfg, r = from_elsewhere(home, tmp_path, path)
+    clone = clone_of(cfg)
+    directory = clone if path is None else clone / path
+    m = cfg.paths.marketplace_dir
+
+    result = run(cfg)
+
+    assert result.problems == []
+    assert changes(result) == [
+        ("clone", "one", r.repo.as_uri()),
+        ("checkout", "one", r.older[:12]),
+        ("copy", "one", f"r from {text.tilde(directory)}"),
+        ("write", None, text.tilde(m / plugins.CATALOG)),
+        ("register", "claude-code", claude("marketplace", "add", str(m))),
+        ("install", "claude-code", claude("install", "r@tack")),
+        ("register", "codex", codex("marketplace", "add", str(m))),
+        ("install", "codex", codex("add", "r@tack")),
+    ]
+    assert [c.path for c in result.changes[:2]] == [clone, clone]
+    # tack's copy: the older commit's files, only the plugin's, and no `.git`.
+    assert tree(m / "plugins" / "r") == {
+        ".claude-plugin": "/",
+        ".claude-plugin/plugin.json": json.dumps({"name": "r", "version": "1.0"}),
+        "README.md": "r 1.0\n",
+    }
+    for cli_name in ("claude", "codex"):
+        assert set(installed(standins, cli_name)) == {"r@tack"}
+    assert record(cfg)["codex"]["r"] == Install("one", h(directory))
+    assert json.loads((m / plugins.CATALOG).read_text())["plugins"] == [
+        {**r.entry(), "source": "./plugins/r"}
+    ]
+
+    # A second sync brings nothing and changes nothing, with the remote gone.
+    shutil.rmtree(r.repo)
+    again = run(cfg)
+    assert (again.changes, again.problems) == ([], [])
+
+
+def test_an_update_moving_the_commit_checks_out_copies_and_reinstalls_in_codex(
+    home: Path, tmp_path: Path, standins: Standins
+) -> None:
+    """D8's Done-when, walked (brief-checklist §4): the first sync clones the
+    older commit, copies it and records its hash in both agents. `update`
+    pins the source's newer catalog; its sync reads the entry's newer
+    commit, finds the clone off it (no directory yet), checks it out, reads
+    the plan again, and copies the newer files: Codex's recorded hash is the
+    older one's, so Codex reinstalls; Claude Code loads the copy in place."""
+    r = elsewhere(tmp_path / "r", "r")
+    up = repo(tmp_path / "up", {plugins.CATALOG: json.dumps({"plugins": [r.entry()]})})
+    cfg = load(
+        home,
+        f'[[source]]\nname = "one"\ngit = "{up.as_uri()}"\nskills = []\nplugins = ["r"]\n',
+    )
+    assert run(cfg).problems == []
+    older = h(clone_of(cfg))
+    commit(up, {plugins.CATALOG: json.dumps({"plugins": [r.entry(r.newer)]})})
+    calls = len(standins.calls())
+
+    result = update.update(cfg, now=WHEN)
+
+    assert result.problems == []
+    plugin_steps = [(c.action, c.detail) for c in result.changes if c.path == clone_of(cfg)]
+    assert plugin_steps == [("checkout", r.newer[:12])]
+    assert [a for a, _, _ in changes(result)] == [
+        "update", "checkout", "write", "checkout", "copy", "reinstall",
+    ]  # fmt: skip
+    assert ran(standins, since=calls) == [codex("add", "r@tack")]
+    copy = cfg.paths.marketplace_dir / "plugins" / "r"
+    assert (copy / "README.md").read_text() == "r 2.0\n"
+    newer = h(clone_of(cfg))
+    assert record(cfg)["codex"]["r"] == Install("one", newer)
+    assert record(cfg)["claude-code"]["r"] == Install("one", older)
+
+
+def test_a_clone_with_local_changes_fails_its_plugin_and_keeps_it(
+    home: Path, tmp_path: Path, standins: Standins
+) -> None:
+    cfg, _ = from_elsewhere(home, tmp_path)
+    assert run(cfg).problems == []
+    clone = clone_of(cfg)
+    write(clone / "README.md", "edited\n")
+    m = cfg.paths.marketplace_dir
+    before = tree(m), record(cfg), standins.state()
+    calls = len(standins.calls())
+
+    result = run(cfg)
+
+    assert [(p.kind, p.source, p.path, p.message) for p in result.problems] == [
+        (
+            "source",
+            "one",
+            clone,
+            f"plugin 'r': tack's checkout at {text.tilde(clone)} has local changes; "
+            "discard or move them",
+        )
+    ]
+    assert result.changes == []
+    assert ran(standins, since=calls) == []
+    assert cli.main(["sync", "--no-commit"]) == 1
+    assert (tree(m), record(cfg), standins.state()) == before
+    assert (clone / "README.md").read_text() == "edited\n"
+
+
+def test_a_clone_deleted_after_a_sync_is_cloned_again_and_nothing_else(
+    home: Path, tmp_path: Path, standins: Standins
+) -> None:
+    cfg, r = from_elsewhere(home, tmp_path)
+    assert run(cfg).problems == []
+    shutil.rmtree(clone_of(cfg))
+    calls = len(standins.calls())
+
+    result = run(cfg)
+
+    assert result.problems == []
+    assert changes(result) == [
+        ("clone", "one", r.repo.as_uri()),
+        ("checkout", "one", r.older[:12]),
+    ]
+    assert ran(standins, since=calls) == []
+
+
+def test_a_first_dry_run_lists_the_clone_and_keeps_the_plugin(
+    home: Path, tmp_path: Path, standins: Standins
+) -> None:
+    """As a git source's first dry run lists no skill links: nothing is
+    cloned, so the plugin has no files to copy or install."""
+    cfg, r = from_elsewhere(home, tmp_path)
+    before = tree(home)
+
+    result = run(cfg, dry_run=True)
+
+    assert result.problems == []
+    acted = [(a, d) for a, _, d in changes(result) if a in ("clone", "checkout", "copy", "install")]
+    assert acted == [("clone", r.repo.as_uri()), ("checkout", r.older[:12])]
+    assert all(listing(c) for c in standins.calls())
+    assert tree(home) == before
+
+
+def test_a_collided_name_and_a_held_sources_plugin_are_not_cloned(
+    home: Path, tmp_path: Path, standins: Standins
+) -> None:
+    r = elsewhere(tmp_path / "r", "r")
+    q = elsewhere(tmp_path / "q", "q")
+    source(home, "one", entries=(r.entry(),))
+    source(home, "two", entries=(r.entry(),))
+    held = source(home, "three", entries=(q.entry(),))
+    shutil.rmtree(held / "skills")  # a `path` source with no skills directory is held
+    cfg = configure(home, "one", "two", "three", one=["r"], two=["r"], three=["q"])
+
+    result = run(cfg)
+
+    assert sorted((p.kind, p.source) for p in result.problems) == [
+        ("collision", None),
+        ("source", "three"),
+    ]
+    assert not {"clone", "checkout"} & {c.action for c in result.changes}
+    assert not cfg.paths.clones_dir.exists()
+
+
+def test_remove_uninstalls_the_plugin_then_deletes_its_clone(
+    home: Path, tmp_path: Path, standins: Standins
+) -> None:
+    cfg, _ = from_elsewhere(home, tmp_path)
+    assert run(cfg).problems == []
+    calls = len(standins.calls())
+
+    result = edit.remove(load(home), "one", now=WHEN)
+
+    assert result.problems == []
+    assert ran(standins, since=calls) == [
+        claude("uninstall", "r@tack"),
+        claude("marketplace", "remove", "tack"),
+        codex("remove", "r@tack"),
+        codex("marketplace", "remove", "tack"),
+    ]
+    assert [(c.action, c.path) for c in result.changes][-1] == ("delete", clone_of(cfg))
+    assert not (cfg.paths.clones_dir / "one").exists()
 
 
 # --- a dry run, and a manifest without plugins ------------------------------------------------

@@ -645,15 +645,12 @@ def test_a_plugins_detail(home: Path, tmp_path: Path, standins: Standins) -> Non
     drive(scenario)
 
 
-ELSEWHERE = {"source": "github", "repo": "acme/r", "sha": "0" * 40}
-
-
-@pytest.mark.parametrize("plugin", ["u", "r", "gone", "a"])
+@pytest.mark.parametrize("plugin", ["u", "gone", "a"])
 def test_a_plugins_detail_gives_the_problem_sync_reports(home: Path, plugin: str) -> None:
-    """One tack can't deploy, one from another repository, one whose
-    directory is gone, and a name two sources select: each from a `path`
-    source whose state is `ok`, with the message a `sync` dry run reports."""
-    entries = ({"name": "u", "source": NPM}, {"name": "r", "source": ELSEWHERE}, "gone")
+    """One tack can't deploy, one whose directory is gone, and a name two
+    sources select: each from a `path` source whose state is `ok`, with the
+    message a `sync` dry run reports."""
+    entries = ({"name": "u", "source": NPM}, "gone")
     plugin_source(home, "one", "a", entries=entries)
     plugin_source(home, "two", "a")
     cfg = configure(home, "one", "two", one=[plugin], two=["a"] if plugin == "a" else [])

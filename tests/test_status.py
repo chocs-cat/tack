@@ -13,7 +13,19 @@ import pytest
 from tack import agents, cli, deploy, status, sync
 from tack.config import Config
 from tack.deploy import Install
-from tests.helpers import configure, git, link, load, market, repo, skill, tree, upstream, write
+from tests.helpers import (
+    configure,
+    elsewhere,
+    git,
+    link,
+    load,
+    market,
+    repo,
+    skill,
+    tree,
+    upstream,
+    write,
+)
 from tests.standin import Standins
 
 WHEN = datetime(2026, 9, 27, 12, 0, 0, tzinfo=UTC)
@@ -383,6 +395,28 @@ def test_a_plugins_version_and_copy(home: Path, standins: Standins) -> None:
     run_sync(cfg)
     copies = cfg.paths.marketplace_dir / "plugins"
     assert seen() == [("a", "3.1", copies / "a"), ("b", "1.0", copies / "b")]
+
+
+def test_a_plugin_from_another_repository(home: Path, tmp_path: Path, standins: Standins) -> None:
+    """Its files are its clone's only while the clone is `ok` (design.md
+    *Plugins from other repositories*): not cloned, or off its commit, it
+    has no directory to compare, is never `stale`, and its version is the
+    entry's."""
+    r = elsewhere(tmp_path / "r", "r")
+    root = plugin_source(home, "one", entries=({**r.entry(), "version": "0.9"},))
+    cfg = configure(home, "one", one=["r"])
+
+    def seen() -> tuple[dict[str, str], str | None]:
+        (p,) = status.status(cfg).plugins
+        return dict(p.harnesses), p.version
+
+    assert seen() == (dict.fromkeys(BOTH, "missing"), "0.9")
+    run_sync(cfg)
+    assert seen() == (dict.fromkeys(BOTH, "installed"), "1.0")
+    # The entry moves to the newer commit, whose files differ: `sync` would
+    # check it out first, and the clone's state says so.
+    market(root, {**r.entry(r.newer), "version": "0.9"})
+    assert seen() == (dict.fromkeys(BOTH, "installed"), "0.9")
 
 
 def test_each_source_lists_the_plugins_it_selects(home: Path, standins: Standins) -> None:

@@ -23,7 +23,6 @@ from tests.standin import Standins
 from tests.test_status import BOTH, FIXTURES, NPM, WHEN, one, plugin_source, run_sync
 
 SHA = "a" * 40
-ELSEWHERE = {"source": "github", "repo": "acme/x", "sha": SHA}
 
 # What each state's finding says.
 _SAYS = {
@@ -289,11 +288,6 @@ def _undeployable(home: Path, standins: Standins) -> Config:
     return configure(home, "one", one=["a", "x"])
 
 
-def _elsewhere(home: Path, standins: Standins) -> Config:
-    plugin_source(home, "one", "a", entries=({"name": "r", "source": ELSEWHERE},))
-    return configure(home, "one", one=["a", "r"])
-
-
 PROBLEMS: dict[str, Callable[[Path, Standins], Config]] = {
     "directory gone, installed": FIXTURES["unreadable"][0],
     "directory gone, not installed": _gone,
@@ -305,7 +299,6 @@ PROBLEMS: dict[str, Callable[[Path, Standins], Config]] = {
     "missing cli a deployable plugin targets": FIXTURES["no cli"][0],
     "broken catalog": _broken,
     "undeployable": _undeployable,
-    "from another repository": _elsewhere,
     "collision": FIXTURES["collision"][0],
 }
 
@@ -454,7 +447,7 @@ def test_source_findings_and_collisions(home: Path, standins: Standins) -> None:
         "one",
         "a",
         "dup",
-        entries=({"name": "x", "source": NPM}, {"name": "r", "source": ELSEWHERE}),
+        entries=({"name": "x", "source": NPM},),
     )
     plugin_source(home, "two", "dup")
     (home / "bare" / "skills").mkdir(parents=True)
@@ -466,7 +459,7 @@ def test_source_findings_and_collisions(home: Path, standins: Standins) -> None:
         "two",
         "bare",
         "broken",
-        one=["a", "x", "nope", "r", "dup"],
+        one=["a", "x", "nope", "dup"],
         two=["dup"],
         bare=["p"],
         broken="*",
@@ -476,7 +469,7 @@ def test_source_findings_and_collisions(home: Path, standins: Standins) -> None:
     found = [(f.id, f.severity, f.path, f.harness, f.message) for f in check(cfg)]
     catalog = one / ".claude-plugin" / "marketplace.json"
     broken = home / "broken" / ".claude-plugin" / "marketplace.json"
-    assert found[:6] == [
+    assert found[:5] == [
         (
             "name-collision",
             "error",
@@ -502,14 +495,6 @@ def test_source_findings_and_collisions(home: Path, standins: Standins) -> None:
         (
             "not-synced",
             "warn",
-            catalog,
-            None,
-            "plugin 'r' from 'one' is in another repository (https://github.com/acme/x.git), "
-            "and tack doesn't deploy those yet",
-        ),
-        (
-            "not-synced",
-            "warn",
             home / "bare",
             None,
             "the manifest selects plugin 'p' from 'bare', which has no plugin catalog",
@@ -524,9 +509,9 @@ def test_source_findings_and_collisions(home: Path, standins: Standins) -> None:
             "line 1 column 2 (char 1)",
         ),
     ]
-    # Each plugin tack can't deploy, or from another repository, is reported
-    # once, for its source; a collided name only as `name-collision`.
-    assert found[6:] == []
+    # Each plugin tack can't deploy is reported once, for its source; a
+    # collided name only as `name-collision`.
+    assert found[5:] == []
 
 
 def test_a_collided_plugin_tack_cant_deploy(home: Path, standins: Standins) -> None:

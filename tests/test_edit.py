@@ -12,7 +12,7 @@ from tack import config, deploy, edit, sources, sync
 from tack.catalog import InRepository
 from tack.config import Config, ConfigError, SkillSpec, Source, UsageError
 from tack.sync import Result
-from tests.helpers import git, load, market, repo, skill, tree, upstream, write
+from tests.helpers import elsewhere, git, load, market, repo, skill, tree, upstream, write
 from tests.standin import Standins
 
 WHEN = datetime(2026, 9, 27, 12, 0, 0, tzinfo=UTC)
@@ -361,7 +361,6 @@ def plugin_refusal_cases(home: Path, tmp_path: Path) -> list[tuple[str, list[str
             (str(full), ["good", "nope", "nah"], f"{catalog} has no plugins 'nope', 'nah'"),
             (str(broken), ["x"], "marketplace.json: not a catalog: it needs a `plugins` list"),
             (str(full), ["u"], "plugin 'u' can't be deployed: "),
-            (str(full), ["r"], "plugin 'r' is in another repository (https://github.com/acme/r.git)"),
             (str(full), ["gone"], f"plugin 'gone': no plugin directory at {root}full/plugins/gone"),
             (str(full), ["a"], "plugin 'a' already selected by taken"),
         ]  # fmt: skip
@@ -393,20 +392,22 @@ def test_add_plugin_refusals_come_in_order(home: Path) -> None:
         "--subdir says where they are",  # the skills refusal's own "; "
         "~/full/.claude-plugin/marketplace.json has no plugin 'nope'",
         "plugin 'gone': no plugin directory at ~/full/plugins/gone",
-        "plugin 'r' is in another repository (https://github.com/acme/r.git), "
-        "and tack doesn't deploy those yet",
         "plugin 'u' can't be deployed: `npm` sources can't be pinned",
         "plugin 'a' already selected by taken",
     ]
 
 
-def test_a_source_with_no_skills_lists_its_plugins(home: Path) -> None:
+def test_a_source_with_no_skills_lists_its_plugins(
+    home: Path, tmp_path: Path, standins: Standins
+) -> None:
     """Without `--plugin`, the refusal of a source with no skills lists the
-    plugins `--plugin` would accept: sorted, deployable, and selected by no
-    other source. Each of them is then accepted."""
+    plugins `--plugin` would accept: sorted, deployable (`r` is in another
+    repository), and selected by no other source. Each of them is then
+    accepted, and its sync clones `r`."""
     offering(home / "full")
     write(home / "full" / "plugins" / "b" / "README.md", "b\n")
-    market(home / "full", "good", "a", NPM, ELSEWHERE, "gone", "b")
+    r = elsewhere(tmp_path / "r", "r")
+    market(home / "full", "good", "a", NPM, r.entry(), "gone", "b")
     (home / "empty" / "skills").mkdir(parents=True)
     write(home / "empty" / "plugins" / "e" / "README.md", "e\n")
     market(home / "empty", "e")
@@ -417,7 +418,7 @@ def test_a_source_with_no_skills_lists_its_plugins(home: Path) -> None:
         run_add(cfg, home / "full")
     assert str(refused.value) == (
         "can't add full: there is no skills directory at ~/full/skills; --subdir says where "
-        "they are; --plugin selects its plugins 'b', 'good'"
+        "they are; --plugin selects its plugins 'b', 'good', 'r'"
     )
     with pytest.raises(UsageError) as refused:
         run_add(cfg, home / "empty")
@@ -428,11 +429,14 @@ def test_a_source_with_no_skills_lists_its_plugins(home: Path) -> None:
     with pytest.raises(UsageError, match=r"--subdir says where they are; plugin 'u' can't"):
         run_add(cfg, home / "full", skills=["s"], plugins=["u"])
 
-    assert run_add(cfg, home / "full", plugins=["b", "good"]).problems == []
+    assert run_add(cfg, home / "full", plugins=["b", "good", "r"]).problems == []
     assert [(s.name, s.plugins) for s in load(home).sources][-1] == (
         "full",
-        (SkillSpec("b"), SkillSpec("good")),
+        (SkillSpec("b"), SkillSpec("good"), SkillSpec("r")),
     )
+    assert sources.head(cfg.paths.clones_dir / "full" / "r") == r.older
+    for cli_name in ("claude", "codex"):
+        assert "r@tack" in standins.state()[cli_name]["plugins"]
 
 
 def test_a_source_with_no_skills_and_no_plugins_to_offer(home: Path) -> None:
@@ -451,7 +455,7 @@ def test_a_source_with_no_skills_and_no_plugins_to_offer(home: Path) -> None:
         )
 
 
-@pytest.mark.parametrize("plugin", ["u", "r", "gone"])
+@pytest.mark.parametrize("plugin", ["u", "gone"])
 def test_a_plugin_refusal_gives_the_reason_sync_gives(home: Path, plugin: str) -> None:
     """The same words as the `source` problem a `sync` dry run reports for
     the source already in the manifest selecting the plugin."""

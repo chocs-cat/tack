@@ -371,9 +371,12 @@ class Selected:
     source: Source
     plugin: catalog.Plugin
     harnesses: tuple[str, ...]  # only harnesses that take plugins (DEC-8)
-    # An `InSource` plugin's files; None for any other (D8 gives an
-    # `InRepository` plugin its clone).
+    # The plugin's files: an `InSource` plugin's in its source; an
+    # `InRepository` plugin's in its clone, only while the clone was `ok` as
+    # the plan was made (design.md *Plugins from other repositories*); None
+    # for any other, which has no directory to compare and is kept.
     directory: Path | None
+    clone: sources.Clone | None = None  # an `InRepository` plugin's
 
     @property
     def name(self) -> str:
@@ -441,14 +444,12 @@ def plan(cfg: Config) -> Plan:
 
 def undeployable(plugin: catalog.Plugin) -> str | None:
     """Why `sync` can't deploy a selected plugin, to follow its name: one tack
-    can't deploy (design.md *Catalogs*), or one from another repository,
-    until D8; None for one in the source. `sync`, `doctor` and `add` all say
-    it this way, each with its own prefix."""
+    can't deploy (design.md *Catalogs*); None for one in the source or from
+    another repository. `sync`, `doctor` and `add` all say it this way, each
+    with its own prefix."""
     where = plugin.where
     if isinstance(where, catalog.Undeployable):
         return f"can't be deployed: {where.reason}"
-    if isinstance(where, catalog.InRepository):
-        return f"is in another repository ({where.url}), and tack doesn't deploy those yet"
     return None
 
 
@@ -463,7 +464,8 @@ def collision(name: str, harnesses: Sequence[str], srcs: Sequence[str]) -> str:
 def kept(plan: Plan, record: deploy.Record, held: Collection[str] = ()) -> set[str]:
     """The plugins `sync` keeps as they are wherever they are installed
     (DEC-12), short of those whose copy fails: a collided name, a plugin from
-    another repository (D8), and each plugin a source selects, or the record
+    another repository whose clone isn't `ok` as the plan reads it (it has
+    no directory), and each plugin a source selects, or the record
     lists from it, when `sync` holds that source (`held`) or can't read its
     catalog (its root isn't there, or the catalog is broken). `doctor` and the
     TUI read each source as it is now (DEC-17), so they name none `held`."""
@@ -485,9 +487,9 @@ def kept(plan: Plan, record: deploy.Record, held: Collection[str] = ()) -> set[s
 
 def problems(sel: Selected, plan: Plan, kept: Collection[str]) -> list[str]:
     """What `sync` reports about a selected plugin, each as `sync` words it:
-    a name another source selects too, one tack can't deploy or from another
-    repository, and one whose files can't be read, so that its copy would
-    fail (a `kept` plugin, a collided name among them, isn't copied). It
+    a name another source selects too, one tack can't deploy, and one whose
+    files can't be read, so that its copy would fail (a `kept` plugin, a
+    collided name among them, isn't copied). It
     reads the plugin's files as they are now, as the states do (DEC-17)."""
     out: list[str] = []
     if sel.name in plan.collisions:
@@ -526,7 +528,7 @@ def _source_state(src: Source, cfg: Config) -> SourceState:
             src,
             p,
             tuple(h for h in hs if h in config.PLUGIN_HARNESSES),  # DEC-8
-            _directory(root, p.where),
+            *_files(cfg.paths, src, root, p),
         )
         for p, hs in chosen
     ]
@@ -534,7 +536,15 @@ def _source_state(src: Source, cfg: Config) -> SourceState:
     return SourceState(src, root, "found", None, selected, missing, found.ignored)
 
 
-def _directory(root: Path, where: catalog.Where) -> Path | None:
-    if not isinstance(where, catalog.InSource):
-        return None
-    return root if where.path == "." else root / where.path
+def _files(
+    paths: Paths, src: Source, root: Path, p: catalog.Plugin
+) -> tuple[Path | None, sources.Clone | None]:
+    """A selected plugin's directory and clone, as `Selected` holds them. A
+    clone's state runs `git status`, so it is read once here, per plugin."""
+    where = p.where
+    if isinstance(where, catalog.InSource):
+        return (root if where.path == "." else root / where.path), None
+    if isinstance(where, catalog.InRepository):
+        clone = sources.Clone.of(paths, src.name, p.name, where)
+        return (clone.directory if clone.state() == "ok" else None), clone
+    return None, None
