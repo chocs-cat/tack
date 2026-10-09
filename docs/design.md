@@ -1348,7 +1348,11 @@ changes one means a check changes.
   `tool_input.command`.
 
 *(P0001)* Plugin facts, verified 2026-10-05 against Claude Code 2.1.289 and
-codex-cli 0.157.1, in a scratch `HOME`, and their documentation:
+codex-cli 0.157.1, in a scratch `HOME`, and their documentation. Re-verified
+2026-10-09 against Claude Code 2.1.289 and codex-cli 0.160.1 by
+`tools/agent_facts.py` and by `tack sync`, `update` and `remove` in a
+scratch `HOME`, all but the reserved names, Codex turning `commands/` into
+skills, and symlinked plugin directories:
 
 - **Claude Code plugins** are managed by `claude plugin` (`marketplace
   add|list|remove`, `install`, `uninstall`, `list`, `enable`, `disable`,
@@ -1369,15 +1373,21 @@ codex-cli 0.157.1, in a scratch `HOME`, and their documentation:
   path in a marketplace added from a local directory (`plugin list --json`
   shows it as `readFromFolder`), so a change to its files reaches the next
   session with nothing to run. Its recorded version is `unknown` when neither
-  the plugin nor the marketplace is a git repository.
+  the plugin nor the marketplace is a git repository. `install` also copies
+  the plugin into `~/.claude/plugins/cache/<m>/<p>/<version>/`, the
+  `installPath` that `plugin list` shows, and nothing refreshes that copy;
+  Claude Code reads the folder, not the copy (`plugin details` lists a skill
+  added to the folder after the install; seen 2026-10-09 in 2.1.289).
+  `uninstall` leaves the copy, marked `.orphaned_at`, for Claude Code to
+  clear.
 - **Claude Code refuses reserved marketplace names** (`claude-plugins-official`
   and the other official ones) unless the marketplace is a GitHub source under
   `anthropics`, so a local copy of an official catalog can't be registered
   under its own name. One marketplace per name may be registered.
 - **Codex plugins** are managed by `codex plugin` (`marketplace
   add|list|upgrade|remove`, `add`, `remove`, `list`), each taking `--json`
-  and none taking `--scope` (their `--help`, re-checked 2026-10-05 against
-  codex-cli 0.157.1); there is no command to enable or
+  and none taking `--scope` (their `--help`, re-checked 2026-10-09 against
+  codex-cli 0.160.1); there is no command to enable or
   disable a plugin. `marketplace add <dir>`
   reads a Claude Code catalog (`.claude-plugin/marketplace.json`) as well as
   its own (`.agents/plugins/marketplace.json`), its own first when there are
@@ -1398,7 +1408,8 @@ codex-cli 0.157.1, in a scratch `HOME`, and their documentation:
   inside the marketplace; tack doesn't rely on it (DEC-2).
 
 *(P0001)* Their output, verified 2026-10-05 against the same versions, in a
-scratch `HOME`:
+scratch `HOME`, and re-verified 2026-10-09 against Claude Code 2.1.289 and
+codex-cli 0.160.1 as above, all but the stdin wait:
 
 - **stdin.** Run with stdin an open pipe, `claude` waits three seconds for
   input and warns before it carries on; with stdin closed it doesn't.
