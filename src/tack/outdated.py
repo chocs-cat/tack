@@ -10,7 +10,9 @@ A source that selects plugins has them compared the same way, from its
 catalog read from git at each end (design.md *Tracking plugins upstream*):
 the commits listed are those touching selected skills or plugins, and the
 diff adds each changed plugin's. A catalog broken at either end leaves them
-uncompared (DEC-20).
+uncompared (DEC-20). For a plugin moved to another commit of its other
+repository, the diff adds the two commits', fetched into its clone, which,
+like a checkout, is never moved, and is never created (DEC-23).
 """
 
 from __future__ import annotations
@@ -141,7 +143,7 @@ def _compare(src: Source, cfg: Config, entry: LockEntry | None, *, diff: bool) -
             "added" if name not in at_pin else "removed" if name not in at_tip else "modified"
         )
         r.skills.append(ChangedSkill(name, kind))
-    tracked = _plugins(r, src, d, pin, tip) if src.plugins != () else None
+    tracked = _plugins(r, src, cfg.paths, d, pin, tip) if src.plugins != () else None
 
     for head, files in git.log(d, "%H%x1f%s", f"{pin}..{tip}", "--", sub):
         commit, _, subject = head.partition("\x1f")
@@ -184,7 +186,9 @@ def _end(repo: Path, commit: str) -> _End:
     return end
 
 
-def _plugins(r: SourceReport, src: Source, repo: Path, pin: str, tip: str) -> _Tracked | None:
+def _plugins(
+    r: SourceReport, src: Source, paths: config.Paths, repo: Path, pin: str, tip: str
+) -> _Tracked | None:
     """Each selected plugin that changed between the pin and the tip, with
     its versions; or, when the catalog is broken at either end, why they
     weren't compared (DEC-20), and None."""
@@ -201,7 +205,8 @@ def _plugins(r: SourceReport, src: Source, repo: Path, pin: str, tip: str) -> _T
     names = set(before.first) | set(after.first)
     if src.plugins is not None:
         names &= {s.name for s in src.plugins}
-    tracked = _Tracked(repo, before, after, {n: _directories(before, after, n) for n in names})
+    directories = {n: _directories(before, after, n) for n in names}
+    tracked = _Tracked(repo, before, after, directories, paths.clones_dir / src.name)
     changed = git.run(repo, "diff", "--no-renames", "--name-only", "-z", pin, tip)
     files = [f for f in changed.stdout.split("\0") if f]
     for name in sorted(names):
@@ -229,6 +234,7 @@ class _Tracked:
     before: _End
     after: _End
     directories: dict[str, list[str]]  # each selected plugin's, by `_directories`
+    clones: Path  # the source's plugins' clones: plugins/<source>/
     _entries: dict[str, dict[str, list[Mapping[str, Any]]]] = field(default_factory=dict)
 
     def entry_changed(self, name: str) -> bool:
@@ -275,7 +281,8 @@ class _Tracked:
 
     def diff(self, name: str) -> str:
         """A changed plugin's diff: its files under its directory at either
-        end, then its entry's, as JSON, when that changed."""
+        end, then its entry's, as JSON, when that changed, then, for one from
+        the same other repository at both ends, its commits' (DEC-23)."""
         out = ""
         if paths := sorted(set(self.directories[name])):
             r = git.run(
@@ -293,7 +300,42 @@ class _Tracked:
                     f"b/{self.after.file}#{name}" if now is not None else "/dev/null",
                 )
             )
-        return out
+        return out + self._commits_diff(name)
+
+    def _commits_diff(self, name: str) -> str:
+        """For a plugin from another repository at both ends, with the same
+        URL and a different commit, the diff between its two commits in its
+        clone, limited to the entry's `path` at each end; or a line saying
+        why there is none (design.md *Tracking plugins upstream*, DEC-23).
+        Each commit the clone lacks is fetched as `sync` fetches it; the
+        clone is never created, checked out or moved, so a missing one, or
+        something in its place, reads no `git status` either."""
+        was, now = self.before.first.get(name), self.after.first.get(name)
+        if was is None or now is None:
+            return ""
+        a, b = was.where, now.where
+        if not isinstance(a, catalog.InRepository) or not isinstance(b, catalog.InRepository):
+            return ""
+        if a.url != b.url or a.commit == b.commit:
+            return ""
+        clone = self.clones / name
+        try:
+            if not clone.exists():
+                raise SourceError("it isn't cloned; `tack sync` clones it")
+            if not (clone / ".git").exists():
+                raise SourceError(sources.in_the_way(clone))
+            for commit in (a.commit, b.commit):
+                if not sources.fetch_into_clone(clone, a.url, commit):
+                    raise SourceError(sources.not_in(commit, a.url))
+        except SourceError as e:
+            return f"plugin '{name}': no diff between its commits: {e}\n"
+        paths = [] if a.path is None or b.path is None else sorted({a.path, b.path})
+        r = git.run(
+            clone, "--literal-pathspecs", "diff", "--no-color", "--no-ext-diff",
+            f"--src-prefix=a/{name}@{a.commit[:12]}/", f"--dst-prefix=b/{name}@{b.commit[:12]}/",
+            a.commit, b.commit, "--", *paths,
+        )  # fmt: skip
+        return r.stdout
 
 
 def _entry_lines(entries: list[Mapping[str, Any]] | None) -> list[str]:

@@ -99,7 +99,12 @@ is `{"name", "change", "version": {"from", "to"}}` (`change` is `modified`,
 from its catalog read at the pin and at the tip; `plugins_error` says why
 they weren't compared (a catalog broken at either end), else null. Each
 commit has `skills` and `plugins`, the selected ones it touches. `--diff`
-adds each changed plugin's files and catalog entry after the skills.
+adds each changed plugin's files and catalog entry after the skills, and,
+for a plugin from another repository moved to another commit of the same
+repository, the diff between its two commits, fetched into its clone
+(`outdated` never clones one, checks one out or moves it: without a clone,
+or when the fetch fails, a line `plugin '<name>': no diff between its
+commits: …` says why).
 
 `tack add … --plugin` selects plugins for a new source; otherwise plugin
 selections are edited in the manifest by hand. The TUI shows them on a
