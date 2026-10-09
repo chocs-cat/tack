@@ -57,12 +57,25 @@ class SkillStatus:
 
 
 @dataclass
+class PluginRepository:
+    """Where a plugin from another repository comes from, and its clone
+    (design.md §9 *Plugin states*)."""
+
+    url: str
+    path: str | None  # a `git-subdir`'s path; None for the whole repository
+    commit: str  # the catalog's, all forty digits
+    clone: Path
+    state: sources.CloneState  # the clone's, as the plan read it
+
+
+@dataclass
 class PluginStatus:
     name: str
     source: str
     harnesses: dict[str, PluginState]  # only the harnesses it targets
     version: str | None = None
     path: Path | None = None  # its copy in tack's marketplace
+    repository: PluginRepository | None = None  # None for a plugin in its source
 
 
 @dataclass
@@ -227,9 +240,20 @@ def plugin_states(
         read = catalog.files(sel.directory) if sel.directory else lambda _: None
         version = catalog.version(sel.plugin.entry, read)
         path = copy if copy.is_dir() else None
-        out.append(PluginStatus(sel.name, sel.source.name, harnesses, version, path))
+        out.append(
+            PluginStatus(sel.name, sel.source.name, harnesses, version, path, _repository(sel))
+        )
     out.sort(key=lambda p: (p.name, p.source))
     return out
+
+
+def _repository(sel: plugins.Selected) -> PluginRepository | None:
+    """A plugin from another repository's, with its clone's state as the plan
+    read it; None for any other plugin."""
+    if sel.clone is None or sel.clone_state is None:
+        return None
+    w = sel.clone.where
+    return PluginRepository(w.url, w.path, w.commit, sel.clone.path, sel.clone_state)
 
 
 def plugin_digest(directory: Path | None) -> str | None:

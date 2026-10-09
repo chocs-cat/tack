@@ -121,7 +121,8 @@ def plugin_abouts(plan: plugins.Plan, kept: Collection[str]) -> dict[tuple[str, 
 
 def plugin_detail(p: PluginStatus, source: SourceStatus | None, about: PluginAbout) -> Text:
     """Where a plugin comes from (its source and the source's pin, or a
-    `path` source's directory), tack's copy, its version, its state in each
+    `path` source's directory) and, for one from another repository, its
+    repository and clone; tack's copy, its version, its state in each
     harness it targets, what `sync` reports about it, and its description."""
     out = Text()
     out.append(p.name, style="bold")
@@ -129,6 +130,10 @@ def plugin_detail(p: PluginStatus, source: SourceStatus | None, about: PluginAbo
     if source is not None:
         pinned = f", {_pin(source)}" if source.kind == "git" else ""
         out.append(f"source: {_location(source)}{pinned}\n")
+    if (r := p.repository) is not None:
+        where = r.url if r.path is None else f"{r.url} ({r.path})"
+        out.append(f"repository: {where} at {r.commit[:12]}\n")
+        out.append(f"clone: {tilde(r.clone)} ({r.state})\n")
     if p.path is not None:
         out.append(f"copy: {tilde(p.path)}\n")
     out.append(f"version: {p.version or 'none'}\n\n")

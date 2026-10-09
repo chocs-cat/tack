@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from tack import agents, cli, deploy, status, sync
+from tack import agents, cli, deploy, sources, status, sync
 from tack.config import Config
 from tack.deploy import Install
 from tests.helpers import (
@@ -419,6 +419,95 @@ def test_a_plugin_from_another_repository(home: Path, tmp_path: Path, standins: 
     assert seen() == (dict.fromkeys(BOTH, "installed"), "0.9")
 
 
+def test_status_json_gives_a_plugins_repository(
+    home: Path, tmp_path: Path, standins: Standins, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A plugin from another repository has `repository`: its entry's URL,
+    no path for a `url` entry, the catalog's commit, its clone, and the
+    clone's state as the plan read it (design.md *Plugin states*)."""
+    r = elsewhere(tmp_path / "r", "r")
+    root = plugin_source(home, "one", entries=(r.entry(),))
+    cfg = configure(home, "one", one=["r"])
+    clone = cfg.paths.clones_dir / "one" / "r"
+
+    def repository() -> Any:
+        capsys.readouterr()
+        assert cli.main(["status", "--json"]) == 0
+        (p,) = json.loads(capsys.readouterr().out)["plugins"]
+        return p["repository"]
+
+    def expected(commit: str, state: str) -> dict[str, Any]:
+        url = r.repo.as_uri()
+        return {"url": url, "path": None, "commit": commit, "clone": str(clone), "state": state}
+
+    assert repository() == expected(r.older, "not cloned")
+    run_sync(cfg)
+    assert repository() == expected(r.older, "ok")
+    market(root, r.entry(r.newer))
+    assert repository() == expected(r.newer, "off its commit")
+    write(clone / "README.md", "Edited.\n")
+    assert repository() == expected(r.newer, "local changes")
+    shutil.rmtree(clone)
+    clone.mkdir()
+    assert repository() == expected(r.newer, "in the way")
+    # Its keys in design.md's order, after `path`.
+    capsys.readouterr()
+    cli.main(["status", "--json"])
+    (p,) = json.loads(capsys.readouterr().out)["plugins"]
+    assert list(p)[-2:] == ["path", "repository"]
+    assert list(p["repository"]) == ["url", "path", "commit", "clone", "state"]
+
+
+def test_a_git_subdir_plugins_repository_has_its_path(
+    home: Path, tmp_path: Path, standins: Standins
+) -> None:
+    r = elsewhere(tmp_path / "r", "r", path="plugins/r")
+    plugin_source(home, "one", entries=(r.entry(),))
+    cfg = configure(home, "one", one=["r"])
+    run_sync(cfg)
+
+    (p,) = status.status(cfg).plugins
+    assert p.repository == status.PluginRepository(
+        r.repo.as_uri(), "plugins/r", r.older, cfg.paths.clones_dir / "one" / "r", "ok"
+    )
+
+
+def test_a_plugin_in_its_source_or_undeployable_has_no_repository(
+    home: Path, standins: Standins
+) -> None:
+    plugin_source(home, "one", "a", entries=({"name": "x", "source": NPM},))
+    cfg = configure(home, "one", one=["a", "x"])
+
+    assert [(p.name, p.repository) for p in status.status(cfg).plugins] == [
+        ("a", None),
+        ("x", None),
+    ]
+
+
+def test_status_reads_a_clones_state_once(
+    home: Path, tmp_path: Path, standins: Standins, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The plan reads each clone's state, and `status` takes it from there
+    rather than running `git status` in the clone again."""
+    r = elsewhere(tmp_path / "r", "r")
+    plugin_source(home, "one", entries=(r.entry(),))
+    cfg = configure(home, "one", one=["r"])
+    run_sync(cfg)
+    clone = cfg.paths.clones_dir / "one" / "r"
+    seen: list[Path] = []
+    real = sources.local_changes
+
+    def counted(checkout: Path) -> bool:
+        seen.append(checkout)
+        return real(checkout)
+
+    monkeypatch.setattr(sources, "local_changes", counted)
+    (p,) = status.status(cfg).plugins
+    assert p.repository is not None
+    assert p.repository.state == "ok"
+    assert seen.count(clone) == 1
+
+
 def test_each_source_lists_the_plugins_it_selects(home: Path, standins: Standins) -> None:
     plugin_source(home, "one", "a", "b")
     plugin_source(home, "two", "c")
@@ -502,6 +591,7 @@ def test_status_json_gives_plugins(
             "harnesses": {"claude-code": "installed", "codex": "conflict"},
             "version": "1.0",
             "path": str(cfg.paths.marketplace_dir / "plugins" / "a"),
+            "repository": None,
         },
         {
             "name": "x",
@@ -509,6 +599,7 @@ def test_status_json_gives_plugins(
             "harnesses": {"claude-code": "missing", "codex": "conflict"},
             "version": None,
             "path": None,
+            "repository": None,
         },
     ]
 

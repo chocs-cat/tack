@@ -67,8 +67,13 @@ source's skills, and `plugins` the plugins it selects.
 
 `status` also lists each selected plugin with `name`, `source`, `harnesses`
 (`{"claude-code": "installed", ...}`, for the harnesses it targets),
-`version` and `path` (its copy in tack's marketplace, or null). A plugin's
-state is the first of these that applies:
+`version`, `path` (its copy in tack's marketplace, or null) and
+`repository`: null for a plugin in its source or one tack can't deploy; for
+one from another repository, `{"url", "path", "commit", "clone", "state"}`,
+its repository's URL, a `git-subdir`'s path (or null), the catalog's
+commit, its clone's path and the clone's state (`in the way`, `not cloned`,
+`local changes`, `off its commit` or `ok`). A plugin's state is the first
+of these that applies:
 
 - `collision`: two sources select the name; neither is deployed.
 - `unavailable`: the agent's CLI isn't on `PATH`, or its `plugin list` or

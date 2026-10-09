@@ -149,9 +149,13 @@ Plugins are read from their source as it is now: for a source whose own
 state isn't `ok`, `sync` first holds it or checks out its pin.
 
 `tack status --json` adds `plugins`, one object per selected plugin with
-`name`, `source`, `harnesses` (agent → state), `version` and `path` (its
-copy in tack's marketplace, or null), and gives each source `plugins`, the
-names it selects.
+`name`, `source`, `harnesses` (agent → state), `version`, `path` (its
+copy in tack's marketplace, or null) and `repository`: for a plugin from
+another repository, its `url`, `path` (a `git-subdir`'s, or null),
+`commit`, `clone` (where tack keeps its clone) and the clone's `state`
+(`in the way`, `not cloned`, `local changes`, `off its commit` or `ok`);
+null for any other plugin. It also gives each source `plugins`, the names
+it selects.
 
 `tack outdated` compares a git source's selected plugins between its pin and
 the tip, from its catalog at each end: each one *modified* (its catalog

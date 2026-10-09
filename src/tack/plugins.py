@@ -377,6 +377,8 @@ class Selected:
     # for any other, which has no directory to compare and is kept.
     directory: Path | None
     clone: sources.Clone | None = None  # an `InRepository` plugin's
+    # The clone's state as the plan read it, so `status` doesn't read it again.
+    clone_state: sources.CloneState | None = None
 
     @property
     def name(self) -> str:
@@ -571,13 +573,15 @@ def _source_state(src: Source, cfg: Config) -> SourceState:
 
 def _files(
     paths: Paths, src: Source, root: Path, p: catalog.Plugin
-) -> tuple[Path | None, sources.Clone | None]:
-    """A selected plugin's directory and clone, as `Selected` holds them. A
-    clone's state runs `git status`, so it is read once here, per plugin."""
+) -> tuple[Path | None, sources.Clone | None, sources.CloneState | None]:
+    """A selected plugin's directory, clone and the clone's state, as
+    `Selected` holds them. A clone's state runs `git status`, so it is read
+    once here, per plugin."""
     where = p.where
     if isinstance(where, catalog.InSource):
-        return (root if where.path == "." else root / where.path), None
+        return (root if where.path == "." else root / where.path), None, None
     if isinstance(where, catalog.InRepository):
         clone = sources.Clone.of(paths, src.name, p.name, where)
-        return (clone.directory if clone.state() == "ok" else None), clone
-    return None, None
+        state = clone.state()
+        return (clone.directory if state == "ok" else None), clone, state
+    return None, None, None

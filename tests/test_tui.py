@@ -658,6 +658,37 @@ def test_a_plugins_detail(home: Path, tmp_path: Path, standins: Standins) -> Non
     drive(scenario)
 
 
+def test_a_plugins_detail_names_its_repository(home: Path, standins: Standins) -> None:
+    """A plugin from another repository gives, after its source, its
+    repository at its commit (with a `git-subdir`'s path) and its clone with
+    the clone's state (design.md *The Plugins tab*)."""
+    r = elsewhere(home.parent / "r", "r")
+    s = elsewhere(home.parent / "s", "s", path="plugins/s")
+    plugin_source(home, "one", entries=(r.entry(), s.entry()))
+    cfg = configure(home, "one", one=["r", "s"])
+    run_sync(cfg)
+    write(cfg.paths.clones_dir / "one" / "s" / "OTHER.md", "edited\n")
+    clones = tilde(cfg.paths.clones_dir / "one")
+
+    async def scenario(app: TackApp, pilot: Pilot[None]) -> None:
+        await pilot.press("2", "down")
+        assert detail(app, "plugins").splitlines()[:4] == [
+            "r  from one",
+            "source: ~/one",
+            f"repository: {r.repo.as_uri()} at {r.older[:12]}",
+            f"clone: {clones}/r (ok)",
+        ]
+        await pilot.press("down")
+        assert detail(app, "plugins").splitlines()[:4] == [
+            "s  from one",
+            "source: ~/one",
+            f"repository: {s.repo.as_uri()} (plugins/s) at {s.older[:12]}",
+            f"clone: {clones}/s (local changes)",
+        ]
+
+    drive(scenario)
+
+
 @pytest.mark.parametrize("plugin", ["u", "gone", "a", "r"])
 def test_a_plugins_detail_gives_the_problem_sync_reports(home: Path, plugin: str) -> None:
     """One tack can't deploy, one whose directory is gone, a name two
