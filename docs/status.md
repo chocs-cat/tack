@@ -1,7 +1,7 @@
 # Status
 
 Last updated 2026-10-09 by `relay-next`.
-Last review: 2026-10-09 (P0001-C11).
+Last review: 2026-10-09 (P0001-C12).
 
 ## Where this stands
 
@@ -16,26 +16,24 @@ Last review: 2026-10-09 (P0001-C11).
   (DEC-18, DEC-19), `outdated` reports changed plugins with their versions,
   commits and diff (DEC-20), `add --plugin` (and the TUI's add form)
   selects plugins, and the TUI has a Plugins tab (tabs keyed `1`–`4`).
-- P0001-C10 (#53), accepted 2026-10-08: plugins' clones kept as checkouts
-  are (DEC-21), unwired, and `remove` deleting them; #29's catalog URL
-  fixes; #51.
-- P0001-C11 (#55), accepted 2026-10-09: #54 (DEC-22), and plugins from
-  other repositories cloned at the catalog's commit and deployed by `sync`,
-  with `status`, `doctor`, the TUI and `add` agreeing; #56 its follow-up.
-- P0001-C12, ready for an executor: the rest of D8, pinned at its cut
-  (DEC-23): `status --json` and the TUI naming a plugin's repository,
-  commit and clone, and `outdated --diff` between its commits.
-- Still to come: the project's completion, run against the real agents
-  (#42 among them), and design.md's *(P0001)* marks removed.
-- **Do next:** `/relay-execute` to build P0001-C12.
+- D8 is done: P0001-C10 – C12 (#53, #55, #58), accepted 2026-10-08 to
+  2026-10-09: plugins from other repositories cloned at the catalog's
+  commit and deployed by `sync`, `remove` deleting their clones, `status`,
+  `doctor`, the TUI and `add` agreeing, `status --json`'s `repository`,
+  and `outdated --diff` between a plugin's commits (DEC-21 – DEC-23).
+- P0001-C13, ready for an executor: §6's completion evidence (the real
+  agents, a real setup and #42, the pre-project suite, design.md's
+  *(P0001)* marks removed).
+- Still to come: `/relay-project`'s closeout of P0001.
+- **Do next:** `/relay-execute` to build P0001-C13.
 
 ## In flight
 
-- **Chunk:** P0001-C12
-- **State:** awaiting review
-- **Branch:** `chunk/p0001-c12`
-- **Pull request:** `#58` (ready)
-- **Units committed:** a, b
+- **Chunk:** P0001-C13
+- **State:** ready for an executor
+- **Branch:** —
+- **Pull request:** —
+- **Units committed:** —
 
 (Fixed shape. `State` ∈ `ready for an executor` · `executing` ·
 `awaiting review` · `none`; `Branch`, `Pull request`, and `Units committed` are
@@ -67,4 +65,5 @@ One line per chunk: the decision-log IDs it added.
 - P0001-C09: its cut, none; its review, none.
 - P0001-C10: its cut, DEC-21; its review, none.
 - P0001-C11: its cut, DEC-22; its review, none.
-- P0001-C12: its cut, DEC-23.
+- P0001-C12: its cut, DEC-23; its review, none.
+- P0001-C13: its cut, none.

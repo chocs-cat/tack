@@ -328,6 +328,10 @@ Notes from the P0001-C12 cut: C11 was accepted. C12 is the rest of D8,
 pinned at this cut: `status --json`'s `repository` and the TUI's detail
 lines for it, and `outdated --diff` between a plugin's commits (DEC-23).
 
+Notes from the P0001-C13 cut: C12 was accepted, and D8 is done. C13
+gathers §6's evidence; what remains after it is `/relay-project`'s
+closeout.
+
 **Done when:** tests with local git remotes show an entry with a commit
 deployed at that commit, a `git-subdir` entry deploying only its path, an
 `update` that changes the commit fetching it and reinstalling in Codex, a
@@ -371,8 +375,9 @@ the diff between the two commits.
 | [P0001-C08](../chunks/P0001-C08.md) | D6 (`add --plugin`, the TUI's add form); C07 review follow-ups (#46, #47): D6 done | accepted with follow-ups (#49 as C09-a) | 2026-10-08 | #48, `d51ff10` |
 | [P0001-C09](../chunks/P0001-C09.md) | D7 (the TUI's Plugins tab, its details, one read per refresh); #49 (C08's follow-up), #43: D7 done | accepted with follow-ups (review-checklist §3, a Plugins-tab test, #51 as C10-a; #52) | 2026-10-08 | #50, `d0d10e6` |
 | [P0001-C10](../chunks/P0001-C10.md) | D8 (#29; plugins' clones and `remove` deleting them: unwired groundwork); C09 review follow-ups (#51) | accepted with follow-ups (#54 as C11-a) | 2026-10-08 | #53, `8ef8036` |
-| [P0001-C11](../chunks/P0001-C11.md) | D8 (the clones wired into `sync`, `status`, `doctor`, the TUI and `add`); C10 review follow-up (#54) | accepted with follow-ups (#56) | 2026-10-09 | #55 |
-| [P0001-C12](../chunks/P0001-C12.md) | D8 (`status --json` and the TUI naming a plugin's repository, commit and clone; `outdated --diff` between commits): D8 done | ready for an executor | — | — |
+| [P0001-C11](../chunks/P0001-C11.md) | D8 (the clones wired into `sync`, `status`, `doctor`, the TUI and `add`); C10 review follow-up (#54) | accepted with follow-ups (#56) | 2026-10-09 | #55, `c954779` |
+| [P0001-C12](../chunks/P0001-C12.md) | D8 (`status --json` and the TUI naming a plugin's repository, commit and clone; `outdated --diff` between commits): D8 done | accepted | 2026-10-09 | #58 |
+| [P0001-C13](../chunks/P0001-C13.md) | §6's completion evidence: the real agents, a real setup (#42), compatibility, design.md's marks removed | ready for an executor | — | — |
 
 ## 8. Closeout
 
