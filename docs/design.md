@@ -9,11 +9,6 @@ projects in [projects/](projects/index.md), whose design lands here; choices
 this document left open are logged in [decisions.md](decisions.md) and cited
 as `(DEC-n)`.
 
-**Plugins** are designed here and being built by project
-[P0001](projects/P0001-plugins.md). Text marked *(P0001)* belongs to that
-project, and some of it isn't built yet (the project's chunk ledger says what
-is); the mark comes off when the project completes.
-
 ## Contents
 
 1. [What tack is](#what-tack-is)
@@ -24,7 +19,7 @@ is); the mark comes off when the project completes.
 6. [The lockfile: `tack.lock`](#the-lockfile-tacklock)
 7. [Commands](#commands)
 8. [Ownership and conflicts](#ownership-and-conflicts)
-9. [Plugins](#plugins) *(P0001)*
+9. [Plugins](#plugins)
 10. [Auto-commit](#auto-commit)
 11. [`doctor` checks](#doctor-checks)
 12. [Scaffolding](#scaffolding)
@@ -49,7 +44,7 @@ It does three jobs:
 
 - **Deploy skills.** Each skill comes from a *source* — a local checkout you
   edit, or a git repository pinned to a commit — and is linked into each
-  agent's skills directory. *(P0001)* Plugins come from the same sources and
+  agent's skills directory. Plugins come from the same sources and
   are installed into every agent that takes them; see [Plugins](#plugins).
 - **Track upstream.** Pinned sources show what changed upstream, with a diff,
   and move only when you say so.
@@ -71,9 +66,9 @@ It does three jobs:
   the same thing.
 - **No MCP server management** in the first version (see
   [Open questions](#open-questions)), beyond the servers a deployed plugin
-  carries *(P0001)*.
+  carries.
 - **Not a plugin translator.** tack installs the same plugin directory in
-  every agent it targets; each agent loads the parts it supports *(P0001)*.
+  every agent it targets; each agent loads the parts it supports.
 - **No Windows support.** Deployment is symlinks.
 
 ## Principles
@@ -101,11 +96,11 @@ It does three jobs:
 | Term | Meaning |
 |---|---|
 | **Harness** | A coding agent tack deploys to. Built in: `claude-code`, `codex`. Each has a user skills directory, a project skills directory, a user instructions file, and hook files. |
-| **Source** | Where skills (and plugins, *P0001*) come from: a `path` (a local checkout, linked in place) or a `git` repository (cloned by tack, pinned to a commit). |
+| **Source** | Where skills (and plugins) come from: a `path` (a local checkout, linked in place) or a `git` repository (cloned by tack, pinned to a commit). |
 | **Skill** | A directory containing `SKILL.md`, found inside a source's skills directory (`skills/` by default). Its directory name is its name. |
 | **Deployment** | A symlink `<harness skills dir>/<name> → <skill directory>`. |
-| **Plugin** *(P0001)* | A bundle an agent installs as one unit (skills, commands, agents, hooks, MCP servers…), listed in a source's *catalog*: its marketplace file. Its name is its catalog entry's name. |
-| **tack's marketplace** *(P0001)* | The local marketplace, named `tack`, that holds a copy of every selected plugin and is registered with each agent that takes plugins; a deployed plugin is installed from it as `<name>@tack`. |
+| **Plugin** | A bundle an agent installs as one unit (skills, commands, agents, hooks, MCP servers…), listed in a source's *catalog*: its marketplace file. Its name is its catalog entry's name. |
+| **tack's marketplace** | The local marketplace, named `tack`, that holds a copy of every selected plugin and is registered with each agent that takes plugins; a deployed plugin is installed from it as `<name>@tack`. |
 | **Manifest** | `tack.toml`: the sources and which of their skills (and plugins) go to which harnesses. Hand-edited or changed by `tack add`/`remove`. |
 | **Lockfile** | `tack.lock`: the commit each git source is pinned to. Written only by tack. |
 | **Project** | A git repository under one of the configured project roots, audited by `doctor`. |
@@ -119,8 +114,8 @@ tack follows the XDG base directory spec, with the usual fallbacks.
 | Manifest | `$XDG_CONFIG_HOME/tack/tack.toml` (`~/.config/tack/tack.toml`) | `TACK_CONFIG` env or `--config` (a directory) |
 | Lockfile | beside the manifest: `~/.config/tack/tack.lock` | follows the manifest |
 | Git source checkouts | `$XDG_DATA_HOME/tack/sources/<source>/` (`~/.local/share/tack/…`) | `TACK_DATA` |
-| tack's marketplace *(P0001)* | `$XDG_DATA_HOME/tack/marketplace/` | `TACK_DATA` |
-| Plugins from other repositories *(P0001)* | `$XDG_DATA_HOME/tack/plugins/<source>/<plugin>/` | `TACK_DATA` |
+| tack's marketplace | `$XDG_DATA_HOME/tack/marketplace/` | `TACK_DATA` |
+| Plugins from other repositories | `$XDG_DATA_HOME/tack/plugins/<source>/<plugin>/` | `TACK_DATA` |
 | Ownership record | `$XDG_STATE_HOME/tack/state.json` (`~/.local/state/tack/…`) | `TACK_STATE` |
 
 Checkouts live under *data*, not *cache*: deployed links point into them, so
@@ -203,8 +198,8 @@ Paths expand `~`, and a relative path is relative to the manifest's directory.
 | `git` | git | — | A clone URL. |
 | `ref` | git | the remote's default branch | The branch or tag `update` follows. |
 | `subdir` | all | `skills` | Where the skill directories are, relative to the source root. |
-| `skills` | all | `"*"` | Which skills to deploy: `"*"`, or a list. A list entry is a name, or `{ name = "…", harnesses = ["claude-code"] }` to limit that skill. A source with `skills = []` needs no skills directory *(P0001)*: it is missing (a `status` state, a `doctor` finding, a source `sync` holds) only when its root isn't there. |
-| `plugins` *(P0001)* | all | `[]` (none) | Which plugins in the source's catalog to deploy: `"*"`, or a list shaped like `skills`. See [Plugins](#plugins) (DEC-3). |
+| `skills` | all | `"*"` | Which skills to deploy: `"*"`, or a list. A list entry is a name, or `{ name = "…", harnesses = ["claude-code"] }` to limit that skill. A source with `skills = []` needs no skills directory: it is missing (a `status` state, a `doctor` finding, a source `sync` holds) only when its root isn't there. |
+| `plugins` | all | `[]` (none) | Which plugins in the source's catalog to deploy: `"*"`, or a list shaped like `skills`. See [Plugins](#plugins) (DEC-3). |
 | `harnesses` | all | every harness | Limit the whole source. |
 | `autocommit` | path | `false` | Commit pending edits to this source's skills when tack runs. |
 | `autopush` | path | `false` | Push auto-commits. Needs `autocommit`. |
@@ -224,7 +219,7 @@ table with all of them defines another agent.
 | `project_hooks` | `[".claude/settings.json"]` | `[".codex/hooks.json", ".codex/config.toml"]` |
 | `imports` | `true` | `false` |
 | `ignore` | `["synced"]` + any dot-entry | any dot-entry |
-| `ignore_marketplaces` *(P0001)* | `["builtin", "inline", "skills-dir", "synced"]` | `["openai-bundled", "openai-curated-remote", "openai-primary-runtime"]` |
+| `ignore_marketplaces` | `["builtin", "inline", "skills-dir", "synced"]` | `["openai-bundled", "openai-curated-remote", "openai-primary-runtime"]` |
 
 `hooks` and `project_hooks` list every file the harness reads hooks from (a
 single string is accepted); a `.json` file keeps them under a top-level
@@ -235,7 +230,7 @@ whether the harness follows `@path` imports in its instruction files.
 touches them and `doctor` does not report them as unmanaged. For a built-in
 harness it adds to the built-in list rather than replacing it.
 
-*(P0001)* `ignore_marketplaces` names marketplaces whose plugins belong to the
+`ignore_marketplaces` names marketplaces whose plugins belong to the
 agent itself or to someone else (the built-in ones are the agents' own:
 claude.ai's synced plugins, Codex's bundled ones); `doctor` doesn't report
 their plugins as unmanaged. It is a list of marketplace names, and adds to
@@ -250,7 +245,7 @@ configuration error.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `group_by_source` | `true` | Whether the Skills tab (and the Plugins tab, *P0001*) opens grouped by source (see [The TUI](#the-tui)). |
+| `group_by_source` | `true` | Whether the Skills tab (and the Plugins tab) opens grouped by source (see [The TUI](#the-tui)). |
 
 ### Writing the manifest
 
@@ -296,7 +291,7 @@ locked = 2026-09-27T12:00:00Z
 - `sync` never drops an entry, so a source commented out and later restored
   comes back at the same pin; `tack remove` drops it.
 - `path` sources are not locked: they are whatever is checked out.
-- *(P0001)* Plugins add no entries. A plugin inside a source is pinned with
+- Plugins add no entries. A plugin inside a source is pinned with
   it, and one from another repository is pinned by the commit its catalog
   names at the source's pin (DEC-4).
 
@@ -319,7 +314,7 @@ partial failure, `2` usage or configuration error.
 | `tack status` | What is deployed where, each source's pin or checkout state, and pending auto-commits (uncommitted and unpushed skill edits in `path` sources). Read-only; exits `0`. |
 | `tack outdated [SOURCE…] [--diff]` | Fetch each git source's `ref` and show how far its pin is behind: commits, and which *selected* skills changed. `--diff` prints the diff limited to those skills. |
 | `tack update [SOURCE…] [--dry-run] [--no-commit]` | Move pins to the current tip of `ref`, write the lock, then `sync`. |
-| `tack add GIT_URL\|PATH [--name N] [--skill S…] [--plugin P…] [--ref R] [--subdir D] [--dry-run] [--no-commit]` | Add a source to the manifest (then `sync`). `--plugin` is *P0001*. |
+| `tack add GIT_URL\|PATH [--name N] [--skill S…] [--plugin P…] [--ref R] [--subdir D] [--dry-run] [--no-commit]` | Add a source to the manifest (then `sync`). |
 | `tack remove SOURCE [--dry-run] [--no-commit]` | Remove a source from the manifest and its links (then `sync`). |
 | `tack doctor [PATH…] [--global-only\|--projects-only]` | Audit; see [`doctor` checks](#doctor-checks). Read-only. |
 | `tack scaffold FIX PATH [--from HARNESS] [--dry-run] [--no-commit]` | Apply one `doctor` fix to one project; see [Scaffolding](#scaffolding). |
@@ -328,7 +323,7 @@ partial failure, `2` usage or configuration error.
 `sync`, `update`, `add`, `remove` and `scaffold` also commit pending edits to
 your own skills; see [Auto-commit](#auto-commit).
 
-*(P0001)* `sync` (and so `update`, `add` and `remove`) deploys plugins as
+`sync` (and so `update`, `add` and `remove`) deploys plugins as
 well as skills, `status` reports them, and `outdated` tracks them; see
 [Plugins](#plugins).
 
@@ -371,7 +366,7 @@ written as an absolute path or with `~`. The name defaults to the
 repository's or directory's name without `.git`, except that a repository
 named `skills` takes its owner's name (`cloudflare/skills` becomes
 `cloudflare`). `--skill` limits the source to those skills (`"*"` otherwise);
-`--subdir` sets where its skills are. *(P0001)* `--plugin` selects plugins
+`--subdir` sets where its skills are. `--plugin` selects plugins
 from the source's catalog (`plugins` stays `[]` otherwise); given without
 `--skill`, it writes `skills = []`, so the source deploys only the plugins.
 Both take names, each written once in the order given, `plugins` after
@@ -383,7 +378,7 @@ clones it, then refuses (exit `2`, nothing written, a fresh clone removed) a
 name already in the manifest, a source already in it (the same `path`, or the
 same `git` and `ref`), a source with no skills in its `subdir`, a `--skill`
 the source doesn't have, and a skill another source already deploys to the
-same harness. *(P0001)* It refuses the same way a `--plugin` the catalog
+same harness. It refuses the same way a `--plugin` the catalog
 doesn't have (a source with no catalog has none, and one with a broken
 catalog none either: the refusal gives the catalog's error), one tack can't
 deploy (see [Catalogs](#catalogs)) or whose files can't be read, so that its
@@ -403,7 +398,7 @@ tack's checkout of an earlier source by that name is still there (one
 `remove` left for its local changes): only the new pin says what they are.
 
 **`remove`** cuts the source's table, drops its lock entry, syncs (which
-removes its links, and uninstalls its plugins *(P0001)*), and then deletes
+removes its links, and uninstalls its plugins), and then deletes
 tack's checkout of it and its plugin clones, unless the
 checkout has local changes: those are reported and the checkout is left where
 it is. A name only the lockfile has (a source commented out of the manifest)
@@ -440,7 +435,7 @@ rather than removed.
 
 ## Plugins
 
-*(P0001)* A **plugin** is a bundle an agent installs as one unit: skills,
+A **plugin** is a bundle an agent installs as one unit: skills,
 commands, agents, hooks, MCP servers and more. Claude Code and Codex both
 install plugins from *marketplaces*, directories whose catalog lists them, and
 each keeps what it installed in files it rewrites itself
@@ -940,17 +935,17 @@ read wrong), **warn** (will drift or break later), **info**.
 |---|---|---|
 | `unmanaged-skill` | warn | An entry in a harness skills directory that tack doesn't own and isn't in `ignore` — e.g. installed by hand or by another manager. |
 | `dangling-link` | error | A skill link whose target is gone. |
-| `not-synced` | warn | A selected skill missing from a harness it targets, or a link pointing somewhere other than the manifest says — including a tack link to a skill no longer selected, a listed skill its source doesn't have, and a source that isn't there (a missing `path`, a git source not yet checked out). *(P0001)* Also a selected plugin that isn't `installed` in a harness it targets (any other [state](#plugin-states)), a tack plugin no longer selected, a listed or selected plugin its source's catalog doesn't have or tack can't deploy, and whatever else `sync` would report about plugins (DEC-7, DEC-19). |
-| `name-collision` | error | Two sources select the same skill name for the same harness, or *(P0001)* the same plugin name for any harnesses (DEC-11). |
-| `unmanaged-plugin` *(P0001)* | info | A plugin installed in a harness at user scope from a marketplace other than tack's and not in `ignore_marketplaces`: installed by hand or by another manager, so nothing keeps it the same across agents and machines. Selecting it from its source does. |
-| `duplicate-plugin` *(P0001)* | warn | A plugin tack deploys to a harness is also installed there, under the same name, from another marketplace: the agent loads both. |
+| `not-synced` | warn | A selected skill missing from a harness it targets, or a link pointing somewhere other than the manifest says — including a tack link to a skill no longer selected, a listed skill its source doesn't have, and a source that isn't there (a missing `path`, a git source not yet checked out). Also a selected plugin that isn't `installed` in a harness it targets (any other [state](#plugin-states)), a tack plugin no longer selected, a listed or selected plugin its source's catalog doesn't have or tack can't deploy, and whatever else `sync` would report about plugins (DEC-7, DEC-19). |
+| `name-collision` | error | Two sources select the same skill name for the same harness, or the same plugin name for any harnesses (DEC-11). |
+| `unmanaged-plugin` | info | A plugin installed in a harness at user scope from a marketplace other than tack's and not in `ignore_marketplaces`: installed by hand or by another manager, so nothing keeps it the same across agents and machines. Selecting it from its source does. |
+| `duplicate-plugin` | warn | A plugin tack deploys to a harness is also installed there, under the same name, from another marketplace: the agent loads both. |
 | `bad-skill` | warn | `SKILL.md` missing, without frontmatter, without a `description`, or with a `name` that differs from its directory. |
 | `dirty-source` | info | A `path` source has uncommitted or unpushed skill edits. |
 | `instructions-split` | warn | The harnesses' user instruction files don't resolve to the same content: neither is an import of or symlink to the other, and their text differs. |
 | `hook-one-harness` | info | A user-level hook registered for one harness only. Installer-owned hooks are common here, so this is informational. |
 | `unreadable-file` | error | A hook file (user or project) that isn't valid JSON or TOML: the harness can't read it either. |
 
-*(P0001)* The plugin checks read each agent's plugins through its CLI
+The plugin checks read each agent's plugins through its CLI
 (`claude plugin list --json`, `codex plugin list --json`, and their
 `marketplace list`), as `sync` runs it: once per run, in each built-in
 harness whose CLI is on `PATH`, whether or not the manifest selects plugins
@@ -1136,14 +1131,14 @@ as before, so nothing waits on a screen no one sees. The app takes its
 manifest from `TACK_CONFIG` or the default location; the header shows tack's
 version and that manifest's path.
 
-Three tabs (four with Plugins, *P0001*), each a list with a detail pane for
+Three tabs (four with Plugins), each a list with a detail pane for
 the selected row:
 
 - **Skills** — each selected skill, its source, and its state in each
   harness (linked, missing, stale, conflict, collision), grouped by source
   and sortable by any column (below). The detail shows where it comes from
   and its `SKILL.md` description, or what is wrong with it.
-- **Plugins** *(P0001)* — each selected plugin, its source, and its
+- **Plugins** — each selected plugin, its source, and its
   [state](#plugin-states) in each harness that takes plugins, grouped and
   sorted as Skills is (a harness column puts conflict and collision first,
   then stale, disabled, unavailable, missing, installed, and plugins that
@@ -1153,7 +1148,7 @@ the selected row:
 - **Sources** — each source's state: how far behind upstream a git source
   is, or that it isn't pinned or checked out; a path source's uncommitted and
   unpushed skill edits. The detail shows the pin, the commits since, the
-  changed skills (and plugins, *P0001*), and their diff. *(P0001)* It names
+  changed skills (and plugins), and their diff. It names
   the plugins the source selects after its skills, when it selects any, and
   gives its changed plugins, its `plugins_error` and "no selected skill or
   plugin changed" as `outdated`'s text does.
@@ -1162,13 +1157,13 @@ the selected row:
   then info.
 
 It opens on Skills and stays there until you pick another tab: it never
-moves you, even when Doctor or Sources has something to show. *(P0001)* The
+moves you, even when Doctor or Sources has something to show. The
 tabs run Skills, Plugins, Sources, Doctor, and `1` to `4` select them in that
 order. The Plugins tab's grouping and sort are its own, held like Skills'.
 The audit and
 the upstream fetch (`outdated --diff`) run in the background, so the app
 opens at once and fills each tab as they finish. `r` runs them again.
-*(P0001)* Each run lists each agent's plugins once (its two `list`
+Each run lists each agent's plugins once (its two `list`
 commands), for the Plugins tab and the audit together.
 
 **Sorting.** Click a column's header to sort the Skills table by it, and
@@ -1193,7 +1188,7 @@ detail, as on Sources. `g` turns grouping off or on until the app closes;
 `[tui] group_by_source` (default `true`) sets how the app opens, and
 Settings changes it.
 
-**The Plugins tab** *(P0001)* has a column for the plugin, one for its
+**The Plugins tab** has a column for the plugin, one for its
 source while ungrouped, and one for each harness that takes plugins, in the
 order the Skills tab shows them. It sorts, groups and folds as Skills does,
 by the plugin state order above, with a sort, a grouping and folds of its
@@ -1233,7 +1228,7 @@ is the first string `description` among its `plugin.json` files, read as its
   `autocommit` and `autopush` (path; `autopush` needs `autocommit`).
 
 Adding and removing sources stays on the Sources tab. Per-skill selections
-(`skills`), plugin selections (`plugins`, *P0001*) and `ignore_marketplaces`,
+(`skills`), plugin selections (`plugins`) and `ignore_marketplaces`,
 harness paths and new harnesses are edited by hand, and the screen says so.
 Saving (`ctrl+s`) goes through the same preview as any other
 action: its dry run shows the manifest's diff, and nothing is written until
@@ -1262,7 +1257,7 @@ tack ships a skill of its own, `skills/tack/SKILL.md`, that teaches coding
 agents to run tack for the user: the `--json` CLI rather than the TUI, a dry
 run shown before every change, the manifest's fields, auto-commit and
 `--no-commit`, and `doctor`'s findings and their `scaffold` fixes (and
-plugins, *P0001*). It is generic, like tack, and versions with the code.
+plugins). It is generic, like tack, and versions with the code.
 
 The repository is itself a source, so tack deploys the skill like any other:
 `tack add https://github.com/chocs-cat/tack.git` adds a source named `tack`
@@ -1347,7 +1342,7 @@ changes one means a check changes.
   shell tool matches `Bash` in both harnesses, with the command in
   `tool_input.command`.
 
-*(P0001)* Plugin facts, verified 2026-10-05 against Claude Code 2.1.289 and
+Plugin facts, verified 2026-10-05 against Claude Code 2.1.289 and
 codex-cli 0.157.1, in a scratch `HOME`, and their documentation. Re-verified
 2026-10-09 against Claude Code 2.1.289 and codex-cli 0.160.1 by
 `tools/agent_facts.py` and by `tack sync`, `update` and `remove` in a
@@ -1407,7 +1402,7 @@ skills, and symlinked plugin directories:
   Claude Code's `plugin validate` says it dereferences only symlinks that stay
   inside the marketplace; tack doesn't rely on it (DEC-2).
 
-*(P0001)* Their output, verified 2026-10-05 against the same versions, in a
+Their output, verified 2026-10-05 against the same versions, in a
 scratch `HOME`, and re-verified 2026-10-09 against Claude Code 2.1.289 and
 codex-cli 0.160.1 as above, all but the stdin wait:
 
@@ -1470,7 +1465,7 @@ codex-cli 0.160.1 as above, all but the stdin wait:
 - CLI with `argparse`, `--json` on every command.
 - Checks: `pytest`, `ruff check`, `ruff format --check`, `ty check`.
 - Layout: `src/tack/` with `config.py` (manifest, lock, harnesses),
-  `sources.py` (checkout, pin, fetch; *(P0001)* plugins' clones too),
+  `sources.py` (checkout, pin, fetch; plugins' clones too),
   `deploy.py` (links, ownership),
   one module per command for `sync`, `status`, `outdated` and `update`,
   `edit.py` (`add`, `remove` and the manifest's text edits),
@@ -1478,13 +1473,13 @@ codex-cli 0.160.1 as above, all but the stdin wait:
   `scaffold/` (one module per fix), `cli.py`, and `tui/` (the app, its
   views and its dialogs, over the same functions the CLI calls). Outside
   the package, `scripts/formula.py` writes the Homebrew formula, and
-  `skills/tack/` is the agent skill. *(P0001)* `catalog.py` reads catalogs,
+  `skills/tack/` is the agent skill. `catalog.py` reads catalogs,
   `plugins.py` plans plugins and keeps tack's marketplace, and `agents.py`
   runs the agents' plugin CLIs; `sync`, `status`, `doctor` and the TUI go
   through them.
 - Tests build throwaway harness directories, projects and git remotes in a
   temporary directory; nothing in the test suite touches the real home
-  directory. The TUI is driven through Textual's test pilot. *(P0001)* No
+  directory. The TUI is driven through Textual's test pilot. No
   test runs a real agent: the suite puts stand-in `claude` and `codex`
   executables first on `PATH`, which answer from files in the temporary
   directory, behave as [Harness facts](#harness-facts-tack-relies-on)
@@ -1557,7 +1552,7 @@ entries under `private_dot_claude/skills/` and `dot_agents/skills/`, and
   `~/.claude.json`, which running sessions rewrite wholesale, so tack would
   have to go through `claude mcp add/remove` rather than edit files; Codex
   keeps them in `config.toml`. Worth doing only with a way to express one
-  server for both. *(P0001)* A plugin carrying a `.mcp.json` is one such
+  server for both. A plugin carrying a `.mcp.json` is one such
   way: deploying it gives both agents the server.
 - **Plugins one agent can't fully load.** Each agent loads only the parts of
   a plugin it supports (Codex's documentation lists skills, MCP servers,
