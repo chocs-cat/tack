@@ -1445,6 +1445,19 @@ codex-cli 0.160.1 as above, all but the stdin wait:
   and writes `Error: <message>` to stderr, as `add` of a plugin the
   marketplace lacks (or from a marketplace that isn't registered) and
   `marketplace remove` of one that isn't registered do.
+- **The agents' own marketplaces**, the built-in `ignore_marketplaces`,
+  seen 2026-10-09 in `plugin list --json` and `plugin marketplace list
+  --json` on a signed-in setup, read only. Claude Code 2.1.289 lists
+  claude.ai's synced plugins from `synced`, with scope `synced`; `builtin`,
+  `inline` and `skills-dir` weren't seen, that setup having no such plugin
+  (`claude plugin init`'s help names a plugin it scaffolds
+  `<name>@skills-dir`). codex-cli 0.160.1 lists its own plugins from
+  `openai-bundled`, `openai-curated-remote` and `openai-primary-runtime`,
+  all three seen; `marketplace list` shows `openai-bundled` and
+  `openai-primary-runtime` as `local` and leaves `openai-curated-remote`
+  out. A marketplace the user added (`claude-plugins-official` among them)
+  is listed under its own name in both. A fresh scratch `HOME` has none of
+  the agents' own, so `tools/agent_facts.py` can't check them.
 
 ## Implementation
 
