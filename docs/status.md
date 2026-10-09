@@ -32,9 +32,9 @@ Last review: 2026-10-09 (P0001-C11).
 ## In flight
 
 - **Chunk:** P0001-C12
-- **State:** ready for an executor
-- **Branch:** —
-- **Pull request:** —
+- **State:** executing
+- **Branch:** `chunk/p0001-c12`
+- **Pull request:** pending
 - **Units committed:** —
 
 (Fixed shape. `State` ∈ `ready for an executor` · `executing` ·
