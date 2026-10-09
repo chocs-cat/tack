@@ -174,3 +174,24 @@ gives a source finding with no harness, which the test's `_covered`
 couldn't place; the executor made it skip harness-less findings and said
 so. The sweep checked the brief's other "unchanged" tests: none met a
 unit's change.
+
+### §8 A brief retires a name or mark in the doc that defines it, and nowhere else
+
+The brief removes or renames something a doc defines (a mark, a section, a
+term, a state) and scopes the change to that doc, often with "nothing else
+changes". Other files cite it, in docstrings, comments, tools and other
+docs, and keep pointing at what is gone: nothing fails, and the next reader
+follows a reference to nothing. Before committing such a brief, `git grep`
+the whole repository for the name (not just the doc's path) and give each
+hit a unit or an issue; a brief that forbids other edits in the doc should
+also say what to do with a sentence the removal leaves wrong.
+
+*Provenance:* P0001-C13-c. The brief removed design.md's *(P0001)* marks
+and allowed no other change there. Four docstrings in `src/` and `tests/`
+and `tools/agent_facts.py` still cited "the *(P0001)* paragraph" or
+"parts" (#60; the tool fixed in the review), and *The TUI*'s "Three tabs
+(four with Plugins)", a qualifier only the mark had excused (the Plugins
+tab is always there), could only be reported.
+The sweep found the status file's two mentions too, rewritten in the same
+review; the project record's *Authority changes* row describes the note
+as it was, and stays.

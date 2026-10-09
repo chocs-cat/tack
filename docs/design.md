@@ -1131,8 +1131,7 @@ as before, so nothing waits on a screen no one sees. The app takes its
 manifest from `TACK_CONFIG` or the default location; the header shows tack's
 version and that manifest's path.
 
-Three tabs (four with Plugins), each a list with a detail pane for
-the selected row:
+Four tabs, each a list with a detail pane for the selected row:
 
 - **Skills** — each selected skill, its source, and its state in each
   harness (linked, missing, stale, conflict, collision), grouped by source

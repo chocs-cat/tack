@@ -1,6 +1,6 @@
 """Check design.md's *Harness facts* about the agents' plugin CLIs against real ones.
 
-What it verifies: the *(P0001)* plugin facts tack's `agents.py` and the test
+What it verifies: the plugin facts tack's `agents.py` and the test
 suite's stand-in CLIs are built on. In a scratch HOME it builds a two-plugin
 local marketplace named `tack`, then drives `claude plugin` and `codex plugin`
 through the life cycle `sync` uses (register twice, install, reinstall,

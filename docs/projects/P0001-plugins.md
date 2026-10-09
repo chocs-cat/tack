@@ -134,6 +134,7 @@ skills and gain plugin cases (DEC-7).
 | design.md, *Catalogs*, *Plugins from other repositories*, *Plugin states*, *Adding and removing sources*, *Implementation*; decisions.md (P0001-C10 cut) | A catalog `url` is a git URL as `add` reads one, and a `git-subdir` `path` of `.` the whole repository (#29); a clone is the whole repository, kept by the checkouts' code: its five states, cloning, fetching (by id as a last resort), refusals and their messages, `origin` following the entry, the dry run, no deletion by `sync`, `remove` deleting clones one by one; a plugin's files read only from an `ok` clone; `add` checks such a plugin by its entry (DEC-21). | What D8's executors would otherwise invent; the section was one paragraph. |
 | design.md, *The lockfile*, *Deploying*, *Plugin states*, *Plugins from other repositories*, *`doctor` checks*, *The TUI*; decisions.md (P0001-C10 review, P0001-C11 cut) | A checkout or clone `sync` makes and can't bring to its commit is deleted (DEC-22, #54); which clones `sync` brings, when, in what order, and its problems' source and path; a copy taken from a clone; a clone that fails among `sync`'s problems and the kept plugins; `version` from an `ok` clone; `doctor`'s source finding for a clone `in the way` or with `local changes`, state findings for one not `ok`, and no leftover for it; the TUI's problems; `add` ignoring a clone already there. The "until D8" paragraph goes. | What P0001-C11's executor would otherwise invent; the passages the C10 cut said this cut rewrites. |
 | design.md, *Plugin states*, *The TUI*, *Tracking plugins upstream*; decisions.md (P0001-C11 review, P0001-C12 cut) | `status --json`'s `repository` (URL, path, commit, clone, the clone's state as the plan read it); the Plugins tab's detail lines for it; `outdated --diff` between a plugin's two commits, fetched into its clone, never creating or moving one, with a line saying why when there is none (DEC-23). | What P0001-C12's executor would otherwise invent; C10's cut left these "pinned at their own cut". |
+| design.md, header, *Harness facts tack relies on*, *The TUI* (P0001-C13 execution and review) | The *(P0001)* marks and the header note go; *Harness facts* re-verified against Claude Code 2.1.289 and codex-cli 0.160.1, with Claude Code's `installPath` copy and the agents' own marketplaces seen (#42); "Four tabs". | §6's *Docs* and *A real setup* criteria; "four with Plugins" was only the mark's qualifier. |
 
 ## 5. Delivery plan
 
@@ -332,6 +333,10 @@ Notes from the P0001-C13 cut: C12 was accepted, and D8 is done. C13
 gathers §6's evidence; what remains after it is `/relay-project`'s
 closeout.
 
+Notes from the P0001-C13 review: C13 was accepted, with §6's evidence in
+its report. What remains is `/relay-project`'s completion audit and
+closeout; #60 (docstrings citing the removed marks) is open.
+
 **Done when:** tests with local git remotes show an entry with a commit
 deployed at that commit, a `git-subdir` entry deploying only its path, an
 `update` that changes the commit fetching it and reinstalling in Codex, a
@@ -376,8 +381,8 @@ the diff between the two commits.
 | [P0001-C09](../chunks/P0001-C09.md) | D7 (the TUI's Plugins tab, its details, one read per refresh); #49 (C08's follow-up), #43: D7 done | accepted with follow-ups (review-checklist §3, a Plugins-tab test, #51 as C10-a; #52) | 2026-10-08 | #50, `d0d10e6` |
 | [P0001-C10](../chunks/P0001-C10.md) | D8 (#29; plugins' clones and `remove` deleting them: unwired groundwork); C09 review follow-ups (#51) | accepted with follow-ups (#54 as C11-a) | 2026-10-08 | #53, `8ef8036` |
 | [P0001-C11](../chunks/P0001-C11.md) | D8 (the clones wired into `sync`, `status`, `doctor`, the TUI and `add`); C10 review follow-up (#54) | accepted with follow-ups (#56) | 2026-10-09 | #55, `c954779` |
-| [P0001-C12](../chunks/P0001-C12.md) | D8 (`status --json` and the TUI naming a plugin's repository, commit and clone; `outdated --diff` between commits): D8 done | accepted | 2026-10-09 | #58 |
-| [P0001-C13](../chunks/P0001-C13.md) | §6's completion evidence: the real agents, a real setup (#42), compatibility, design.md's marks removed | ready for an executor | — | — |
+| [P0001-C12](../chunks/P0001-C12.md) | D8 (`status --json` and the TUI naming a plugin's repository, commit and clone; `outdated --diff` between commits): D8 done | accepted | 2026-10-09 | #58, `1ed0853` |
+| [P0001-C13](../chunks/P0001-C13.md) | §6's completion evidence: the real agents, a real setup (#42), compatibility, design.md's marks removed | accepted with follow-ups (#60; brief-checklist §8) | 2026-10-09 | #59 |
 
 ## 8. Closeout
 
