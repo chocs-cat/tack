@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.0](https://github.com/chocs-cat/tack/compare/v0.3.0...v0.4.0) (2026-10-09)
+
+
+### Features
+
+* **cli:** `tack add --plugin` selects plugins (P0001-C08) ([#48](https://github.com/chocs-cat/tack/issues/48)) ([d51ff10](https://github.com/chocs-cat/tack/commit/d51ff10ff3d93bbeebe0ec53d73d001aa02ad7e3)), closes [#46](https://github.com/chocs-cat/tack/issues/46) [#47](https://github.com/chocs-cat/tack/issues/47)
+* deploy plugins from other repositories (P0001-C11) ([#55](https://github.com/chocs-cat/tack/issues/55)) ([c954779](https://github.com/chocs-cat/tack/commit/c954779456a2c72890baaa026ccb6ce481d11a2b)), closes [#54](https://github.com/chocs-cat/tack/issues/54)
+* doctor audits plugins (P0001-C06) ([#41](https://github.com/chocs-cat/tack/issues/41)) ([32ca329](https://github.com/chocs-cat/tack/commit/32ca329e0f44569b9d58e9670b7f8812b820a937))
+* outdated tracks plugins (P0001-C07) ([#45](https://github.com/chocs-cat/tack/issues/45)) ([5998bac](https://github.com/chocs-cat/tack/commit/5998bac6c9eac51f29cd1e6ada3abdb58429def3)), closes [#44](https://github.com/chocs-cat/tack/issues/44)
+* show and diff plugins from other repositories (P0001-C12) ([#58](https://github.com/chocs-cat/tack/issues/58)) ([1ed0853](https://github.com/chocs-cat/tack/commit/1ed0853458b4706f79e6882ca12b882367d87595))
+* status shows plugin states (P0001-C05) ([#37](https://github.com/chocs-cat/tack/issues/37)) ([0b78ae1](https://github.com/chocs-cat/tack/commit/0b78ae13d8350adbb84239a786478d1bd04acf09)), closes [#35](https://github.com/chocs-cat/tack/issues/35)
+* sync deploys plugins to Claude Code and Codex (P0001-C04) ([#34](https://github.com/chocs-cat/tack/issues/34)) ([5f4cd60](https://github.com/chocs-cat/tack/commit/5f4cd60b0d68ec80d3be92a4840538e00a8ea83d))
+* **tui:** a Plugins tab (P0001-C09) ([#50](https://github.com/chocs-cat/tack/issues/50)) ([d0d10e6](https://github.com/chocs-cat/tack/commit/d0d10e63092c68c17f35f3a664522afc693d7b3f)), closes [#43](https://github.com/chocs-cat/tack/issues/43) [#49](https://github.com/chocs-cat/tack/issues/49)
+
 ## [0.3.0](https://github.com/chocs-cat/tack/compare/v0.2.0...v0.3.0) (2026-09-28)
 
 
