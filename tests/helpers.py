@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import subprocess
 from collections.abc import Iterable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -135,3 +136,47 @@ def configure(home: Path, *sources: str, manifest: str = "", **selections: Any) 
         table += f"plugins = {selection}\n"
         tables.append(table)
     return load(home, manifest + "\n" + "\n".join(tables))
+
+
+@dataclass(frozen=True)
+class Elsewhere:
+    """A plugin's other repository: a `file://` remote with two commits,
+    the plugin at `path` (its root when None) at version 1.0, then 2.0."""
+
+    repo: Path
+    name: str
+    path: str | None
+    older: str
+    newer: str
+
+    def entry(self, commit: str | None = None) -> dict[str, Any]:
+        """The plugin's catalog entry, at `commit` (the older one by default):
+        `url` for the whole repository, `git-subdir` for its `path`."""
+        source: dict[str, Any] = {
+            "source": "url" if self.path is None else "git-subdir",
+            "url": self.repo.as_uri(),
+            "sha": commit or self.older,
+        }
+        if self.path is not None:
+            source["path"] = self.path
+        return {"name": self.name, "source": source}
+
+
+def elsewhere(root: Path, name: str, path: str | None = None) -> Elsewhere:
+    """An `Elsewhere` at `root`: the plugin's `plugin.json` and a README in
+    it, and, beside a `path`, a file that isn't the plugin's."""
+    at = "" if path is None else path + "/"
+
+    def files(version: str) -> dict[str, str]:
+        out = {
+            f"{at}.claude-plugin/plugin.json": json.dumps({"name": name, "version": version}),
+            f"{at}README.md": f"{name} {version}\n",
+        }
+        if path is not None:
+            out["OTHER.md"] = f"not the plugin's {version}\n"
+        return out
+
+    r = repo(root, files("1.0"))
+    older = git(r, "rev-parse", "HEAD").strip()
+    newer = commit(r, files("2.0"))
+    return Elsewhere(r, name, path, older, newer)

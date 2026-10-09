@@ -20,14 +20,27 @@ from textual.widgets import DataTable, Input, Static, TabbedContent
 from textual.widgets._header import HeaderTitle
 from textual.widgets._tabbed_content import ContentTab, ContentTabs
 
-from tack import __version__, cli, config, edit, outdated, status, sync
+from tack import __version__, cli, config, edit, outdated, sources, status, sync
+from tack.catalog import InRepository
+from tack.sources import Clone
 from tack.status import SourceStatus
 from tack.text import tilde
 from tack.tui import render
 from tack.tui.app import FixedHeader, TackApp
 from tack.tui.dialogs import ActionScreen, AddScreen
 from tests import standin
-from tests.helpers import commit, configure, load, market, repo, skill, skill_md, upstream, write
+from tests.helpers import (
+    commit,
+    configure,
+    elsewhere,
+    load,
+    market,
+    repo,
+    skill,
+    skill_md,
+    upstream,
+    write,
+)
 from tests.standin import Standins
 from tests.test_plugin_plan import PI
 from tests.test_status import BOTH, FIXTURES, NPM, WHEN, plugin_source, run_sync
@@ -645,18 +658,21 @@ def test_a_plugins_detail(home: Path, tmp_path: Path, standins: Standins) -> Non
     drive(scenario)
 
 
-ELSEWHERE = {"source": "github", "repo": "acme/r", "sha": "0" * 40}
-
-
-@pytest.mark.parametrize("plugin", ["u", "r", "gone", "a"])
+@pytest.mark.parametrize("plugin", ["u", "gone", "a", "r"])
 def test_a_plugins_detail_gives_the_problem_sync_reports(home: Path, plugin: str) -> None:
-    """One tack can't deploy, one from another repository, one whose
-    directory is gone, and a name two sources select: each from a `path`
-    source whose state is `ok`, with the message a `sync` dry run reports."""
-    entries = ({"name": "u", "source": NPM}, {"name": "r", "source": ELSEWHERE}, "gone")
+    """One tack can't deploy, one whose directory is gone, a name two
+    sources select, and one from another repository whose clone has local
+    changes: each from a `path` source whose state is `ok`, with the message
+    a `sync` dry run reports."""
+    r = elsewhere(home.parent / "r", "r")
+    entries = ({"name": "u", "source": NPM}, "gone", r.entry())
     plugin_source(home, "one", "a", entries=entries)
     plugin_source(home, "two", "a")
     cfg = configure(home, "one", "two", one=[plugin], two=["a"] if plugin == "a" else [])
+    if plugin == "r":
+        clone = Clone.of(cfg.paths, "one", "r", InRepository(r.repo.as_uri(), None, r.older))
+        sources.sync_clone(clone)
+        write(clone.path / "README.md", "edited\n")
     (problem,) = sync.sync(cfg, dry_run=True, now=WHEN).problems
 
     async def scenario(app: TackApp, pilot: Pilot[None]) -> None:

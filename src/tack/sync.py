@@ -320,12 +320,13 @@ class _Plugins:
     each harness that takes plugins, run through its agent's CLI (agents.py)
     and recorded in `record.plugins`.
 
-    *Wanted* plugins are the plan's plugins in the source, one per name
-    (DEC-11). *Kept* ones are left exactly as they are, copy, catalog entry,
-    installs and record (DEC-12): a held source's plugins, a collided name,
-    a plugin from another repository (D8), and a plugin whose copy failed.
-    A dry run runs only the `list` commands and lists every other step as if
-    it had succeeded."""
+    *Wanted* plugins are the plan's plugins with files, one per name
+    (DEC-11): in the source, or in a clone `ok` once it has been brought to
+    its commit. *Kept* ones are left exactly as they are, copy, catalog
+    entry, installs and record (DEC-12): a held source's plugins, a collided
+    name, a plugin from another repository whose clone isn't `ok`, and a
+    plugin whose copy failed. A dry run runs only the `list` commands, brings
+    no clone, and lists every other step as if it had succeeded."""
 
     def __init__(
         self, cfg: Config, record: Record, result: Result, held: set[str], *, dry_run: bool
@@ -340,6 +341,7 @@ class _Plugins:
 
     def run(self) -> None:
         self._plan_problems()
+        self._clones()
         exists = os.path.lexists(self.paths.marketplace_dir)
         involved = [
             h
@@ -381,6 +383,27 @@ class _Plugins:
                 if why := plugins.undeployable(sel.plugin):
                     message = f"plugin {sel.name!r} {why}"
                     self.result.problems.append(Problem("source", message, src, path=file))
+
+    def _clones(self) -> None:
+        """Bring the clone of each plugin `sync` would copy (a selected name no
+        other source selects, from a source it doesn't keep) to its commit, in
+        name order, then read the plan again: a plugin's files are its clone's
+        only while the clone is `ok` (design.md *Plugins from other
+        repositories*). A dry run lists the steps and brings nothing."""
+        moved = False
+        for name, sel in plugins.brought(self.plan, self.held).items():
+            assert sel.clone is not None
+            src, path = sel.source.name, sel.clone.path
+            steps, error = plugins.bring(sel, dry_run=self.dry_run)
+            if error is not None:
+                message = f"plugin {name!r}: {error}"
+                self.result.problems.append(Problem("source", message, src, path=path))
+                continue  # left as it was, or, freshly cloned, gone again (DEC-22)
+            for action, detail in steps:
+                self.result.changes.append(Change(action, detail, source=src, path=path))
+            moved = moved or bool(steps)
+        if moved and not self.dry_run:
+            self.plan = plugins.plan(self.cfg)
 
     def _marketplace(self, wanted: dict[str, plugins.Selected], kept: set[str]) -> dict[str, str]:
         """Bring tack's marketplace up to date; each wanted plugin's hash. A

@@ -1,14 +1,14 @@
 # Status
 
-Last updated 2026-10-08 by `relay-next`.
-Last review: 2026-10-08 (P0001-C10).
+Last updated 2026-10-09 by `relay-next`.
+Last review: 2026-10-09 (P0001-C11).
 
 ## Where this stands
 
 - The relay workflow was set up on 2026-10-05. Design phases 1–10 are done.
 - Project [P0001](projects/P0001-plugins.md), plugins for Claude Code and
   Codex ([#22](https://github.com/chocs-cat/tack/issues/22)), is active:
-  its design is in design.md (marked *(P0001)*) and DEC-1 – DEC-22.
+  its design is in design.md (marked *(P0001)*) and DEC-1 – DEC-23.
 - D1–D7 are done: P0001-C01 – C09 (#28, #30, #32, #34, #37, #41, #45,
   #48, #50), accepted 2026-10-05 to 2026-10-08. `sync` deploys the
   manifest's `plugins`, `status` shows each one's state per harness,
@@ -19,16 +19,19 @@ Last review: 2026-10-08 (P0001-C10).
 - P0001-C10 (#53), accepted 2026-10-08: plugins' clones kept as checkouts
   are (DEC-21), unwired, and `remove` deleting them; #29's catalog URL
   fixes; #51.
-- P0001-C11, ready for an executor: #54 (DEC-22), then the clones wired
-  into `sync`, `status`, `doctor`, the TUI and `add`.
-- Still to come in D8: the repository and commit in `status --json` and
-  the TUI, and `outdated --diff` between commits. Then the project's
-  completion runs against the real agents (#42 among them).
-- **Do next:** `/relay-execute` to build P0001-C11.
+- P0001-C11 (#55), accepted 2026-10-09: #54 (DEC-22), and plugins from
+  other repositories cloned at the catalog's commit and deployed by `sync`,
+  with `status`, `doctor`, the TUI and `add` agreeing; #56 its follow-up.
+- P0001-C12, ready for an executor: the rest of D8, pinned at its cut
+  (DEC-23): `status --json` and the TUI naming a plugin's repository,
+  commit and clone, and `outdated --diff` between its commits.
+- Still to come: the project's completion, run against the real agents
+  (#42 among them), and design.md's *(P0001)* marks removed.
+- **Do next:** `/relay-execute` to build P0001-C12.
 
 ## In flight
 
-- **Chunk:** P0001-C11
+- **Chunk:** P0001-C12
 - **State:** ready for an executor
 - **Branch:** —
 - **Pull request:** —
@@ -63,4 +66,5 @@ One line per chunk: the decision-log IDs it added.
 - P0001-C08: its cut, none; its review, none.
 - P0001-C09: its cut, none; its review, none.
 - P0001-C10: its cut, DEC-21; its review, none.
-- P0001-C11: its cut, DEC-22.
+- P0001-C11: its cut, DEC-22; its review, none.
+- P0001-C12: its cut, DEC-23.

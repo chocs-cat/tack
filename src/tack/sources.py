@@ -12,6 +12,7 @@ names by the same code that keeps a checkout at its pin (DEC-21).
 from __future__ import annotations
 
 import os
+import shutil
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -158,7 +159,11 @@ def _bring(
     """Bring tack's checkout at `d` (`there` or not, as `_refuse` found it)
     to `commit` from `url`: clone it when it isn't there, fetch only when it
     lacks the commit, and check the commit out detached. The steps it took,
-    or, in a dry run, which clones and fetches nothing, would take."""
+    or, in a dry run, which clones and fetches nothing, would take.
+
+    A clone this call made and then can't bring to `commit` is deleted
+    again, so the path is `not cloned` rather than an empty index `git
+    status` reads as local changes (DEC-22); one that was `there` stays."""
     steps: list[tuple[Step, str]] = []
     if not there:
         steps.append(("clone", url))
@@ -172,14 +177,19 @@ def _bring(
         if not there or head(d) != commit:
             steps.append(("checkout", commit[:12]))
         return steps
-    if not _fetch(d, url, commit, by_id=by_id):
-        raise SourceError(f"pinned commit {commit[:12]} isn't in {url}")
-    # A fresh --no-checkout clone has HEAD at the tip but no files: always check out.
-    if not there or head(d) != commit:
-        r = git.run(d, "checkout", "--quiet", "--detach", commit)
-        if r.returncode != 0:
-            raise SourceError(f"can't check out {commit[:12]} in {tilde(d)}: {git.error(r)}")
-        steps.append(("checkout", commit[:12]))
+    try:
+        if not _fetch(d, url, commit, by_id=by_id):
+            raise SourceError(f"pinned commit {commit[:12]} isn't in {url}")
+        # A fresh --no-checkout clone has HEAD at the tip but no files: always check out.
+        if not there or head(d) != commit:
+            r = git.run(d, "checkout", "--quiet", "--detach", commit)
+            if r.returncode != 0:
+                raise SourceError(f"can't check out {commit[:12]} in {tilde(d)}: {git.error(r)}")
+            steps.append(("checkout", commit[:12]))
+    except SourceError:
+        if not there:
+            shutil.rmtree(d, ignore_errors=True)
+        raise
     return steps
 
 

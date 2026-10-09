@@ -36,6 +36,7 @@ error (nothing was changed).
 | Lockfile `tack.lock` | beside the manifest | tack only: never edit it |
 | Git checkouts | `$XDG_DATA_HOME/tack/sources/<source>/` (`~/.local/share/tack/…`) | tack only |
 | Plugin marketplace | `$XDG_DATA_HOME/tack/marketplace/` | tack only |
+| Plugins' clones | `$XDG_DATA_HOME/tack/plugins/<source>/<plugin>/` | tack only |
 | Ownership record | `$XDG_STATE_HOME/tack/state.json` | tack only |
 
 After tack changes the manifest or the lockfile it runs the manifest's
@@ -194,10 +195,16 @@ skills = []
 plugins = ["p"]
 ```
 
-This release deploys plugins inside their source. A catalog entry for a
-plugin in another repository, an unsupported entry or a broken catalog is a
-`source` problem. Many catalogs bundle a whole skills repository as one
-plugin; selecting its skills as well gives an agent two copies of each skill.
+A plugin inside its source is copied from it. One whose catalog entry names
+another git repository and a commit is cloned into
+`$XDG_DATA_HOME/tack/plugins/<source>/<plugin>/` at that commit (the
+source's pin pins it), and `sync` lists the `clone` and `checkout`. A clone
+with local changes or something else in its place is a `source` problem
+(exit `1`): tack leaves it and the plugin as they are until the changes are
+discarded or moved. `add` checks such a plugin by its entry alone; its sync
+clones it. An unsupported entry or a broken catalog is a `source` problem.
+Many catalogs bundle a whole skills repository as one plugin; selecting its
+skills as well gives an agent two copies of each skill.
 
 `[harness.<name>] ignore = [...]` names entries in a harness's skills
 directory that belong to another program; tack leaves them alone and `doctor`
@@ -237,7 +244,9 @@ in its `message`, which says what fixes it:
   foreign marketplace); a plugin a source lists that its catalog lacks, one
   tack can't deploy, or a broken catalog (`path` is the catalog file); a
   plugin whose files can't be read, so that `sync` can't copy it (`path` is
-  its directory, and the message has `sync`'s reason); and one of tack's
+  its directory, and the message has `sync`'s reason); a plugin whose clone
+  of another repository is in the way or has local changes (`path` is the
+  clone); and one of tack's
   plugins that `sync` would uninstall from an agent.
 - `name-collision` (error): two sources select one plugin name.
 - `duplicate-plugin` (warn): a plugin tack deploys to an agent is also

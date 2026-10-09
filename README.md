@@ -86,9 +86,17 @@ plugins = ["skill-creator"]
 ```
 
 The source's catalog is `.claude-plugin/marketplace.json`, or
-`.agents/plugins/marketplace.json` if the first is absent. This release
-deploys plugins whose files are inside the source; catalog entries pointing
-at other repositories are reported as source problems.
+`.agents/plugins/marketplace.json` if the first is absent. A plugin whose
+files are inside the source is copied from it. One whose catalog entry
+names another git repository and a commit (`url`, `github` or
+`git-subdir`) is cloned into `$XDG_DATA_HOME/tack/plugins/<source>/<plugin>/`
+(by default under `~/.local/share`) and checked out at that commit, so the
+source's pin pins it too: `sync` reports its `clone` and `checkout`, and an
+`update` that moves the commit checks the clone out again. A clone with
+local changes, or something else in its place, is a `source` problem (exit
+`1`), left alone, and its plugin stays as it was; a clone that has gone
+missing is cloned again. A dry run clones nothing, so it lists no copy or
+install for a plugin not yet cloned.
 
 `sync` copies selected plugins into a local marketplace named `tack`, then
 registers it and installs `<name>@tack` through `claude plugin` and `codex
@@ -104,12 +112,15 @@ each name once in the order given; without `--skill` it writes `skills = []`,
 so the source deploys only those plugins and needs no skills directory.
 `add` refuses (exit `2`, nothing written) a `--plugin` the catalog doesn't
 have (or a source with no catalog, or a broken one, with its error), one
-`sync` couldn't deploy (from another repository, a source tack can't pin, or
-files that can't be read), giving the reason `sync` would, and one another
-source already selects. Without `--plugin`, refusing a source with no skills
-lists the plugins `--plugin` would accept. A dry run of a git source doesn't
-clone it, so it checks neither its skills nor its plugins. `plugins = "*"`
-is written by hand.
+`sync` couldn't deploy (a source tack can't pin, or files that can't be
+read), giving the reason `sync` would, and one another source already
+selects. A plugin from another repository is checked by its catalog entry
+alone, even with a clone already there; the `sync` that follows clones it
+and reports a clone or copy that fails (exit `1`, the table written).
+Without `--plugin`, refusing a source with no skills lists the plugins
+`--plugin` would accept. A dry run of a git source doesn't clone it, so it
+checks neither its skills nor its plugins. `plugins = "*"` is written by
+hand.
 
 `tack sync --dry-run` lists the commands as `would run` and writes nothing;
 `--json` includes the command lines and harnesses in its changes. tack never
@@ -163,8 +174,9 @@ A finding about an agent's plugins names the agent:
 - `not-synced` (warn): a selected plugin that is `missing`, `disabled` or
   `stale` in an agent, or that an agent can't take (`unavailable`,
   `conflict`); a listed plugin the source's catalog lacks, one tack can't
-  deploy, a broken catalog, or a plugin whose files can't be read, so that
-  `sync` can't copy it (at its directory, with the reason `sync` gives); one
+  deploy, a broken catalog, a plugin whose files can't be read, so that
+  `sync` can't copy it (at its directory, with the reason `sync` gives), or
+  one whose clone is in the way or has local changes (at the clone); one
   of tack's plugins that `sync` would uninstall.
 - `name-collision` (error): two sources select the same plugin name.
 - `duplicate-plugin` (warn): a plugin tack deploys to an agent is also

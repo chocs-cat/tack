@@ -48,6 +48,11 @@ def gone(r: Path) -> None:
     shutil.rmtree(r)
 
 
+def worked(d: Path) -> dict[str, str]:
+    """`tree(d)` outside `.git`: a checkout's files."""
+    return {k: v for k, v in tree(d).items() if k.split("/")[0] != ".git"}
+
+
 def made(state: CloneState, tmp_path: Path) -> Clone:
     """A clone in `state`, of a remote whose second commit it targets."""
     r, first, second = remote(tmp_path / "up")
@@ -163,6 +168,34 @@ def test_a_commit_the_remote_lacks_fails_as_a_pin_does(home: Path, tmp_path: Pat
     assert (
         str(clone.value) == str(checkout.value) == f"pinned commit {MISSING[:12]} isn't in {url(r)}"
     )
+
+
+def test_a_clone_it_cant_bring_to_its_commit_is_deleted(home: Path, tmp_path: Path) -> None:
+    """DEC-22, #54: the clone `sync_clone` just made goes again, and the
+    next one with a good commit clones afresh."""
+    r, first, _ = remote(tmp_path / "up")
+    c = clone_of(r, MISSING)
+    with pytest.raises(SourceError) as e:
+        sources.sync_clone(c)
+    assert str(e.value) == f"pinned commit {MISSING[:12]} isn't in {url(r)}"
+    assert not c.path.exists()
+    assert c.state() == "not cloned"
+
+    good = clone_of(r, first)
+    assert sources.sync_clone(good) == [("clone", url(r)), ("checkout", first[:12])]
+    assert good.state() == "ok"
+
+
+def test_a_clone_that_was_there_is_never_deleted(home: Path, tmp_path: Path) -> None:
+    """Only a directory this run created goes (DEC-22). The fetch it tried
+    writes inside `.git`; the files and `HEAD` stay as they were."""
+    c = made("off its commit", tmp_path)
+    before = (worked(c.path), sources.head(c.path))
+    missing = Clone(c.path, InRepository(c.where.url, None, MISSING))
+    with pytest.raises(SourceError, match=f"pinned commit {MISSING[:12]} isn't in"):
+        sources.sync_clone(missing)
+    assert (worked(c.path), sources.head(c.path)) == before
+    assert c.state() == "off its commit"
 
 
 @pytest.mark.parametrize(
