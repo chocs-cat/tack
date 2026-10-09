@@ -1,36 +1,26 @@
 # Status
 
 Last updated 2026-10-09 by `relay-next`.
-Last review: 2026-10-09 (P0001-C12).
+Last review: 2026-10-09 (P0001-C13).
 
 ## Where this stands
 
 - The relay workflow was set up on 2026-10-05. Design phases 1–10 are done.
 - Project [P0001](projects/P0001-plugins.md), plugins for Claude Code and
   Codex ([#22](https://github.com/chocs-cat/tack/issues/22)), is active:
-  its design is in design.md (marked *(P0001)*) and DEC-1 – DEC-23.
-- D1–D7 are done: P0001-C01 – C09 (#28, #30, #32, #34, #37, #41, #45,
-  #48, #50), accepted 2026-10-05 to 2026-10-08. `sync` deploys the
-  manifest's `plugins`, `status` shows each one's state per harness,
-  `doctor` audits them and reports every plugin problem `sync` would
-  (DEC-18, DEC-19), `outdated` reports changed plugins with their versions,
-  commits and diff (DEC-20), `add --plugin` (and the TUI's add form)
-  selects plugins, and the TUI has a Plugins tab (tabs keyed `1`–`4`).
-- D8 is done: P0001-C10 – C12 (#53, #55, #58), accepted 2026-10-08 to
-  2026-10-09: plugins from other repositories cloned at the catalog's
-  commit and deployed by `sync`, `remove` deleting their clones, `status`,
-  `doctor`, the TUI and `add` agreeing, `status --json`'s `repository`,
-  and `outdated --diff` between a plugin's commits (DEC-21 – DEC-23).
-- P0001-C13, ready for an executor: §6's completion evidence (the real
-  agents, a real setup and #42, the pre-project suite, design.md's
-  *(P0001)* marks removed).
-- Still to come: `/relay-project`'s closeout of P0001.
-- **Do next:** `/relay-execute` to build P0001-C13.
+  its design is in design.md and DEC-1 – DEC-23.
+- D1–D8 are done: P0001-C01 – C12 (#28 – #58), accepted 2026-10-05 to
+  2026-10-09; the project ledger has each chunk.
+- P0001-C13 (#59), accepted 2026-10-09: §6's completion evidence (the real
+  agents, a real setup and #42, the pre-project suite, design.md's marks
+  removed). Follow-up #60.
+- Still to come: `/relay-project`'s completion audit and closeout of P0001.
+- **Do next:** `/relay-project` to close P0001.
 
 ## In flight
 
-- **Chunk:** P0001-C13
-- **State:** ready for an executor
+- **Chunk:** —
+- **State:** none
 - **Branch:** —
 - **Pull request:** —
 - **Units committed:** —
@@ -66,4 +56,4 @@ One line per chunk: the decision-log IDs it added.
 - P0001-C10: its cut, DEC-21; its review, none.
 - P0001-C11: its cut, DEC-22; its review, none.
 - P0001-C12: its cut, DEC-23; its review, none.
-- P0001-C13: its cut, none.
+- P0001-C13: its cut, none; its review, none.
