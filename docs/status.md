@@ -1,21 +1,21 @@
 # Status
 
-Last updated 2026-10-09 by `relay-next`.
+Last updated 2026-10-09 by `relay-project`.
 Last review: 2026-10-09 (P0001-C13).
 
 ## Where this stands
 
 - The relay workflow was set up on 2026-10-05. Design phases 1–10 are done.
 - Project [P0001](projects/P0001-plugins.md), plugins for Claude Code and
-  Codex ([#22](https://github.com/chocs-cat/tack/issues/22)), is active:
-  its design is in design.md and DEC-1 – DEC-23.
-- D1–D8 are done: P0001-C01 – C12 (#28 – #58), accepted 2026-10-05 to
-  2026-10-09; the project ledger has each chunk.
-- P0001-C13 (#59), accepted 2026-10-09: §6's completion evidence (the real
-  agents, a real setup and #42, the pre-project suite, design.md's marks
-  removed). Follow-up #60.
-- Still to come: `/relay-project`'s completion audit and closeout of P0001.
-- **Do next:** `/relay-project` to close P0001.
+  Codex ([#22](https://github.com/chocs-cat/tack/issues/22)), completed
+  2026-10-09: P0001-C01 – C13 (#28 – #59), its design in design.md and
+  DEC-1 – DEC-23. Its closeout audited the release commits (#53 overridden
+  to `chore`) and derives a minor release; release-please's #36 proposes
+  0.4.0.
+- No project is active. Open follow-ups are issues, #60 among them.
+- **Do next:** `/relay-release` when the maintainer wants 0.4.0 out;
+  `/relay-project` to shape the next idea, or `/relay-next` for a
+  maintenance chunk from an issue.
 
 ## In flight
 
