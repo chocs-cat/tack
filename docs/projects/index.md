@@ -7,12 +7,12 @@ turns that plan into chunk briefs, and `/relay-execute` builds them.
 The routing header has a fixed shape. `/relay-project` owns both lines, and
 `/relay-next` reads `Active project`.
 
-- **Active project:** P0001
+- **Active project:** —
 - **Next project ID:** P0002
 
 | Project | State | File | Started | Finished | Outcome |
 |---|---|---|---|---|---|
-| P0001 Plugins for Claude Code and Codex | active | [P0001-plugins.md](P0001-plugins.md) | 2026-10-05 | — | — |
+| P0001 Plugins for Claude Code and Codex | complete | [P0001-plugins.md](P0001-plugins.md) | 2026-10-05 | 2026-10-09 | Plugins deployed, pinned, tracked and audited in both agents; C01 – C13 |
 
 ## 1. What a project is
 

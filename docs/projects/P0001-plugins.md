@@ -1,9 +1,9 @@
 # Project P0001 — Plugins for Claude Code and Codex
 
-- **State:** active
+- **State:** complete
 - **Created:** 2026-10-05
 - **Ready:** 2026-10-05
-- **Completed:** —
+- **Completed:** 2026-10-09
 - **Decisions:** DEC-1 – DEC-23
 
 ## 1. Problem and outcome
@@ -382,15 +382,42 @@ the diff between the two commits.
 | [P0001-C10](../chunks/P0001-C10.md) | D8 (#29; plugins' clones and `remove` deleting them: unwired groundwork); C09 review follow-ups (#51) | accepted with follow-ups (#54 as C11-a) | 2026-10-08 | #53, `8ef8036` |
 | [P0001-C11](../chunks/P0001-C11.md) | D8 (the clones wired into `sync`, `status`, `doctor`, the TUI and `add`); C10 review follow-up (#54) | accepted with follow-ups (#56) | 2026-10-09 | #55, `c954779` |
 | [P0001-C12](../chunks/P0001-C12.md) | D8 (`status --json` and the TUI naming a plugin's repository, commit and clone; `outdated --diff` between commits): D8 done | accepted | 2026-10-09 | #58, `1ed0853` |
-| [P0001-C13](../chunks/P0001-C13.md) | §6's completion evidence: the real agents, a real setup (#42), compatibility, design.md's marks removed | accepted with follow-ups (#60; brief-checklist §8) | 2026-10-09 | #59 |
+| [P0001-C13](../chunks/P0001-C13.md) | §6's completion evidence: the real agents, a real setup (#42), compatibility, design.md's marks removed | accepted with follow-ups (#60; brief-checklist §8) | 2026-10-09 | #59, `f0adf5d` |
 
 ## 8. Closeout
 
-Fill this only when completing or abandoning the project.
-
-- **Outcome:** —
-- **Accepted chunks:** —
-- **Changelog entries:** —
-- **Derived release effect:** —
-- **Unfinished or deliberately excluded:** —
-- **Decisions added or reopened:** —
+- **Outcome:** plugins get the treatment skills get. A source's catalog
+  offers them, the manifest's `plugins` field selects them, and `sync`
+  installs the same directory into Claude Code and Codex through tack's own
+  marketplace, pinned with its source or, for a plugin in another
+  repository, by its catalog's commit. `status`, the TUI's Plugins tab,
+  `outdated`, `update`, `add --plugin`, `remove` and `doctor` all cover
+  them. §6's evidence is in P0001-C13's report: the real agents (Claude Code
+  2.1.289, codex-cli 0.160.1), a real setup (#42), and the docs.
+  *Compatibility* holds: of the pre-project suite's eight failures, six are
+  the tab keys, one is `test_design_example_manifest_parses`, whose change
+  D2 planned (the plugin example moved into the manifest example), and one
+  is a `uv` shim in the scratch worktree that passes with another `uv`
+  first; none is an unplanned behavior change.
+- **Accepted chunks:** P0001-C01 – P0001-C13 (#28, #30, #32, #34, #37,
+  #41, #45, #48, #50, #53, #55, #58, #59).
+- **Changelog entries:** release-please, from the squash commits on
+  `master`. C04 – C09, C11 and C12 are `feat`, the plugin features 0.3.0
+  lacked. C01 – C03 are `chore`: unwired groundwork. C13 is `docs`. C10
+  was `fix`, but what it fixed (#29) had never been released and was
+  unreachable until C11; a `BEGIN_COMMIT_OVERRIDE` in #53's body makes it
+  `chore`, so 0.4.0's changelog lists no fix for a bug no release had. No
+  breaking change: a manifest without `plugins` behaves as before, and
+  `state.json` stays version 1.
+- **Derived release effect:** minor (`feat`, below 1.0). Evidence for the
+  release decision, which is the maintainer's; release-please's pull
+  request #36 proposes 0.4.0.
+- **Unfinished or deliberately excluded:** follow-ups open as issues: #60
+  (docstrings citing design.md's removed marks), #57 (an other-repository
+  plugin's version only from its entry), #56 (clone states read more than
+  once), #52 (a plugin-only source's detail says "0 skills:"), #39 (the
+  stand-in's scopes), #31 (`harnesses = []`). Non-goals from §2: #24
+  (project-scoped plugins), #25 (skills deployed twice), and the others §2
+  lists without an issue.
+- **Decisions added or reopened:** DEC-1 – DEC-23 added; none reopened
+  (DEC-12 clarified at the P0001-C03 review).
