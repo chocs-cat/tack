@@ -115,6 +115,26 @@ def test_refusals(home: Path, tmp_path: Path) -> None:
         sources.sync_git(other.sources[0], other.paths, None)
 
 
+def test_a_clone_it_cant_bring_to_its_pin_is_deleted(home: Path, tmp_path: Path) -> None:
+    """DEC-22, #54: a fresh clone of a remote lacking the pin goes again, so
+    the next sync clones afresh instead of refusing an empty index as local
+    changes."""
+    up = upstream(tmp_path / "up", "a")
+    tip = git(up, "rev-parse", "HEAD").strip()
+    cfg = cfg_for(home, up)
+    (src,) = cfg.sources
+    d = cfg.paths.sources_dir / "up"
+    with pytest.raises(SourceError) as e:
+        sources.sync_git(src, cfg.paths, LockEntry(str(up), None, "0" * 40, WHEN))
+    assert str(e.value) == f"pinned commit 000000000000 isn't in {up}"
+    assert not d.exists()
+
+    out = sources.sync_git(src, cfg.paths, LockEntry(str(up), None, tip, WHEN))
+    assert [a for a, _ in out.steps] == ["clone", "checkout"]
+    assert sources.head(d) == tip
+    assert (d / "skills" / "a" / "SKILL.md").is_file()
+
+
 def test_dry_run_changes_nothing(home: Path, tmp_path: Path) -> None:
     up = upstream(tmp_path / "up", "a")
     tip = git(up, "rev-parse", "HEAD").strip()
