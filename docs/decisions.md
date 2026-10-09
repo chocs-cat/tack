@@ -381,3 +381,23 @@ one that was there before is never deleted by `sync`, whatever it holds.
 
 *Where:* design.md, *The lockfile* (its last paragraph), *Plugins from
 other repositories*.
+
+## DEC-23: `outdated --diff` diffs a plugin's commits in its clone, never making one (2026-10)
+
+Added at the cut of P0001-C12. For a *modified* plugin from another
+repository whose entry names the same URL at the pin and the tip and a
+different commit, `outdated --diff` adds the repository's diff between the
+two commits, limited to the entry's `path`. It fetches the commits into
+the plugin's clone, as `sync` fetches them, and diffs them there; it never
+creates, checks out or moves a clone, as it never moves a source's
+checkout. A clone that isn't there, or isn't a git checkout, gives a line
+saying why in place of the diff, as does a fetch that fails. Cloning a
+missing clone was the alternative, but git's `--no-checkout` clone reads as
+local changes until it is checked out (#54), so `outdated` would have to
+check one out, which is `sync`'s step; and a temporary repository for the
+diff would fetch the whole history again on every run. A plugin whose
+entry moved to another URL gets its entry's diff only: the two commits are
+in different repositories, and its clone's `origin` follows the catalog at
+the pin until `sync` moves it.
+
+*Where:* design.md, *Tracking plugins upstream*.
