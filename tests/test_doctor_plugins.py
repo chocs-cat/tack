@@ -14,11 +14,11 @@ from pathlib import Path
 
 import pytest
 
-from tack import agents, cli, config, doctor, status, sync
+from tack import agents, cli, config, doctor, plugins, sources, status, sync
 from tack.config import Config
 from tack.doctor import plugins as doctor_plugins
 from tack.doctor.findings import Finding
-from tests.helpers import configure, load, skill, write
+from tests.helpers import configure, elsewhere, load, skill, write
 from tests.standin import Standins
 from tests.test_status import BOTH, FIXTURES, NPM, WHEN, one, plugin_source, run_sync
 
@@ -288,6 +288,23 @@ def _undeployable(home: Path, standins: Standins) -> Config:
     return configure(home, "one", one=["a", "x"])
 
 
+def _clone(home: Path, blocked: str) -> Config:
+    """`r`, from another repository (a `file://` one), whose clone is in the
+    way or has local changes."""
+    r = elsewhere(home.parent / "r", "r")
+    plugin_source(home, "one", "a", entries=(r.entry(),))
+    cfg = configure(home, "one", one=["a", "r"])
+    (sel,) = [s for s in plugins.plan(cfg).sources[0].selected if s.name == "r"]
+    assert sel.clone is not None
+    if blocked == "in the way":
+        write(sel.clone.path / "stray.txt", "not a checkout\n")
+    else:
+        sources.sync_clone(sel.clone)
+        write(sel.clone.path / "README.md", "edited\n")
+    assert sel.clone.state() == blocked
+    return cfg
+
+
 PROBLEMS: dict[str, Callable[[Path, Standins], Config]] = {
     "directory gone, installed": FIXTURES["unreadable"][0],
     "directory gone, not installed": _gone,
@@ -299,6 +316,8 @@ PROBLEMS: dict[str, Callable[[Path, Standins], Config]] = {
     "missing cli a deployable plugin targets": FIXTURES["no cli"][0],
     "broken catalog": _broken,
     "undeployable": _undeployable,
+    "clone in the way": lambda home, _: _clone(home, "in the way"),
+    "clone with local changes": lambda home, _: _clone(home, "local changes"),
     "collision": FIXTURES["collision"][0],
 }
 
@@ -512,6 +531,58 @@ def test_source_findings_and_collisions(home: Path, standins: Standins) -> None:
     # Each plugin tack can't deploy is reported once, for its source; a
     # collided name only as `name-collision`.
     assert found[5:] == []
+
+
+@pytest.mark.parametrize("blocked", ["in the way", "local changes"])
+def test_a_blocked_clone_is_its_sources_finding_alone(
+    home: Path, standins: Standins, blocked: str
+) -> None:
+    """At the clone, with the message `sync` gives, and no state finding for
+    the plugin: it is reported once, for its source (DEC-19)."""
+    cfg = _clone(home, blocked)
+    problems = sync.sync(cfg, dry_run=True, now=WHEN).problems
+    (problem,) = [p for p in problems if p.message.startswith("plugin 'r'")]
+    clone = cfg.paths.clones_dir / "one" / "r"
+    about_r = [(f.id, f.path, f.harness, f.message) for f in check(cfg) if "'r'" in f.message]
+    assert about_r == [
+        (
+            "not-synced",
+            clone,
+            None,
+            "plugin 'r' from 'one' can't be brought to its commit, so tack leaves it as it "
+            "is: " + problem.message.removeprefix("plugin 'r': "),
+        )
+    ]
+    assert problem.path == clone
+
+
+def test_a_clone_not_cloned_is_missing_and_no_source_finding(
+    home: Path, standins: Standins
+) -> None:
+    r = elsewhere(home.parent / "r", "r")
+    plugin_source(home, "one", entries=(r.entry(),))
+    cfg = configure(home, "one", one=["r"])
+    clone = cfg.paths.clones_dir / "one" / "r"
+    assert [(f.id, f.path, f.harness, f.message) for f in check(cfg)] == [
+        ("not-synced", clone, h, f"plugin 'r' from 'one' isn't installed in {h}; `tack sync` "
+            "installs it")
+        for h in BOTH
+    ]  # fmt: skip
+
+
+def test_a_kept_clone_is_no_leftover(home: Path, standins: Standins) -> None:
+    """`r` was installed in both; now selected for Claude Code only, with its
+    clone gone: `sync` keeps it, so Codex's install is no leftover."""
+    r = elsewhere(home.parent / "r", "r")
+    plugin_source(home, "one", entries=(r.entry(),))
+    run_sync(configure(home, "one", one=["r"]))
+    cfg = configure(home, "one", one=[{"name": "r", "harnesses": ["claude-code"]}])
+    shutil.rmtree(cfg.paths.clones_dir / "one" / "r")
+    assert check(cfg) == []
+    uninstalls = [
+        c for c in sync.sync(cfg, dry_run=True, now=WHEN).changes if c.action == "uninstall"
+    ]
+    assert uninstalls == []
 
 
 def test_a_collided_plugin_tack_cant_deploy(home: Path, standins: Standins) -> None:

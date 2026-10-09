@@ -390,19 +390,13 @@ class _Plugins:
         name order, then read the plan again: a plugin's files are its clone's
         only while the clone is `ok` (design.md *Plugins from other
         repositories*). A dry run lists the steps and brings nothing."""
-        bring: dict[str, plugins.Selected] = {}
-        for by_name in self.plan.plugins.values():
-            for name, sel in by_name.items():
-                if sel.clone is not None and sel.source.name not in self.held:
-                    bring.setdefault(name, sel)
         moved = False
-        for name, sel in sorted(bring.items()):
+        for name, sel in plugins.brought(self.plan, self.held).items():
             assert sel.clone is not None
             src, path = sel.source.name, sel.clone.path
-            try:
-                steps = sources.sync_clone(sel.clone, dry_run=self.dry_run)
-            except SourceError as e:
-                message = f"plugin {name!r}: {e}"
+            steps, error = plugins.bring(sel, dry_run=self.dry_run)
+            if error is not None:
+                message = f"plugin {name!r}: {error}"
                 self.result.problems.append(Problem("source", message, src, path=path))
                 continue  # left as it was, or, freshly cloned, gone again (DEC-22)
             for action, detail in steps:

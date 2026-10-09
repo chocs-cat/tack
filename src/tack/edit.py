@@ -179,11 +179,14 @@ def _plugin_refusals(cfg: Config, src: Source) -> list[str]:
 
 def _unfit(sel: plugins.Selected) -> str | None:
     """Why `sync` couldn't deploy a selected plugin, as `sync` says it: one
-    tack can't deploy, one from another repository, or one whose files can't
-    be read, so that its copy would fail. None when it could."""
+    tack can't deploy, or one in the source whose files can't be read, so
+    that its copy would fail. None when it could. A plugin from another
+    repository is checked by its entry alone, even with a clone already
+    there: the `sync` that follows brings the clone and reports what fails
+    (design.md *Adding and removing sources*)."""
     if why := plugins.undeployable(sel.plugin):
         return f"plugin {sel.name!r} {why}"
-    if sel.directory is not None:
+    if sel.directory is not None and sel.clone is None:
         digest = plugins.files_hash(sel.directory)
         if isinstance(digest, plugins.Unreadable):
             return f"plugin {sel.name!r}: {digest.reason}"

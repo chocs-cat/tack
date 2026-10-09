@@ -39,9 +39,10 @@ def check(cfg: Config, inventories: status.Inventories | None = None) -> Iterato
     kept = plugins.kept(plan, record)
     unreadable = _unreadable(plan, kept)
     kept |= set(unreadable)
+    blocked = _blocked(plan)
     yield from _collisions(cfg, plan)
     for state in plan.sources:
-        yield from _source(state, unreadable)
+        yield from _source(state, unreadable, blocked)
     cells = {
         (p.name, p.source): p.harnesses
         for p in status.plugin_states(cfg, plan, record, inventories)
@@ -51,12 +52,15 @@ def check(cfg: Config, inventories: status.Inventories | None = None) -> Iterato
         key=lambda sel: (sel.name, sel.source.name),
     )
     # The plugins whose state gets a finding of its own: one tack can't
-    # deploy, or whose files can't be read, is its source's, a collided name
-    # `name-collision`'s.
+    # deploy, whose clone is in the way or has local changes, or whose files
+    # can't be read, is its source's, a collided name `name-collision`'s.
     stated = [
         s
         for s in selected
-        if s.directory is not None and s.name not in plan.collisions and s.name not in unreadable
+        if s.deployable
+        and s.name not in plan.collisions
+        and s.name not in unreadable
+        and s.name not in blocked
     ]
     for h, inv in inventories.items():
         here = [(sel, cells[sel.name, sel.source.name][h]) for sel in stated if h in sel.harnesses]
@@ -88,7 +92,7 @@ def check(cfg: Config, inventories: status.Inventories | None = None) -> Iterato
                         "not-synced",
                         "warn",
                         f"plugin {sel.name!r} from {sel.source.name!r} " + _STATES[st].format(h=h),
-                        path=sel.directory,
+                        path=sel.clone.directory if sel.clone else sel.directory,
                         harness=h,
                     )
             if _involved(cfg, h, selected, record):
@@ -107,10 +111,13 @@ def _collisions(cfg: Config, plan: Plan) -> Iterator[Finding]:
         )
 
 
-def _source(state: plugins.SourceState, unreadable: Mapping[str, str]) -> Iterator[Finding]:
+def _source(
+    state: plugins.SourceState, unreadable: Mapping[str, str], blocked: Mapping[str, str]
+) -> Iterator[Finding]:
     """A source's catalog: the names it lacks, the plugins tack can't deploy,
     or that it is broken, at the catalog file, or the root when there is none;
-    and the plugins whose files can't be read, at their directories."""
+    the plugins whose clones are in the way or have local changes, at the
+    clones; and the plugins whose files can't be read, at their directories."""
     src = state.source.name
     where = catalog.find(state.root) or state.root
     if state.catalog_state == "broken":
@@ -133,6 +140,12 @@ def _source(state: plugins.SourceState, unreadable: Mapping[str, str]) -> Iterat
         path = where
         if why := plugins.undeployable(sel.plugin):
             message = f"{it} {why}"
+        elif sel.clone is not None and sel.name in blocked:
+            message = (
+                f"{it} can't be brought to its commit, so tack leaves it as it is: "
+                f"{blocked[sel.name]}"
+            )
+            path = sel.clone.path
         elif sel.name in unreadable:
             message = f"{it} can't be copied, so tack leaves it as it is: {unreadable[sel.name]}"
             path = sel.directory
@@ -151,6 +164,16 @@ def _unavailable(h: str, inv: agents.Outcome, stopped: Sequence[Selected]) -> Fi
             "until it succeeds"
         )
     return Finding("not-synced", "warn", message, harness=h)
+
+
+def _blocked(plan: Plan) -> dict[str, str]:
+    """The plugins whose clones `sync` would bring but can't, being in the
+    way or having local changes, each with why, as `sync` gives it (DEC-19)."""
+    out: dict[str, str] = {}
+    for name, sel in plugins.brought(plan).items():
+        if (error := plugins.bring(sel, dry_run=True)[1]) is not None:
+            out[name] = error
+    return out
 
 
 def _unreadable(plan: Plan, kept: set[str]) -> dict[str, str]:

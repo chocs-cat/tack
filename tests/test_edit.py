@@ -8,11 +8,23 @@ from pathlib import Path
 
 import pytest
 
-from tack import config, deploy, edit, sources, sync
+from tack import cli, config, deploy, edit, sources, sync
 from tack.catalog import InRepository
-from tack.config import Config, ConfigError, SkillSpec, Source, UsageError
+from tack.config import Config, ConfigError, Paths, SkillSpec, Source, UsageError
+from tack.sources import Clone
 from tack.sync import Result
-from tests.helpers import elsewhere, git, load, market, repo, skill, tree, upstream, write
+from tests.helpers import (
+    Elsewhere,
+    elsewhere,
+    git,
+    load,
+    market,
+    repo,
+    skill,
+    tree,
+    upstream,
+    write,
+)
 from tests.standin import Standins
 
 WHEN = datetime(2026, 9, 27, 12, 0, 0, tzinfo=UTC)
@@ -469,6 +481,58 @@ def test_a_plugin_refusal_gives_the_reason_sync_gives(home: Path, plugin: str) -
     (problem,) = result.problems
     assert (problem.kind, problem.source) == ("source", "full")
     assert str(refused.value) == f"can't add full: {problem.message}"
+
+
+def fresh_elsewhere(home: Path, tmp_path: Path) -> tuple[Elsewhere, Path]:
+    """A path source `~/full` whose catalog offers `r` from another
+    repository (a `file://` one); `r`, and where its clone goes."""
+    r = elsewhere(tmp_path / "r", "r")
+    market(home / "full", r.entry())
+    return r, Paths.from_env().clones_dir / "full" / "r"
+
+
+def test_add_a_plugin_from_another_repository(
+    home: Path, tmp_path: Path, standins: Standins
+) -> None:
+    r, clone = fresh_elsewhere(home, tmp_path)
+    result = run_add(load(home, ""), home / "full", plugins=["r"])
+    assert result.problems == []
+    assert manifest_text(home).endswith('skills = []\nplugins = ["r"]\n')
+    assert [c.action for c in result.changes if c.path == clone] == ["clone", "checkout"]
+    assert sources.head(clone) == r.older
+    for cli_name in ("claude", "codex"):
+        assert set(standins.state()[cli_name]["plugins"]) == {"r@tack"}
+
+
+def test_add_checks_a_plugin_from_another_repository_by_its_entry(
+    home: Path, tmp_path: Path, standins: Standins
+) -> None:
+    """A clone `remove` left there, with local changes: `add` accepts the
+    plugin and writes the table, and its `sync` reports the clone (exit 1)."""
+    r, clone = fresh_elsewhere(home, tmp_path)
+    sources.sync_clone(Clone(clone, InRepository(r.repo.as_uri(), None, r.older)))
+    write(clone / "README.md", "edited\n")
+    load(home, "")
+    assert cli.main(["add", str(home / "full"), "--plugin", "r", "--no-commit"]) == 1
+    assert [s.name for s in load(home).sources] == ["full"]
+    problems = sync.sync(load(home), dry_run=True, now=WHEN).problems
+    assert [(p.kind, p.path) for p in problems] == [("source", clone)]
+    assert "has local changes" in problems[0].message
+
+
+def test_add_reads_no_files_of_a_clone_already_there(
+    home: Path, tmp_path: Path, standins: Standins
+) -> None:
+    """A clone at its commit whose files can't be read (an untracked link to
+    nowhere, which isn't a local change): `add` checks the entry alone, and
+    the `sync` that follows reports the copy that fails."""
+    r, clone = fresh_elsewhere(home, tmp_path)
+    sources.sync_clone(Clone(clone, InRepository(r.repo.as_uri(), None, r.older)))
+    (clone / "dangling").symlink_to(tmp_path / "nowhere")
+    result = run_add(load(home, ""), home / "full", plugins=["r"])
+    assert [(p.kind, p.path) for p in result.problems] == [("source", clone)]
+    assert result.problems[0].message.startswith("plugin 'r': dangling is a link to nowhere")
+    assert [s.name for s in load(home).sources] == ["full"]
 
 
 def test_add_plugins_dry_run(home: Path, tmp_path: Path) -> None:

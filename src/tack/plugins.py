@@ -487,20 +487,53 @@ def kept(plan: Plan, record: deploy.Record, held: Collection[str] = ()) -> set[s
 
 def problems(sel: Selected, plan: Plan, kept: Collection[str]) -> list[str]:
     """What `sync` reports about a selected plugin, each as `sync` words it:
-    a name another source selects too, one tack can't deploy, and one whose
-    files can't be read, so that its copy would fail (a `kept` plugin, a
-    collided name among them, isn't copied). It
-    reads the plugin's files as they are now, as the states do (DEC-17)."""
+    a name another source selects too, one tack can't deploy, one whose
+    clone `sync` would bring is in the way or has local changes, and one
+    whose files can't be read, so that its copy would fail (a `kept` plugin,
+    a collided name among them, isn't copied). It reads the plugin's files
+    and its clone as they are now, as the states do (DEC-17)."""
     out: list[str] = []
     if sel.name in plan.collisions:
         out.append(collision(sel.name, *plan.collisions[sel.name]))
     if why := undeployable(sel.plugin):
         out.append(f"plugin {sel.name!r} {why}")
+    elif brought(plan).get(sel.name) is sel and (error := bring(sel, dry_run=True)[1]):
+        out.append(f"plugin {sel.name!r}: {error}")
     elif sel.directory is not None and sel.name not in kept:
         digest = files_hash(sel.directory)
         if isinstance(digest, Unreadable):
             out.append(f"plugin {sel.name!r}: {digest.reason}")
     return out
+
+
+def brought(plan: Plan, held: Collection[str] = ()) -> dict[str, Selected]:
+    """The plugins whose clones `sync` brings to their commits, by name, in
+    name order: each it would copy (in the plan, so selected for a harness
+    that takes plugins, deployable and a name no other source selects) from
+    another repository, from a source it doesn't hold (design.md *Plugins
+    from other repositories*). `doctor` and the TUI name none `held`
+    (DEC-17)."""
+    out: dict[str, Selected] = {}
+    for by_name in plan.plugins.values():
+        for name, sel in by_name.items():
+            if sel.clone is not None and sel.source.name not in held:
+                out.setdefault(name, sel)
+    return dict(sorted(out.items()))
+
+
+def bring(
+    sel: Selected, *, dry_run: bool = False
+) -> tuple[list[tuple[sources.Step, str]], str | None]:
+    """Bring a plugin's clone to its commit (`sources.sync_clone`): the steps
+    taken, or, in a dry run, which brings nothing, those it would take; and,
+    when it can't, why, which `sync` reports as `plugin '<name>': <why>`. A
+    dry run can't only for a clone in the way or with local changes, so
+    `doctor` and the TUI give that problem from one (DEC-19)."""
+    assert sel.clone is not None
+    try:
+        return sources.sync_clone(sel.clone, dry_run=dry_run), None
+    except sources.SourceError as e:
+        return [], str(e)
 
 
 def _source_state(src: Source, cfg: Config) -> SourceState:
