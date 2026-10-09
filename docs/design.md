@@ -874,8 +874,9 @@ list, the names it lists, a name in neither catalog being left out.
   of it: `plugin '<name>': no diff between its commits: ` then `it isn't
   cloned; `tack sync` clones it`, what `sync` says of a clone in the way, or
   the fetch's failure as `sync` gives it (`can't fetch <url>: …`, `pinned
-  commit <commit> isn't in <url>`). A plugin whose URL changed, or that is in
-  the source at either end, has its entry's diff only.
+  commit <commit> isn't in <url>`, the commit's first twelve digits). A
+  plugin whose URL changed, or that is in the source at either end, has its
+  entry's diff only.
 
 `outdated --json` gives each source `plugins` beside `skills`: one object per
 changed plugin, sorted by name, with `name`, `change` and `version`
@@ -1211,7 +1212,8 @@ version, its description, and its state in each harness it targets. For a
 plugin from another repository it adds, after the source, its `repository`
 from `status --json` as two lines: `repository: <url> at <commit>` (the
 commit's first twelve digits; `<url> (<path>)` for a `git-subdir`) and
-`clone: <the clone's path> (<its state>)`. For a
+`clone: <the clone's path> (<its state>)`, the path with `~` for the home
+directory as the detail's other paths are. For a
 plugin `sync` reports a problem about (one tack can't deploy, one from
 another repository whose clone is `in the way` or has `local changes`, one
 whose files can't be read, or a name two sources

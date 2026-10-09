@@ -11,7 +11,20 @@ import pytest
 from tack import catalog, cli, outdated, sources, sync
 from tack.config import Config, UsageError
 from tack.outdated import ChangedSkill
-from tests.helpers import QUOTED, commit, git, load, repo, skill_md, upstream
+from tests.helpers import (
+    QUOTED,
+    Elsewhere,
+    commit,
+    elsewhere,
+    git,
+    load,
+    repo,
+    skill_md,
+    tree,
+    upstream,
+    write,
+)
+from tests.standin import Standins
 
 WHEN = datetime(2026, 9, 27, 12, 0, 0, tzinfo=UTC)
 
@@ -750,3 +763,240 @@ def test_diff_of_plugins_alone(home: Path, tmp_path: Path) -> None:
     assert diff is not None
     assert diff.startswith("diff --git a/plugins/a/README.md b/plugins/a/README.md\n")
     assert "+changed" in diff
+
+
+# --- a plugin's commits (DEC-23) ------------------------------------------------------
+
+
+def from_elsewhere(
+    home: Path, tmp_path: Path, path: str | None = None, *, synced: bool = True
+) -> tuple[Config, Elsewhere, Path, Path]:
+    """`up`, whose catalog's entry for `r` is an `elsewhere` remote's older
+    commit, pinned by a `sync` that selects `r`, so its clone is there
+    (unless not `synced`); then a commit moving the entry to the newer one.
+    The config, the remote, `up` and where `r`'s clone is."""
+    r = elsewhere(tmp_path / "r", "r", path)
+    up = repo(tmp_path / "up", {CATALOG: catalog_json(r.entry())})
+    manifest = source(up, 'skills = []\nplugins = ["r"]\n')
+    cfg = pinned(home, manifest) if synced else tracking(home, up, '["r"]')
+    commit(up, {CATALOG: catalog_json(r.entry(r.newer))}, "Bump r")
+    return cfg, r, up, cfg.paths.clones_dir / "up" / "r"
+
+
+def work(clone: Path) -> dict[str, str]:
+    """A clone's work tree and `HEAD`, not its `.git` (review-checklist §3)."""
+    files = {k: v for k, v in tree(clone).items() if k != ".git" and not k.startswith(".git/")}
+    return files | {"HEAD": git(clone, "rev-parse", "HEAD").strip()}
+
+
+def at(c: str, name: str = "r") -> str:
+    return f"{name}@{c[:12]}"
+
+
+def test_diff_between_a_plugins_commits(
+    home: Path, tmp_path: Path, standins: Standins, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """After the entry's diff, the repository's between the two commits,
+    its file names headed with the plugin and each commit."""
+    cfg, r, _, _ = from_elsewhere(home, tmp_path)
+
+    diff = only(cfg, diff=True).diff
+    assert diff is not None
+    entry = "--- a/.claude-plugin/marketplace.json#r\n+++ b/.claude-plugin/marketplace.json#r\n"
+    head = f"diff --git a/{at(r.older)}/README.md b/{at(r.newer)}/README.md\n"
+    assert diff.index(entry) < diff.index(head)
+    assert f"--- a/{at(r.older)}/README.md\n+++ b/{at(r.newer)}/README.md\n" in diff
+    assert "-r 1.0\n+r 2.0\n" in diff
+    assert f"a/{at(r.older)}/.claude-plugin/plugin.json" in diff
+    assert "no diff between" not in diff
+
+    capsys.readouterr()
+    assert cli.main(["outdated", "--diff"]) == 1
+    assert head in capsys.readouterr().out
+    assert cli.main(["outdated", "--json", "--diff"]) == 1
+    (data,) = json.loads(capsys.readouterr().out)["sources"]
+    assert data["diff"] == diff
+
+
+def test_a_git_subdir_plugins_commits_diff_only_its_path(
+    home: Path, tmp_path: Path, standins: Standins
+) -> None:
+    cfg, r, _, _ = from_elsewhere(home, tmp_path, "plugins/r")
+
+    diff = only(cfg, diff=True).diff
+    assert diff is not None
+    assert (
+        f"diff --git a/{at(r.older)}/plugins/r/README.md b/{at(r.newer)}/plugins/r/README.md"
+        in diff
+    )
+    assert f"a/{at(r.older)}/plugins/r/README.md" in diff
+    assert "OTHER.md" not in diff
+
+
+def test_a_path_at_one_end_only_diffs_the_whole_repository(
+    home: Path, tmp_path: Path, standins: Standins
+) -> None:
+    """No pathspec when either end has none: the entry moving from the
+    whole repository to its `path` diffs everything."""
+    r = elsewhere(tmp_path / "r", "r", "plugins/r")
+    whole = {"name": "r", "source": {"source": "url", "url": r.repo.as_uri(), "sha": r.older}}
+    up = repo(tmp_path / "up", {CATALOG: catalog_json(whole)})
+    cfg = pinned(home, source(up, 'skills = []\nplugins = ["r"]\n'))
+    commit(up, {CATALOG: catalog_json(r.entry(r.newer))})
+
+    diff = only(cfg, diff=True).diff
+    assert diff is not None
+    assert f"diff --git a/{at(r.older)}/OTHER.md b/{at(r.newer)}/OTHER.md" in diff
+
+
+@pytest.mark.parametrize("state", ["ok", "local changes", "off its commit"])
+def test_commits_the_clone_lacks_are_fetched_and_it_isnt_moved(
+    home: Path, tmp_path: Path, standins: Standins, state: str
+) -> None:
+    """The tip's commit, made after the clone, is fetched; the clone's
+    `HEAD`, work tree and state are as they were, whatever its state."""
+    cfg, r, up, clone = from_elsewhere(home, tmp_path)
+    newest = commit(r.repo, {"README.md": "r 3.0\n"})
+    commit(up, {CATALOG: catalog_json(r.entry(newest))})
+    if state == "local changes":
+        write(clone / "README.md", "edited\n")
+    elif state == "off its commit":
+        git(clone, "checkout", "-q", "--detach", r.newer)
+    entry = r.entry()["source"]
+    there = sources.Clone(clone, catalog.InRepository(entry["url"], None, r.older))
+    assert there.state() == state
+    assert not sources.has_commit(clone, newest)
+    before = work(clone)
+
+    diff = only(cfg, diff=True).diff
+    assert diff is not None
+    assert f"diff --git a/{at(r.older)}/README.md b/{at(newest)}/README.md" in diff
+    assert "-r 1.0\n+r 3.0\n" in diff
+    assert sources.has_commit(clone, newest)
+    assert work(clone) == before
+    assert there.state() == state
+
+
+def test_a_clone_that_isnt_there_gives_a_line(
+    home: Path, tmp_path: Path, standins: Standins
+) -> None:
+    """Deleted after `sync`, with its remote there to clone from: a line
+    saying why, and no clone made."""
+    cfg, _, _, clone = from_elsewhere(home, tmp_path)
+    shutil.rmtree(clone)
+
+    diff = only(cfg, diff=True).diff
+    assert diff is not None
+    assert diff.endswith(
+        "plugin 'r': no diff between its commits: it isn't cloned; `tack sync` clones it\n"
+    )
+    assert "diff --git a/r@" not in diff
+    assert not clone.exists()
+
+
+def test_something_in_the_clones_place_gives_syncs_message(
+    home: Path, tmp_path: Path, standins: Standins
+) -> None:
+    cfg, _, _, clone = from_elsewhere(home, tmp_path)
+    shutil.rmtree(clone)
+    write(clone / "notes.txt", "mine\n")
+    before = tree(clone)
+
+    diff = only(cfg, diff=True).diff
+    assert diff is not None
+    message = sources.in_the_way(clone)
+    assert diff.endswith(f"plugin 'r': no diff between its commits: {message}\n")
+    assert tree(clone) == before
+
+
+def test_a_fetch_that_fails_gives_syncs_message(
+    home: Path, tmp_path: Path, standins: Standins
+) -> None:
+    """The remote deleted before the run, and the clone lacking the tip's
+    commit: the fetch's failure, as `sync` words it."""
+    cfg, r, up, clone = from_elsewhere(home, tmp_path)
+    newest = commit(r.repo, {"README.md": "r 3.0\n"})
+    commit(up, {CATALOG: catalog_json(r.entry(newest))})
+    shutil.rmtree(r.repo)
+    before = work(clone)
+
+    diff = only(cfg, diff=True).diff
+    assert diff is not None
+    prefix = f"plugin 'r': no diff between its commits: can't fetch {r.repo.as_uri()}: "
+    (line,) = [x for x in diff.splitlines() if x.startswith("plugin 'r'")]
+    assert line.startswith(prefix)
+    assert len(line) > len(prefix)
+    assert work(clone) == before
+
+
+def test_a_commit_the_remote_hasnt_gives_syncs_message(
+    home: Path, tmp_path: Path, standins: Standins
+) -> None:
+    cfg, r, up, _ = from_elsewhere(home, tmp_path)
+    commit(up, {CATALOG: catalog_json(r.entry("c" * 40))})
+
+    diff = only(cfg, diff=True).diff
+    assert diff is not None
+    assert diff.endswith(
+        f"plugin 'r': no diff between its commits: "
+        f"pinned commit cccccccccccc isn't in {r.repo.as_uri()}\n"
+    )
+
+
+@pytest.mark.parametrize(
+    "case",
+    ["url changed", "added", "removed", "in the source at the pin", "in the source at the tip"],
+)
+def test_no_commit_diff(home: Path, tmp_path: Path, standins: Standins, case: str) -> None:
+    """Only a *modified* plugin from the same other repository at both ends
+    gets its commits' diff; any other has its entry's, or its files', alone,
+    and nothing is fetched or cloned for it."""
+    r = elsewhere(tmp_path / "r", "r")
+    moved = elsewhere(tmp_path / "s", "r")
+    # `elsewhere` makes the same commits twice in the same second: one of its own.
+    elsewhere_only = commit(moved.repo, {"README.md": "only in s\n"})
+    in_source = {"name": "r", "source": "./plugins/r"}
+    ends: dict[str, tuple[Any, Any]] = {
+        "url changed": (r.entry(), moved.entry(elsewhere_only)),
+        "added": (None, r.entry(r.newer)),
+        "removed": (r.entry(), None),
+        "in the source at the pin": (in_source, r.entry(r.newer)),
+        "in the source at the tip": (r.entry(), in_source),
+    }
+    pin, tip = ends[case]
+    files = plugin_files("r")
+    up = repo(tmp_path / "up", {CATALOG: catalog_json(*[e for e in (pin,) if e]), **files})
+    cfg = (
+        pinned(home, source(up, 'skills = []\nplugins = ["r"]\n'))
+        if pin
+        else tracking(home, up, '["r"]')
+    )
+    commit(up, {CATALOG: catalog_json(*[e for e in (tip,) if e]), "plugins/r/README.md": "2\n"})
+    clone = cfg.paths.clones_dir / "up" / "r"
+    cloned = clone.exists()
+
+    report = only(cfg, diff=True)
+    assert [p.name for p in report.plugins] == ["r"]
+    assert report.diff is not None
+    assert "no diff between" not in report.diff
+    assert "diff --git a/r@" not in report.diff
+    assert clone.exists() == cloned
+    if cloned:
+        assert not (clone / ".git" / "FETCH_HEAD").exists()
+        assert not sources.has_commit(clone, elsewhere_only)
+
+
+def test_without_diff_nothing_is_fetched(
+    home: Path, tmp_path: Path, standins: Standins, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The clone lacks the tip's commit and its remote is there to fetch it
+    from: a run without `--diff` leaves it lacking it."""
+    cfg, r, up, clone = from_elsewhere(home, tmp_path)
+    newest = commit(r.repo, {"README.md": "r 3.0\n"})
+    commit(up, {CATALOG: catalog_json(r.entry(newest))})
+
+    assert only(cfg).diff is None
+    assert cli.main(["outdated"]) == 1
+    assert cli.main(["outdated", "--json"]) == 1
+    assert not sources.has_commit(clone, newest)
+    assert not (clone / ".git" / "FETCH_HEAD").exists()

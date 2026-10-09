@@ -104,6 +104,24 @@ def fetch(checkout: Path, source: Source, commit: str) -> bool:
     return _fetch(checkout, source.git, commit)
 
 
+def fetch_into_clone(clone: Path, url: str, commit: str) -> bool:
+    """Fetch `commit` into a plugin's clone as `sync_clone` does when the
+    clone lacks it: the remote's branches and tags, then the commit by its
+    id (DEC-21). Moves nothing; whether the clone has the commit now. Raises
+    SourceError when the fetch fails."""
+    return _fetch(clone, url, commit, by_id=True)
+
+
+def not_in(commit: str, url: str) -> str:
+    """What tack says of a commit a fetch didn't bring."""
+    return f"pinned commit {commit[:12]} isn't in {url}"
+
+
+def in_the_way(d: Path) -> str:
+    """What tack says of something at its checkout's path that isn't one."""
+    return f"{tilde(d)} is in the way and isn't a git checkout"
+
+
 def _fetch(checkout: Path, url: str, commit: str, *, by_id: bool = False) -> bool:
     """Fetch `url`'s branches and tags into the checkout, unless it has
     `commit` already, `origin` following `url`; then, `by_id`, the commit by
@@ -145,7 +163,7 @@ def _refuse(d: Path) -> bool:
     (design.md *The lockfile*): the checkout is left as it is."""
     match _blocked(d):
         case "in the way":
-            raise SourceError(f"{tilde(d)} is in the way and isn't a git checkout")
+            raise SourceError(in_the_way(d))
         case "local changes":
             raise SourceError(
                 f"tack's checkout at {tilde(d)} has local changes; discard or move them"
@@ -179,7 +197,7 @@ def _bring(
         return steps
     try:
         if not _fetch(d, url, commit, by_id=by_id):
-            raise SourceError(f"pinned commit {commit[:12]} isn't in {url}")
+            raise SourceError(not_in(commit, url))
         # A fresh --no-checkout clone has HEAD at the tip but no files: always check out.
         if not there or head(d) != commit:
             r = git.run(d, "checkout", "--quiet", "--detach", commit)

@@ -149,9 +149,13 @@ Plugins are read from their source as it is now: for a source whose own
 state isn't `ok`, `sync` first holds it or checks out its pin.
 
 `tack status --json` adds `plugins`, one object per selected plugin with
-`name`, `source`, `harnesses` (agent → state), `version` and `path` (its
-copy in tack's marketplace, or null), and gives each source `plugins`, the
-names it selects.
+`name`, `source`, `harnesses` (agent → state), `version`, `path` (its
+copy in tack's marketplace, or null) and `repository`: for a plugin from
+another repository, its `url`, `path` (a `git-subdir`'s, or null),
+`commit`, `clone` (where tack keeps its clone) and the clone's `state`
+(`in the way`, `not cloned`, `local changes`, `off its commit` or `ok`);
+null for any other plugin. It also gives each source `plugins`, the names
+it selects.
 
 `tack outdated` compares a git source's selected plugins between its pin and
 the tip, from its catalog at each end: each one *modified* (its catalog
@@ -159,8 +163,13 @@ entry changed, or a file under its directory), *added* or *removed*, with
 its version at each end (`plugins modified: a (1.0 -> 1.1)`); the commits
 it lists include those touching selected plugins; and `--diff` adds each
 changed plugin's diff after the skills', its files and then its catalog
-entry. A catalog broken at either end leaves the plugins uncompared and says
-why. `--json` gives each source `plugins` (`name`, `change`, and `version`
+entry. For a plugin from another repository whose entry moved to another
+commit of the same repository, `--diff` follows the entry's diff with the
+repository's diff between the two commits (headed `a/<plugin>@<commit>/`),
+fetched into the plugin's clone; `outdated` never clones one, checks one
+out or moves it, so a plugin without a clone gets a line saying so (`tack
+sync` clones it), as does a fetch that fails. A catalog broken at either
+end leaves the plugins uncompared and says why. `--json` gives each source `plugins` (`name`, `change`, and `version`
 as `{"from", "to"}`) and `plugins_error` (null unless the catalog is
 broken), and each commit `plugins`. A source that selects no plugins is
 reported as before. `tack update` then takes the change: tack's copy is
