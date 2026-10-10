@@ -1,6 +1,6 @@
 # Status
 
-Last updated 2026-10-09 by `relay-project`.
+Last updated 2026-10-10 by `relay-release`.
 Last review: 2026-10-09 (P0001-C13).
 
 ## Where this stands
@@ -10,12 +10,13 @@ Last review: 2026-10-09 (P0001-C13).
   Codex ([#22](https://github.com/chocs-cat/tack/issues/22)), completed
   2026-10-09: P0001-C01 – C13 (#28 – #59), its design in design.md and
   DEC-1 – DEC-23. Its closeout audited the release commits (#53 overridden
-  to `chore`) and derives a minor release; release-please's #36 proposes
-  0.4.0.
+  to `chore`) and derives a minor release.
+- **Released 0.4.0** on 2026-10-10 (release pull request #36, tag `v0.4.0`
+  at 1ea752f): plugin support, on PyPI and in the Homebrew tap. #48's
+  changelog line was reworded by a commit override.
 - No project is active. Open follow-ups are issues, #60 among them.
-- **Do next:** `/relay-release` when the maintainer wants 0.4.0 out;
-  `/relay-project` to shape the next idea, or `/relay-next` for a
-  maintenance chunk from an issue.
+- **Do next:** `/relay-project` to shape the next idea, or `/relay-next` for
+  a maintenance chunk from an issue.
 
 ## In flight
 
