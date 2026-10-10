@@ -5,7 +5,7 @@ released on PyPI and Homebrew. Phase 9, refinements to the TUI, and phase
 10, the agent skill, were approved on 2026-09-28. This document is the spec. Decisions below were settled with the maintainer in an
 interview; where one is still open it says so, in
 [Open questions](#open-questions). Work after phase 10 is shaped as
-projects in [projects/](projects/index.md), whose design lands here; choices
+relay projects, kept outside the repository, whose design lands here; choices
 this document left open are logged in [decisions.md](decisions.md) and cited
 as `(DEC-n)`.
 
@@ -1513,8 +1513,8 @@ Each phase ends usable and reviewed before the next begins.
 10. **Agent skill** — `skills/tack/SKILL.md`, deployable with `tack add`;
     see [The agent skill](#the-agent-skill).
 
-All ten are done. Later work is planned as projects in
-[projects/](projects/index.md) instead of new phases; a project is activated,
+All ten are done. Later work is planned as relay projects instead of new
+phases; a project is activated,
 and implementation starts, once the maintainer approves its design.
 
 ## Migrating the maintainer's setup
