@@ -1,4 +1,4 @@
-"""The manifest examples in `README.md` and the agent skill parse (#35)."""
+"""The manifest examples in `README.md` and `skills/tack/SKILL.md` parse (#35)."""
 
 from __future__ import annotations
 

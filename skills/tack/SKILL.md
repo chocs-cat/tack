@@ -291,3 +291,7 @@ away. It moves tracked files through git and stages what it writes, but
 project commits. A fix it can't apply safely changes nothing and says why
 (exit `1`). After a Codex hook file changes, Codex asks the user to trust
 the new hooks (`/hooks`).
+
+`scaffold` fixes the layout; to write a project's instructions themselves
+(what goes in `AGENTS.md`, folding in other agents' files, a decision log),
+use the `instructions-setup` skill.
