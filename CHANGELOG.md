@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/chocs-cat/tack/compare/v0.4.0...v0.5.0) (2026-10-10)
+
+
+### Features
+
+* **skills:** ship instructions-setup ([#66](https://github.com/chocs-cat/tack/issues/66)) ([1e75a94](https://github.com/chocs-cat/tack/commit/1e75a94706ef9c73b3583e8dd16b15d1dc52761a))
+
 ## [0.4.0](https://github.com/chocs-cat/tack/compare/v0.3.0...v0.4.0) (2026-10-09)
 
 
