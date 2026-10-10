@@ -401,3 +401,20 @@ in different repositories, and its clone's `origin` follows the catalog at
 the pin until `sync` moves it.
 
 *Where:* design.md, *Tracking plugins upstream*.
+
+## DEC-24: tack ships `instructions-setup` beside its own skill (2026-10)
+
+tack's second shipped skill, `instructions-setup`, writes a project's agent
+instructions in the layout `doctor` audits and `scaffold` fixes: `AGENTS.md`
+as the one instructions file, `CLAUDE.md` importing it, `.agents/skills`
+behind a `.claude/skills` link, and a decision log. The audit and the writing
+belong together: a project set up by the skill passes `doctor`, and the skill
+uses `tack scaffold` for the layout instead of describing the moves a second
+time. It keeps its name from the generic skills collection it came from. It
+covers instructions only: release systems, a GitHub Issues roadmap, and CI
+are repository conventions with their own setup, and stay out of tack.
+Keeping it in a separate skills repository was ruled out because it would
+drift from the conventions `doctor` checks.
+
+*Where:* design.md *The agent skills*.
+
