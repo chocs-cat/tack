@@ -23,6 +23,27 @@ def test_the_skill_is_valid(skill: Path) -> None:
     assert meta["name"] == skill.name
 
 
+def _templates() -> list[tuple[Path, str]]:
+    """Each `templates/…` path a skill's SKILL.md names, with the skill."""
+    return [
+        (skill, path)
+        for skill in ALL
+        for path in sorted(
+            set(re.findall(r"`(templates/[^`\s]+)`", (skill / "SKILL.md").read_text()))
+        )
+    ]
+
+
+@pytest.mark.parametrize(
+    ("skill", "path"), _templates(), ids=lambda v: v.name if isinstance(v, Path) else v
+)
+def test_the_skill_ships_the_templates_it_names(skill: Path, path: str) -> None:
+    """A template a skill points at is in the skill's directory. CI's clean
+    checkout is what makes this bite: a file a global gitignore kept out of
+    the commit still sits in a local working tree."""
+    assert (skill / path).is_file()
+
+
 def _commands() -> list[tuple[str, str]]:
     """Each `tack …` line in each skill's shell blocks, with the skill's name."""
     out = []
@@ -43,6 +64,7 @@ def test_the_listing_finds_both_skills_and_their_commands() -> None:
     would leave the tests above with nothing to check."""
     assert {"tack", "instructions-setup"} <= {p.name for p in ALL}
     assert {"tack", "instructions-setup"} <= {name for name, _ in _commands()}
+    assert "templates/CLAUDE.local.md" in {path for _, path in _templates()}
 
 
 @pytest.mark.parametrize(("skill", "line"), _commands())
