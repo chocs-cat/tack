@@ -24,7 +24,7 @@ as `(DEC-n)`.
 11. [`doctor` checks](#doctor-checks)
 12. [Scaffolding](#scaffolding)
 13. [The TUI](#the-tui)
-14. [The agent skill](#the-agent-skill)
+14. [The agent skills](#the-agent-skills)
 15. [Releasing](#releasing)
 16. [Harness facts tack relies on](#harness-facts-tack-relies-on)
 17. [Implementation](#implementation)
@@ -1250,25 +1250,45 @@ a running fetch to finish, so the two never work in one checkout at once.
 Diffs show colored in the detail pane and in an action's preview; `p`
 suspends the app and opens the diff in git's pager (`git var GIT_PAGER`).
 
-## The agent skill
+## The agent skills
 
-tack ships a skill of its own, `skills/tack/SKILL.md`, that teaches coding
-agents to run tack for the user: the `--json` CLI rather than the TUI, a dry
-run shown before every change, the manifest's fields, auto-commit and
-`--no-commit`, and `doctor`'s findings and their `scaffold` fixes (and
-plugins). It is generic, like tack, and versions with the code.
+tack ships two skills of its own, in `skills/`, generic like tack and
+versioned with the code (DEC-24):
 
-The repository is itself a source, so tack deploys the skill like any other:
+- **`tack`** (`skills/tack/SKILL.md`) teaches coding agents to run tack for
+  the user: the `--json` CLI rather than the TUI, a dry run shown before every
+  change, the manifest's fields, auto-commit and `--no-commit`, and `doctor`'s
+  findings and their `scaffold` fixes (and plugins).
+- **`instructions-setup`** (`skills/instructions-setup/SKILL.md`) sets up, or
+  reorganizes, a project's agent instructions so every agent reads the same
+  ones: `AGENTS.md` as the one instructions file, written for any agent (what
+  the project is, its commands, workflow, conventions and rules, each line
+  something an agent could not infer), `CLAUDE.md` importing it, project skills
+  in `.agents/skills` behind a `.claude/skills` link, a git-ignored
+  `CLAUDE.local.md` for one machine's notes, and a decision log
+  (`docs/decisions.md`, entries `DEC-n`). It writes the content; the layout is
+  what `doctor` audits, so when `tack` is on `PATH` the skill applies the
+  layout with `tack scaffold agents-md` and `tack scaffold skills-dir` and
+  checks the result with `tack doctor` on the project, and without tack it
+  makes the same moves by hand, as [Scaffolding](#scaffolding) describes them.
+  It folds other agents' instruction files (`.cursorrules`, Copilot, Gemini)
+  into `AGENTS.md`, never drops a rule silently, and lands its change through a
+  branch and pull request unless the project has no remote. Release systems,
+  a GitHub Issues roadmap, CI and other repository conventions are not
+  instructions and are out of its scope.
+
+The repository is itself a source, so tack deploys the skills like any other:
 `tack add https://github.com/chocs-cat/tack.git` adds a source named `tack`
-that links it into every harness, and `tack update tack` takes in a newer
-one. Anyone else copies `skills/tack` into their agents' skills directories.
-The skill isn't deployed without a manifest entry: tack deploys only what
-the manifest selects (principle 4).
+that links both into every harness (`--skill tack` selects one), and
+`tack update tack` takes in newer ones. Anyone else copies a skill's
+directory into their agents' skills directories. A skill isn't deployed
+without a manifest entry: tack deploys only what the manifest selects
+(principle 4).
 
-A test keeps the skill honest: it must pass `bad-skill`, and every `tack`
-command in its shell blocks must parse with tack's own argument parser, so a
-renamed command or flag fails CI until the skill follows.
-
+A test keeps each skill honest: every skill under `skills/` must pass
+`bad-skill`, and every `tack` command in its shell blocks must parse with
+tack's own argument parser, so a renamed command or flag fails CI until the
+skills follow.
 ## Releasing
 
 tack is published to PyPI as `tack-agents` and to Homebrew as `tack`, from the
@@ -1472,7 +1492,7 @@ codex-cli 0.160.1 as above, all but the stdin wait:
   `scaffold/` (one module per fix), `cli.py`, and `tui/` (the app, its
   views and its dialogs, over the same functions the CLI calls). Outside
   the package, `scripts/formula.py` writes the Homebrew formula, and
-  `skills/tack/` is the agent skill. `catalog.py` reads catalogs,
+  `skills/` holds the agent skills. `catalog.py` reads catalogs,
   `plugins.py` plans plugins and keeps tack's marketplace, and `agents.py`
   runs the agents' plugin CLIs; `sync`, `status`, `doctor` and the TUI go
   through them.
@@ -1511,7 +1531,7 @@ Each phase ends usable and reviewed before the next begins.
    path, one line when clicked), sorting and grouping on Skills, and
    Settings; see [The TUI](#the-tui).
 10. **Agent skill** — `skills/tack/SKILL.md`, deployable with `tack add`;
-    see [The agent skill](#the-agent-skill).
+    see [The agent skills](#the-agent-skills).
 
 All ten are done. Later work is planned as relay projects instead of new
 phases; a project is activated,
