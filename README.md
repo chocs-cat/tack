@@ -215,17 +215,27 @@ the built-in list (Claude Code's `builtin`, `inline`, `skills-dir` and
 ignore_marketplaces = ["company-tools"]
 ```
 
-## Agent skill
+## Agent skills
 
-[`skills/tack/SKILL.md`](skills/tack/SKILL.md) teaches coding agents to run
-tack for you through its `--json` CLI. Deploy it with tack itself:
+tack ships two skills for coding agents:
+
+- [`tack`](skills/tack/SKILL.md) teaches them to run tack for you through
+  its `--json` CLI.
+- [`instructions-setup`](skills/instructions-setup/SKILL.md) sets up, or
+  reorganizes, a project's agent instructions: `AGENTS.md` as the one
+  instructions file, `CLAUDE.md` importing it, project skills in
+  `.agents/skills`, and a decision log. It applies that layout with
+  `tack scaffold` and checks it with `tack doctor`.
+
+Deploy them with tack itself:
 
 ```sh
-tack add https://github.com/chocs-cat/tack.git   # a source named tack, linked into every harness
-tack update tack                                  # later: take in a newer version
+tack add https://github.com/chocs-cat/tack.git   # a source named tack, linking both into every harness
+tack add https://github.com/chocs-cat/tack.git --skill tack   # or only one of them
+tack update tack                                  # later: take in newer versions
 ```
 
-Or copy `skills/tack` into your agents' skills directories.
+Or copy a skill's directory into your agents' skills directories.
 
 ## Development
 
