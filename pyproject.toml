@@ -58,5 +58,5 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF", "PT", "C4", "PERF", "PTH"
 dev = [
     "pytest>=9.1.1",
     "ruff>=0.16.9",
-    "ty==0.0.84",
+    "ty==0.0.85",
 ]
