@@ -555,6 +555,32 @@ def test_groups_plugins_by_source(home: Path, standins: Standins) -> None:
     drive(scenario)
 
 
+def test_a_plugin_only_source_detail_has_no_skills_line(home: Path, standins: Standins) -> None:
+    """#52: on Plugins, a source whose `skills` is `[]` shows no skills line
+    in its group row's detail; one whose `"*"` finds no skills keeps it."""
+    plugin_source(home, "one", "a")
+    plugin_source(home, "two", "x")
+    cfg = load(
+        home,
+        '[[source]]\nname = "one"\npath = "~/one"\nskills = []\nplugins = "*"\n'
+        '[[source]]\nname = "two"\npath = "~/two"\nplugins = "*"\n',
+    )
+    run_sync(cfg)
+
+    async def scenario(app: TackApp, pilot: Pilot[None]) -> None:
+        await pilot.press("2")
+        assert [r[0] for r in rows(app, "plugins")] == ["▾ one (1)", "  a", "▾ two (1)", "  x"]
+        assert app._selected("plugins") == "one"
+        lines = detail(app, "plugins").splitlines()
+        assert lines[1] == "1 plugin: a"
+        assert not any("skill" in line for line in lines)
+        await pilot.press("down", "down")
+        assert app._selected("plugins") == "two"
+        assert detail(app, "plugins").splitlines()[1:3] == ["0 skills: ", "1 plugin: x"]
+
+    drive(scenario)
+
+
 def test_the_plugins_tab_without_plugins(home: Path, tmp_path: Path) -> None:
     machine(home, tmp_path)
 
@@ -809,7 +835,8 @@ def test_the_sources_detail_gives_what_outdated_does(
     async def scenario(app: TackApp, pilot: Pilot[None]) -> None:
         await pilot.press("3")
         lines = detail(app, "sources").splitlines()
-        assert lines[2:4] == ["0 skills: ", "2 plugins: m, r"]
+        assert lines[2] == "2 plugins: m, r"  # `skills = []`: no skills line
+        assert not any(line.startswith("0 skills") for line in lines)
         at = next(i for i, line in enumerate(lines) if "1 commit behind" in line) + 1
         assert lines[at : at + len(changes)] == changes
         commits = [f"{c.commit[:12]} {c.subject}" for c in source.commits]
@@ -911,6 +938,14 @@ def test_source_detail_says_which_directory_a_missing_source_lacks(tmp_path: Pat
     assert "its directory isn't there\n" in render.source_detail(gone, None).plain
     (tmp_path / "gone").mkdir()
     assert "its skills directory isn't there\n" in render.source_detail(gone, None).plain
+
+
+def test_source_detail_keeps_the_skills_line_of_a_source_that_finds_none() -> None:
+    """A `"*"` source over an empty skills directory still says `0 skills`;
+    only one whose `skills` is `[]` leaves the line out."""
+    assert "\n0 skills: \n" in render.source_detail(PATH_SOURCE, None).plain
+    plain = render.source_detail(PATH_SOURCE, None, selects_skills=False).plain
+    assert "skills" not in plain
 
 
 def test_diff_colors() -> None:
