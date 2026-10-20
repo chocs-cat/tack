@@ -1431,6 +1431,10 @@ codex-cli 0.160.1 as above, all but the stdin wait:
 
 - **stdin.** Run with stdin an open pipe, `claude` waits three seconds for
   input and warns before it carries on; with stdin closed it doesn't.
+- **No controlling terminal.** Every command below behaves the same when it
+  runs in a session of its own, with no controlling terminal, as tack runs it
+  (DEC-25; checked 2026-10-20 against Claude Code 2.1.302 and codex-cli
+  0.163.0 by `tools/agent_facts.py`).
 - **`claude plugin list --json`** prints an array, one object per installed
   plugin: `id` (`<name>@<marketplace>`), `scope` (`user`, `project`, `local`,
   or `synced` for claude.ai's), `enabled`, `version`, `installPath`, and for a
