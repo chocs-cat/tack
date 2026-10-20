@@ -433,4 +433,5 @@ running. A new process group in tack's session would also leave the
 foreground group, but a command in a background group that touches the
 terminal is stopped, where one with no terminal fails.
 
-*Where:* design.md, *Deploying* (how `sync` runs the agents' CLIs).
+*Where:* design.md, *Deploying* (how `sync` runs the agents' CLIs) and
+*Harness facts tack relies on*.

@@ -18,7 +18,7 @@ What it does not verify: anything about loading a plugin in a session, the
 plugin caches' layout, project scope, git marketplaces, or fields tack doesn't
 read (extra fields are fine; a missing one fails). It doesn't check the
 stdin wait either (that takes a pipe held open); every command here runs with
-stdin closed, as tack runs them.
+stdin closed and in a session of its own, as tack runs them (DEC-25).
 
 How to run: `uv run python tools/agent_facts.py`, or with `--claude PATH`
 and `--codex PATH` to check other executables. To check the test suite's
@@ -70,6 +70,7 @@ class Agent:
             cwd=self.cwd,
             env=env,
             stdin=subprocess.DEVNULL,
+            start_new_session=True,  # DEC-25
             capture_output=True,
             text=True,
             check=False,
