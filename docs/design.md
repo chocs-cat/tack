@@ -1148,7 +1148,9 @@ Four tabs, each a list with a detail pane for the selected row:
   is, or that it isn't pinned or checked out; a path source's uncommitted and
   unpushed skill edits. The detail shows the pin, the commits since, the
   changed skills (and plugins), and their diff. It names
-  the plugins the source selects after its skills, when it selects any, and
+  the skills the source selects, then the plugins, when it selects any. A
+  source whose `skills` is `[]` has no skills line; every other source
+  keeps it, `0 skills` included when its skills directory has none. It
   gives its changed plugins, its `plugins_error` and "no selected skill or
   plugin changed" as `outdated`'s text does.
 - **Doctor** — the findings by project, colored by severity. The detail
