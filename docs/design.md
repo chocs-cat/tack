@@ -574,7 +574,9 @@ then makes each harness match it by running that agent's own CLI, never by
 editing the agent's files (principle 5): `claude plugin …` and `codex plugin …`, found on
 `PATH`, with `--json` and stdin closed, run in tack's data directory (or, if
 that doesn't exist yet, an empty temporary one) so that no project's plugin
-settings apply. A command fails when it exits non-zero or its output isn't
+settings apply, and in a session of its own, so that a tool watching the
+terminal's foreground processes doesn't take tack for a running agent
+(DEC-25). A command fails when it exits non-zero or its output isn't
 the JSON it should be; the agent's message is Claude Code's `message` from
 its JSON, else the last line either agent wrote to stderr, without Codex's
 `Error: ` prefix. It reads what each agent has from `plugin list` and
