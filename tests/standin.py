@@ -2,7 +2,7 @@
 
 `tests/conftest.py` writes two executables, `claude` and `codex`, first on
 PATH; both run this script, which answers their `plugin … --json` commands
-as design.md *Harness facts tack relies on* (the *(P0001)* parts) describes.
+as design.md *Harness facts tack relies on* (its plugin facts) describes.
 It keeps what each agent has registered and installed in `state.json`, and
 appends every call to `calls.jsonl`, both in the directory the environment
 variable STANDIN_AGENTS_DIR names. Only this script reads that variable:

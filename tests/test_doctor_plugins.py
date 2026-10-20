@@ -1,5 +1,6 @@
-"""`doctor`'s plugin checks (design.md *`doctor` checks*, the *(P0001)*
-paragraph), against the stand-in agents."""
+"""`doctor`'s plugin checks (design.md *`doctor` checks*, the paragraph
+beginning "The plugin checks read each agent's plugins"), against the
+stand-in agents."""
 
 from __future__ import annotations
 
