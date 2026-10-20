@@ -4,9 +4,9 @@ A `path` source is its directory; a `git` source is tack's checkout of it
 under the data directory, detached at the commit the lockfile pins. A skill
 is a directory in the source's `subdir`, named by its directory name.
 
-*(P0001)* A plugin from another repository is a clone of that repository
-under `<data>/plugins/<source>/<plugin>/`, kept at the commit its catalog
-names by the same code that keeps a checkout at its pin (DEC-21).
+A plugin from another repository is a clone of that repository under
+`<data>/plugins/<source>/<plugin>/`, kept at the commit its catalog names by
+the same code that keeps a checkout at its pin (DEC-21).
 """
 
 from __future__ import annotations

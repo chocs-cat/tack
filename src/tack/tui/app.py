@@ -566,8 +566,13 @@ class TackApp(App[None]):
         elif tab in ("skills", "plugins", "sources"):
             source = next(s for s in self.status.sources if s.name == key)
             sources = self.cfg.sources if self.cfg is not None else ()
-            selects = any(s.name == key and s.plugins != () for s in sources)
-            detail = render.source_detail(source, self._upstream(key), selects_plugins=selects)
+            spec = next((s for s in sources if s.name == key), None)
+            detail = render.source_detail(
+                source,
+                self._upstream(key),
+                selects_skills=spec is None or spec.skills != (),
+                selects_plugins=spec is not None and spec.plugins != (),
+            )
             self._detail(tab, detail)
         elif tab == "doctor" and (f := self._finding()) is not None:
             self._detail(tab, render.finding_detail(f))

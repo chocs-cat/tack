@@ -1,5 +1,6 @@
-"""Global plugin checks (design.md *`doctor` checks*, the *(P0001)* paragraph):
-what each agent has, read through its CLI, against the manifest's plugins.
+"""Global plugin checks (design.md *`doctor` checks*, the paragraph beginning
+"The plugin checks read each agent's plugins"): what each agent has, read
+through its CLI, against the manifest's plugins.
 
 Each built-in harness's inventory is read once per run, whether or not the
 manifest selects plugins (DEC-18), and every check here shares it. A selected

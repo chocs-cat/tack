@@ -183,10 +183,16 @@ def _pin(s: SourceStatus) -> str:
 
 
 def source_detail(
-    s: SourceStatus, up: outdated.SourceReport | None, *, selects_plugins: bool = False
+    s: SourceStatus,
+    up: outdated.SourceReport | None,
+    *,
+    selects_skills: bool = True,
+    selects_plugins: bool = False,
 ) -> Text:
-    """`selects_plugins`: whether the source's `plugins` isn't `[]`, which
-    `outdated`'s text needs to say what didn't change."""
+    """`selects_skills`: whether the source's `skills` isn't `[]`; a source
+    that selects none has no skills line (design.md *The TUI*, Sources).
+    `selects_plugins`: whether its `plugins` isn't `[]`, which `outdated`'s
+    text needs to say what didn't change."""
     out = Text()
     out.append(s.name, style="bold")
     out.append(f"  {_location(s)}\n")
@@ -194,7 +200,8 @@ def source_detail(
         out.append(f"{_pin(s)}\n")
     if s.state != "ok":
         out.append(text.source_note(s.state, s.name, s.root) + "\n", style="red")
-    out.append(f"{plural(len(s.skills), 'skill')}: {', '.join(s.skills)}\n")
+    if selects_skills:
+        out.append(f"{plural(len(s.skills), 'skill')}: {', '.join(s.skills)}\n")
     if s.plugins:
         out.append(f"{plural(len(s.plugins), 'plugin')}: {', '.join(s.plugins)}\n")
     if s.uncommitted:
