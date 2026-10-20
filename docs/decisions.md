@@ -418,3 +418,19 @@ drift from the conventions `doctor` checks.
 
 *Where:* design.md *The agent skills*.
 
+## DEC-25: tack runs the agents' CLIs in a session of their own (2026-10)
+
+Each `claude plugin …` and `codex plugin …` command tack runs starts in a
+new session (`setsid`), so it is in neither the terminal's foreground
+process group nor any other group of tack's. Terminal workspace managers
+that list running agents find them among the terminal's foreground
+processes: herdr 0.8.0 on macOS showed tack's pane as a Claude Code agent
+for as long as a `plugin list` ran (#72). In a session of its own the
+command has no controlling terminal; it needs none, as its stdin is closed
+and its output captured. A Ctrl-C at the terminal no longer reaches it,
+but tack, interrupted, kills the command it is waiting on, so none is left
+running. A new process group in tack's session would also leave the
+foreground group, but a command in a background group that touches the
+terminal is stopped, where one with no terminal fails.
+
+*Where:* design.md, *Deploying* (how `sync` runs the agents' CLIs).
