@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.2](https://github.com/chocs-cat/tack/compare/v0.5.1...v0.5.2) (2026-10-20)
+
+
+### Bug Fixes
+
+* run the agents' CLIs in a session of their own ([#74](https://github.com/chocs-cat/tack/issues/74)) ([02701b5](https://github.com/chocs-cat/tack/commit/02701b5985b7934f7884839babe5a6d3441ab407)), closes [#72](https://github.com/chocs-cat/tack/issues/72)
+
 ## [0.5.1](https://github.com/chocs-cat/tack/compare/v0.5.0...v0.5.1) (2026-10-20)
 
 
