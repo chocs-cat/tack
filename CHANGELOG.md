@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/chocs-cat/tack/compare/v0.5.0...v0.5.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* **tui:** leave the skills line out of a plugin-only source's detail ([#70](https://github.com/chocs-cat/tack/issues/70)) ([5d0053d](https://github.com/chocs-cat/tack/commit/5d0053d7c045837d1ff855e6570eaccc56913aa3)), closes [#52](https://github.com/chocs-cat/tack/issues/52) [#60](https://github.com/chocs-cat/tack/issues/60)
+
 ## [0.5.0](https://github.com/chocs-cat/tack/compare/v0.4.0...v0.5.0) (2026-10-10)
 
 
