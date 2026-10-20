@@ -5,7 +5,9 @@ agent's files (principle 5): it reads what each agent has, and registers,
 installs and uninstalls, only through that agent's own CLI, found on PATH,
 with `--json` and stdin closed, run in tack's data directory (or an empty
 temporary one when that doesn't exist yet) so that no project's plugin
-settings apply. It never enables or disables a plugin (DEC-5).
+settings apply, and in a session of its own, so that a tool watching the
+terminal's foreground processes doesn't take tack for a running agent
+(DEC-25). It never enables or disables a plugin (DEC-5).
 
 design.md *Harness facts tack relies on* records what each command prints.
 A command fails when it exits non-zero or doesn't print the JSON it should;
@@ -117,6 +119,7 @@ def run(command: Command, paths: Paths) -> Outcome:
                 command.args,
                 cwd=cwd,
                 stdin=subprocess.DEVNULL,
+                start_new_session=True,  # DEC-25
                 capture_output=True,
                 text=True,
                 encoding="utf-8",

@@ -98,6 +98,7 @@ class Call:
     args: list[str]
     cwd: str
     stdin_devnull: bool
+    sid: int  # the session it ran in
 
 
 class Standins:
@@ -433,7 +434,13 @@ def main(argv: list[str]) -> int:
     except OSError:
         devnull = False
     state_dir.mkdir(parents=True, exist_ok=True)
-    call = {"cli": cli, "args": args, "cwd": str(Path.cwd()), "stdin_devnull": devnull}
+    call = {
+        "cli": cli,
+        "args": args,
+        "cwd": str(Path.cwd()),
+        "stdin_devnull": devnull,
+        "sid": os.getsid(0),
+    }
     with (state_dir / CALLS).open("a") as log:
         log.write(json.dumps(call) + "\n")
 

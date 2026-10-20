@@ -208,6 +208,16 @@ def test_commands_run_in_a_temporary_directory_without_one(
     assert not paths.data_dir.exists()
 
 
+def test_commands_run_in_a_session_of_their_own(paths: Paths, standins: Standins) -> None:
+    # Out of the terminal's foreground process group, where a tool listing
+    # running agents would find them (design.md *Deploying*, DEC-25).
+    for h in HARNESSES:
+        ok(agents.run(agents.list_plugins(h), paths))
+    calls = standins.calls()
+    assert [c.cli for c in calls] == ["claude", "codex"]
+    assert all(c.sid != os.getsid(0) for c in calls)
+
+
 def test_failure_messages(paths: Paths, standins: Standins) -> None:
     # Claude Code's message comes from its JSON, not its `✘` line.
     out = agents.run(agents.install("claude-code", "foo"), paths)
