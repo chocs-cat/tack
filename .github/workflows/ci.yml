@@ -6,8 +6,43 @@ on:
   pull_request:
 
 jobs:
+  changes:
+    # Decides whether the checks run. The docs filter lives here, not in a
+    # workflow-level paths-ignore: a skipped workflow never reports `CI
+    # passed`, so a docs-only pull request would wait on it forever.
+    name: changes
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - id: filter
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          if [ -z "$PR" ]; then
+            echo code=true >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Both sides of a rename count, so moving code into docs/ still runs.
+          # docs/design.md counts as code: tests/test_config.py loads its
+          # manifest example.
+          files=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --paginate \
+            --jq '.[] | .filename, (.previous_filename // empty)')
+          if grep -qv '^docs/' <<<"$files" || grep -qx 'docs/design.md' <<<"$files"; then
+            echo code=true >> "$GITHUB_OUTPUT"
+          else
+            echo code=false >> "$GITHUB_OUTPUT"
+          fi
+
   lint:
     name: lint (ruff, ty)
+    needs: changes
+    # Anything but an explicit `false` runs it, so a failed `changes` job
+    # still runs the checks instead of skipping them.
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -19,6 +54,8 @@ jobs:
 
   test:
     name: test (${{ matrix.os }}, py${{ matrix.python }})
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -39,6 +76,8 @@ jobs:
     # left out of the wheel, a dependency missing from the metadata) that
     # the tests, which run from the source tree, can't see.
     name: package
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -63,13 +102,19 @@ jobs:
 
   ok:
     # The one check branch protection requires, so the matrix can change
-    # without editing the protection rule.
+    # without editing the protection rule. A docs-only pull request skips the
+    # checks and passes; anything else must pass all of them.
     name: CI passed
     if: always()
-    needs: [lint, test, package]
+    needs: [changes, lint, test, package]
     runs-on: ubuntu-latest
     steps:
-      - run: |
-          test "${{ needs.lint.result }}" = success
-          test "${{ needs.test.result }}" = success
-          test "${{ needs.package.result }}" = success
+      - env:
+          CODE: ${{ needs.changes.outputs.code }}
+          LINT: ${{ needs.lint.result }}
+          TEST: ${{ needs.test.result }}
+          PACKAGE: ${{ needs.package.result }}
+        run: |
+          for result in "$LINT" "$TEST" "$PACKAGE"; do
+            test "$result" = success || { test "$CODE" = false && test "$result" = skipped; }
+          done
