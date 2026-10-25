@@ -537,7 +537,8 @@ Many skill repositories ship a catalog whose one plugin is the whole
 repository (`"source": "./"`), holding the same skills the source offers.
 Deploying that plugin and those skills gives the agent each skill twice, so a
 source normally takes one or the other; `add --plugin` writes `skills = []`
-for that reason.
+for that reason, and `doctor` reports a skill deployed both ways
+(`duplicate-plugin-skill`, DEC-27).
 
 ### Deploying
 
@@ -941,6 +942,7 @@ read wrong), **warn** (will drift or break later), **info**.
 | `name-collision` | error | Two sources select the same skill name for the same harness, or the same plugin name for any harnesses (DEC-11). |
 | `unmanaged-plugin` | info | A plugin installed in a harness at user scope from a marketplace other than tack's and not in `ignore_marketplaces`: installed by hand or by another manager, so nothing keeps it the same across agents and machines. Selecting it from its source does. |
 | `duplicate-plugin` | warn | A plugin tack deploys to a harness is also installed there, under the same name, from another marketplace: the agent loads both. |
+| `duplicate-plugin-skill` | warn | A plugin tack deploys to a harness carries a skill tack also links there: the agent loads it twice, as `<skill>` and as `<plugin>:<skill>` (DEC-27). |
 | `bad-skill` | warn | `SKILL.md` missing, without frontmatter, without a `description`, or with a `name` that differs from its directory. |
 | `dirty-source` | info | A `path` source has uncommitted or unpushed skill edits. |
 | `instructions-split` | warn | The harnesses' user instruction files don't resolve to the same content: neither is an import of or symlink to the other, and their text differs. |
@@ -957,8 +959,9 @@ a `sync` dry run would report has a finding (DEC-19), so it is a
 `not-synced` finding (its plugins are `unavailable`, DEC-16) where `sync`
 reports an `agent` problem: a missing CLI when a selected plugin targets
 the harness, a failing `list` when `sync` runs the harness's CLI at all (see
-*Leftovers*). Project-scoped plugins aren't audited: in Claude Code only
-`user`-scope installs count, as for `sync`. In detail:
+*Leftovers*). These checks count only user-scope installs (in Claude Code,
+`user` scope), as `sync` does; what a project's files turn on or off is a
+[per-project check](#per-project). In detail:
 
 - **A selected plugin's state.** `not-synced` takes the plugin's
   [state](#plugin-states) in each harness it targets, as `status` gives it,
@@ -1003,9 +1006,29 @@ the harness, a failing `list` when `sync` runs the harness's CLI at all (see
   selected by no other source) that the harness also has from another
   marketplace, whatever `ignore_marketplaces` says; such a plugin isn't
   also `unmanaged-plugin`.
+- **Skills a plugin carries.** `duplicate-plugin-skill` once per plugin and
+  harness, for each plugin the manifest deploys to the harness (as for
+  `duplicate-plugin`) whose files can be read, naming each skill it carries
+  that the manifest also deploys to the harness as a skill (selected for it,
+  in no collision) and the source that skill comes from, located at the
+  plugin's directory. A plugin's skills are the directories holding a
+  `SKILL.md` directly under its `skills/` directory, and those named by the
+  `skills` field of its three `plugin.json` files (as [Catalogs](#catalogs)
+  reads its version) and of its catalog entry: a string or a list of
+  strings, each a relative path inside the plugin that is a skill directory
+  itself (`"./"` for one at the plugin's root) or a directory of them. A
+  path that leaves the plugin or isn't a directory, and a value of any other
+  type, add nothing. One reading serves every harness (DEC-27). A skill's
+  name is its frontmatter `name`, else its directory's name (the plugin's
+  name for one at the plugin's root). The files are read as the source has
+  them now (DEC-17), from the plugin's clone only while it is `ok`. This
+  check reads only files, so it runs whether or not an agent's CLI is on
+  `PATH`.
 
 In a harness with a foreign `tack`, nothing is tack's: none of its plugins
-is a leftover or a duplicate. A finding about a harness names it. Like
+is a leftover or a duplicate. `duplicate-plugin-skill`, which reads only
+the manifest and files, applies all the same: it says what the harness
+will load once the conflict is cleared. A finding about a harness names it. Like
 `status`, these checks read each source as it is now (DEC-17): what they
 say `sync` would do is what it does for a source whose state is `ok`.
 
@@ -1024,6 +1047,7 @@ say `sync` would do is what it does for a source whose state is `ok`.
 | `hook-one-harness` | warn | A hook in one harness's project hook file with no counterpart in the other's. | `hooks` |
 | `hook-mismatch` | warn | Counterpart hooks exist but differ (event, matcher, or command). | `hooks` |
 | `hook-hardcoded-home` | info | A hook command contains an absolute home path; it breaks on another machine or clone. | — |
+| `plugin-one-harness` | warn | The project turns a plugin on or off for one harness, and the other's project settings set it differently or not at all (DEC-26). | — |
 
 A project is any git repository found under `projects.roots` (not descending
 into another repository's working tree, `node_modules`, hidden directories, or
@@ -1053,6 +1077,38 @@ alternatives, merged across entries, so four `SessionStart` entries matching
 them: `args` folded into the command, `$CLAUDE_PROJECT_DIR` and
 `$(git rev-parse --show-toplevel)` read as the same thing, and an
 `apply_patch` matcher reads as `Edit|Write`.
+
+**Plugins.** A project's committed settings can turn a plugin on or off for
+everyone who works in it, over each user's own setting: Claude Code reads
+`enabledPlugins` from `.claude/settings.json` (an object of
+`"<name>@<marketplace>": true` or `false`), and Codex reads `enabled` from
+each `[plugins."<name>@<marketplace>"]` table of `.codex/config.toml`
+(see [Harness facts](#harness-facts-tack-relies-on)). Neither installs the
+plugin; each machine still does. `plugin-one-harness` compares these two
+files of the built-in harnesses, whatever their `project_hooks` say
+(DEC-8), and reads no other: `.claude/settings.local.json` is one
+machine's.
+
+- A plugin's *name* is a key up to its first `@` (the whole key when it
+  has none), so a plugin matches across the agents whichever marketplace
+  each names (DEC-26).
+- Its *setting* in a file is `on` when an entry for its name is `true`,
+  else `off` when one is `false`, else `unset`. Any other value, an
+  `enabledPlugins` that isn't an object, a `plugins` that isn't a table, a
+  `[plugins]` entry that isn't a table, and a table without a boolean
+  `enabled` set nothing.
+- A plugin whose setting differs between the two files is one finding,
+  located at the file whose setting is `on` (or `off`, against `unset`),
+  with that harness, naming the entry it read (`foo@mk = true`), the other
+  file's setting, and what to add to the other file: `"enabledPlugins":
+  {"<name>@<marketplace>": …}` or `[plugins."<name>@<marketplace>"]
+  enabled = …`, the other agent's name for the marketplace left to the
+  user. Findings come in name order.
+- A file that can't be parsed is `unreadable-file`, reported once: by the
+  hooks check when it is among the harness's `project_hooks`, otherwise by
+  this one. While either file is unreadable the project has no
+  `plugin-one-harness` findings: one side's settings are unknown.
+- There is no `scaffold` fix (DEC-26).
 
 **Exit code.** `1` when there is an error or warn finding; info findings alone
 exit `0`.
@@ -1424,6 +1480,46 @@ skills, and symlinked plugin directories:
   directory in a local marketplace is a symlink to a directory outside it, but
   Claude Code's `plugin validate` says it dereferences only symlinks that stay
   inside the marketplace; tack doesn't rely on it (DEC-2).
+
+Project plugin settings and plugin skills, verified 2026-10-25 against
+Claude Code 2.1.310 and codex-cli 0.164.0, in a scratch `HOME`, and their
+documentation:
+
+- **Claude Code project plugins.** `claude plugin install <p>@<m> --scope
+  project` sets `"<p>@<m>": true` in `enabledPlugins` of the project's
+  `.claude/settings.json`, and `marketplace add <dir> --scope project` adds
+  the marketplace to its `extraKnownMarketplaces`; the install itself is
+  this machine's, recorded in `~/.claude/plugins/installed_plugins.json`
+  with the project's path. `plugin list --json` shows it with scope
+  `project`, `enabled` and `projectEnabled` true when run in the project,
+  false elsewhere. Committed, the setting turns the plugin on for the
+  project's collaborators but doesn't download it: each installs it once
+  (its documentation). For each plugin id, the most specific settings file
+  that mentions it decides (the user's, then the project's, then
+  `.claude/settings.local.json`), so a project's `false` turns off a plugin
+  a user turned on. Project settings apply only once the folder is trusted.
+- **Codex project plugins.** Codex reads a project's `.codex/config.toml`
+  only when the project is trusted. There, a `[marketplaces.<m>]` table
+  registers a marketplace for that project (`plugin marketplace list` shows
+  it there and nowhere else), and `[plugins."<p>@<m>"] enabled` overrides
+  the user's `enabled` for an installed plugin, `true` over the user's
+  `false` and `false` over `true`; a table without `enabled` changes
+  nothing. It installs nothing: `codex plugin add` records the install in
+  `~/.codex/config.toml` whatever directory it runs in, and a plugin the
+  project turns on that isn't installed isn't listed. The repository
+  marketplace its documentation names (`.agents/plugins/marketplace.json`
+  at the repository's root, with `policy.installation`) isn't read by
+  codex-cli 0.164.0's `plugin list` or `plugin marketplace list`.
+- **Plugin skills.** Claude Code loads a plugin's skills from the
+  directories under its `skills/`, and adds each directory its
+  `plugin.json` `skills` field names (a string or a list): a directory of
+  skills, or one holding `SKILL.md` itself (`"./"` for the plugin's root).
+  It names each `<plugin>:<directory>`, a frontmatter `name` replacing the
+  directory's (its documentation; seen as `humanizer:humanizer` for a
+  plugin whose `skills` is `["./"]`). Codex's documentation has it
+  discover skills under `skills/` and shows `"skills": "./skills/"`; it
+  doesn't say whether other paths add to that, and tack reads them as
+  Claude Code does (DEC-27).
 
 Their output, verified 2026-10-05 against the same versions, in a
 scratch `HOME`, and re-verified 2026-10-09 against Claude Code 2.1.289 and

@@ -435,3 +435,50 @@ terminal is stopped, where one with no terminal fails.
 
 *Where:* design.md, *Deploying* (how `sync` runs the agents' CLIs) and
 *Harness facts tack relies on*.
+
+## DEC-26: A project's plugin settings are compared by name and value, with no fix (2026-10)
+
+Added 2026-10-25, with the maintainer. Both agents let a committed project
+file turn a plugin on or off for everyone who works in the project: Claude
+Code's `enabledPlugins` in `.claude/settings.json`, and Codex's
+`[plugins."<name>@<marketplace>"] enabled` in `.codex/config.toml`. Each
+overrides the user's own setting, applies only in a trusted project, and
+installs nothing (verified 2026-10-25; see design.md's *Harness facts*). An
+earlier reading had Codex reading whole plugin installs from the project
+file; it reads only the `enabled` switch, so the two files are the same
+kind of thing and a difference between them is drift, as for hooks.
+`plugin-one-harness` (warn) reports a plugin whose setting (on, off or
+unset) differs between the two files, matched by the plugin's name alone:
+the agents' names for one marketplace can differ (Claude Code's
+`claude-plugins-official` against Codex's own), so a full-id match would
+report every such plugin twice over. Reporting only a plugin turned on for
+one agent was the narrower alternative; it misses one turned off for one
+agent only, which still differs for every user who has it installed. It is
+a warning, not an error like `claude-only-skills`: the file is
+configuration over a per-machine install, as a hook file is. There is no
+`scaffold` fix: tack doesn't write `.codex/config.toml`, and the name the
+other agent knows the plugin's marketplace by isn't in either file, so a
+fix could write a key that names nothing. A fix writing only the JSON side
+was rejected as half a fix.
+
+*Where:* design.md, *`doctor` checks* (*Per project*) and *Harness facts
+tack relies on*.
+
+## DEC-27: `duplicate-plugin-skill` compares what tack deploys, from files (2026-10)
+
+Added 2026-10-25, with the maintainer. A skill tack links into a harness
+that a plugin tack deploys there also carries is loaded twice
+(`wrangler` and `cloudflare:wrangler`); `doctor` reports it as
+`duplicate-plugin-skill` (warn), once per plugin and harness, naming the
+skills. Both sides are what the manifest deploys, so the fix is always a
+manifest edit (`skills = []`, or deselecting the plugin). Hand-installed
+skills are `unmanaged-skill` already, and comparing plugins from other
+marketplaces would need their install paths from the agents' lists; both
+were left out. The check reads the plugin's files as its source has them
+now (DEC-17) and runs no agent, so it works without either CLI. A plugin's
+skills are its `skills/` directory's plus the paths the `skills` field of
+any of its manifests names, for every harness it goes to: the agents read
+the field alike where their documentation says, and one reading for both
+keeps a plugin's finding the same in each.
+
+*Where:* design.md, *`doctor` checks* (*Global*) and *Selecting plugins*.
