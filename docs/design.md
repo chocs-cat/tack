@@ -1016,14 +1016,17 @@ the harness, a failing `list` when `sync` runs the harness's CLI at all (see
   `skills` field of its three `plugin.json` files (as [Catalogs](#catalogs)
   reads its version) and of its catalog entry: a string or a list of
   strings, each a relative path inside the plugin that is a skill directory
-  itself (`"./"` for one at the plugin's root) or a directory of them. A
-  path that leaves the plugin or isn't a directory, and a value of any other
-  type, add nothing. One reading serves every harness (DEC-27). A skill's
-  name is its frontmatter `name`, else its directory's name (the plugin's
-  name for one at the plugin's root). The files are read as the source has
-  them now (DEC-17), from the plugin's clone only while it is `ok`. This
-  check reads only files, so it runs whether or not an agent's CLI is on
-  `PATH`.
+  itself (`"./"` for one at the plugin's root), holding a `SKILL.md`, or
+  else a directory of them, read as `skills/` is. A path that leaves the
+  plugin (an absolute one, or one whose `..` climbs out of it, read as
+  written: a symlink inside is followed, as the copy follows it, DEC-2) or
+  isn't a directory, and a value of any other type, add nothing; a skill
+  found more than once counts once. One reading serves every harness
+  (DEC-27). A skill's name is its frontmatter `name`, else its directory's
+  name (the plugin's name for one at the plugin's root). The files are read
+  as the source has them now (DEC-17), from the plugin's clone only while it
+  is `ok`. This check reads only files, so it runs whether or not an agent's
+  CLI is on `PATH`.
 
 In a harness with a foreign `tack`, nothing is tack's: none of its plugins
 is a leftover or a duplicate. `duplicate-plugin-skill`, which reads only
