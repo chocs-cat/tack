@@ -1490,7 +1490,10 @@ skills, and symlinked plugin directories:
 
 Project plugin settings and plugin skills, verified 2026-10-25 against
 Claude Code 2.1.310 and codex-cli 0.164.0, in a scratch `HOME`, and their
-documentation:
+documentation; what the two CLIs report about project plugin settings is
+checked by `tools/agent_facts.py` (2026-10-26, the same versions, with
+Codex trust granted as a `[projects."<path>"]` table in the user's
+`config.toml`; Claude Code's `plugin list` needed no trust step):
 
 - **Claude Code project plugins.** `claude plugin install <p>@<m> --scope
   project` sets `"<p>@<m>": true` in `enabledPlugins` of the project's
