@@ -104,6 +104,7 @@ jobs:
     # The one check branch protection requires, so the matrix can change
     # without editing the protection rule. A docs-only pull request skips the
     # checks and passes; anything else must pass all of them.
+    # Its script exits explicitly: bash ignores -e inside an && list (#84).
     name: CI passed
     if: always()
     needs: [changes, lint, test, package]
@@ -116,5 +117,9 @@ jobs:
           PACKAGE: ${{ needs.package.result }}
         run: |
           for result in "$LINT" "$TEST" "$PACKAGE"; do
-            test "$result" = success || { test "$CODE" = false && test "$result" = skipped; }
+            case "$result" in
+              success) ;;
+              skipped) test "$CODE" = false || exit 1 ;;
+              *) exit 1 ;;
+            esac
           done
