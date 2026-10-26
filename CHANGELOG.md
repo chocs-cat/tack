@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.0](https://github.com/chocs-cat/tack/compare/v0.5.2...v0.6.0) (2026-10-26)
+
+
+### Features
+
+* **doctor:** report a plugin a project sets for one agent only ([#82](https://github.com/chocs-cat/tack/issues/82)) ([5aeaaef](https://github.com/chocs-cat/tack/commit/5aeaaef1067a1f5c6c9d530fd57a47f8a3516832)), closes [#24](https://github.com/chocs-cat/tack/issues/24)
+* **doctor:** report skills a deployed plugin also carries ([#79](https://github.com/chocs-cat/tack/issues/79)) ([f269720](https://github.com/chocs-cat/tack/commit/f269720ece1a09ec74864f3784e86caa52c46947)), closes [#25](https://github.com/chocs-cat/tack/issues/25)
+
 ## [0.5.2](https://github.com/chocs-cat/tack/compare/v0.5.1...v0.5.2) (2026-10-20)
 
 
