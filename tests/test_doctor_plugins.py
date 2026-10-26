@@ -19,7 +19,7 @@ from tack import agents, cli, config, doctor, plugins, sources, status, sync
 from tack.config import Config
 from tack.doctor import plugins as doctor_plugins
 from tack.doctor.findings import Finding
-from tests.helpers import configure, elsewhere, load, skill, write
+from tests.helpers import configure, elsewhere, git, link, load, market, repo, skill, write
 from tests.standin import Standins
 from tests.test_status import BOTH, FIXTURES, NPM, WHEN, one, plugin_source, run_sync
 
@@ -657,7 +657,9 @@ def test_a_conflict_names_the_foreign_marketplace(home: Path, standins: Standins
 
 def test_findings_are_ordered(home: Path, standins: Standins) -> None:
     """Collisions by name, sources in manifest order, then each harness: its
-    plugins' states by name and source, then the leftovers by name."""
+    plugins' states by name and source, then the leftovers by name; the
+    others' plugins and `duplicate-plugin-skill` come after these (the
+    tests below)."""
     plugin_source(home, "one", "z", "b", "d", "c")
     plugin_source(home, "two", "y", "b")
     plugin_source(home, "three", "y", "a")
@@ -995,4 +997,295 @@ def test_doctor_exit_codes_for_others_plugins(
     assert cli.main(["doctor", "--json"]) == 1
     assert [f["id"] for f in json.loads(capsys.readouterr().out)["findings"]] == [
         "duplicate-plugin"
+    ]
+
+
+# --- skills a plugin carries (DEC-27) ---------------------------------------------------
+
+
+def twice(found: list[Finding]) -> list[Finding]:
+    return [f for f in found if f.id == "duplicate-plugin-skill"]
+
+
+def _whole(home: Path, name: str = "cf", *skills: str) -> Path:
+    """A source at `~/<name>` whose one plugin, `name`, is the whole
+    repository (`"source": "./"`), its skills the source's skills."""
+    root = home / name
+    for s in skills or ("wrangler",):
+        skill(root / "skills", s)
+    return market(root, {"name": name, "source": "./"})
+
+
+def test_a_whole_repository_plugin_and_its_own_skills(home: Path, standins: Standins) -> None:
+    root = _whole(home, "cf", "wrangler", "workers")
+    cfg = configure(home, "cf", cf=["cf"])
+
+    found = twice(check(cfg))
+    assert [(f.severity, f.harness, f.path, f.message) for f in found] == [
+        (
+            "warn",
+            h,
+            root,
+            f"plugin 'cf' from 'cf' carries skills 'workers' (from 'cf') and 'wrangler' "
+            f"(from 'cf'), which tack also links into {h}, so {h} loads each twice; stop "
+            f"deploying them there as a skill, or the plugin",
+        )
+        for h in ("claude-code", "codex")
+    ]
+
+
+def test_one_skill_carried_twice_says_it(home: Path, standins: Standins) -> None:
+    _whole(home)
+    cfg = configure(home, "cf:claude-code", cf=["cf"])
+
+    assert [f.message for f in twice(check(cfg))] == [
+        "plugin 'cf' from 'cf' carries skill 'wrangler' (from 'cf'), which tack also links "
+        "into claude-code, so claude-code loads it twice; stop deploying it there as a "
+        "skill, or the plugin"
+    ]
+
+
+def test_the_skills_field_names_skills(home: Path, standins: Standins) -> None:
+    """In a `plugin.json` and in the catalog entry; as a list, as a string,
+    and as `"./"` for a skill at the plugin's root, named by its frontmatter
+    `name` or else by the plugin's."""
+    for s in ("a", "b", "c", "d", "lone", "unrelated"):
+        skill(home / "mine" / "skills", s)
+    p = home / "one" / "plugins" / "p"
+    write(p / ".claude-plugin" / "plugin.json", json.dumps({"skills": ["./extra/a", "./more"]}))
+    skill(p / "extra", "a")
+    skill(p / "more", "b")
+    write(p / "SKILL.md", "---\nname: c\ndescription: At the root.\n---\n")
+    d = home / "one" / "plugins" / "dee"  # not the plugin's name
+    write(d / "plugin.json", json.dumps({"skills": "./lone"}))
+    write(d / "lone" / "SKILL.md", "No frontmatter.\n")
+    write(d / "SKILL.md", "No frontmatter either.\n")
+    market(
+        home / "one",
+        {"name": "p", "source": "./plugins/p", "skills": "./"},
+        {"name": "d", "source": "./plugins/dee", "skills": ["./"]},
+    )
+    cfg = configure(home, "mine", "one:codex", one=["p", "d"])
+
+    assert [f.message.split(", which")[0] for f in twice(check(cfg))] == [
+        "plugin 'd' from 'one' carries skills 'd' (from 'mine') and 'lone' (from 'mine')",
+        "plugin 'p' from 'one' carries skills 'a' (from 'mine'), 'b' (from 'mine') and "
+        "'c' (from 'mine')",
+    ]
+
+
+def test_the_codex_plugin_json_is_read_too(home: Path, standins: Standins) -> None:
+    skill(home / "mine" / "skills", "a")
+    p = home / "one" / "plugins" / "p"
+    write(p / ".codex-plugin" / "plugin.json", json.dumps({"skills": "./x/"}))
+    skill(p / "x", "a")
+    market(home / "one", "p")
+    cfg = configure(home, "mine", "one", one=["p"])
+
+    assert [f.harness for f in twice(check(cfg))] == ["claude-code", "codex"]
+
+
+def test_skills_from_two_sources(home: Path, standins: Standins) -> None:
+    """A carried skill is named with the source tack links it from, which
+    needn't be the plugin's."""
+    skill(home / "two" / "skills", "b")
+    _whole(home, "cf", "a", "b")
+    text = (
+        '[[source]]\nname = "cf"\npath = "~/cf"\nskills = ["a"]\nplugins = ["cf"]\n'
+        '[[source]]\nname = "two"\npath = "~/two"\nharnesses = ["codex"]\n'
+    )
+    cfg = load(home, text)
+
+    assert [(f.harness, f.message.split(", which")[0]) for f in twice(check(cfg))] == [
+        ("claude-code", "plugin 'cf' from 'cf' carries skill 'a' (from 'cf')"),
+        ("codex", "plugin 'cf' from 'cf' carries skills 'a' (from 'cf') and 'b' (from 'two')"),
+    ]
+
+
+def test_a_skill_limited_to_the_other_harness(home: Path, standins: Standins) -> None:
+    _whole(home)
+    text = (
+        '[[source]]\nname = "cf"\npath = "~/cf"\n'
+        'skills = [{ name = "wrangler", harnesses = ["codex"] }]\nplugins = ["cf"]\n'
+    )
+    cfg = load(home, text)
+
+    assert [f.harness for f in twice(check(cfg))] == ["codex"]
+
+
+def test_a_collided_plugin_carries_nothing(home: Path, standins: Standins) -> None:
+    _whole(home)
+    market(home / "two", {"name": "cf", "source": "./"})
+    (home / "two" / "skills").mkdir()
+    cfg = configure(home, "cf", "two", cf=["cf"], two=["cf"])
+
+    found = check(cfg)
+    assert "name-collision" in [f.id for f in found]
+    assert twice(found) == []
+
+
+def test_a_path_that_leaves_the_plugin_adds_nothing(home: Path, standins: Standins) -> None:
+    """`..` read as written, after normalizing; an absolute path; and a
+    path that isn't a directory."""
+    for s in ("x", "y", "z"):
+        skill(home / "mine" / "skills", s)
+    plugins_dir = home / "one" / "plugins"
+    skill(plugins_dir, "x")
+    y = skill(home / "elsewhere", "y")
+    write(plugins_dir / "p" / "z", "a file\n")
+    fields = ["../x", "./sub/../../x", str(y), "./z", "./missing"]
+    write(plugins_dir / "p" / "plugin.json", json.dumps({"skills": fields}))
+    market(home / "one", "p")
+    cfg = configure(home, "mine", "one", one=["p"])
+
+    assert twice(check(cfg)) == []
+
+
+def test_a_symlink_inside_the_plugin_is_followed(home: Path, standins: Standins) -> None:
+    skill(home / "mine" / "skills", "x")
+    target = skill(home / "elsewhere", "x")
+    p = home / "one" / "plugins" / "p"
+    link(p / "skills" / "x", target)
+    market(home / "one", "p")
+    cfg = configure(home, "mine", "one:codex", one=["p"])
+
+    assert [f.harness for f in twice(check(cfg))] == ["codex"]
+
+
+def test_a_skill_found_twice_counts_once_and_bad_fields_add_nothing(
+    home: Path, standins: Standins
+) -> None:
+    skill(home / "mine" / "skills", "a")
+    skill(home / "mine" / "skills", "b")
+    p = home / "one" / "plugins" / "p"
+    skill(p / "skills", "a")
+    write(p / ".claude-plugin" / "plugin.json", json.dumps({"skills": ["./skills/a", 7, None]}))
+    write(p / "plugin.json", "{ not json")
+    write(p / ".codex-plugin" / "plugin.json", json.dumps(["./b"]))
+    skill(p, "b")
+    market(home / "one", {"name": "p", "source": "./plugins/p", "skills": 3})
+    cfg = configure(home, "mine", "one:codex", one=["p"])
+
+    assert [f.message.split(", which")[0] for f in twice(check(cfg))] == [
+        "plugin 'p' from 'one' carries skill 'a' (from 'mine')"
+    ]
+
+
+def test_a_skill_md_that_cant_be_decoded_is_named_by_its_directory(
+    home: Path, standins: Standins
+) -> None:
+    skill(home / "mine" / "skills", "a")
+    p = home / "one" / "plugins" / "p"
+    (p / "skills" / "a").mkdir(parents=True)
+    (p / "skills" / "a" / "SKILL.md").write_bytes(b"---\nname: \xff\n---\n")
+    market(home / "one", "p")
+    cfg = configure(home, "mine", "one:codex", one=["p"])
+
+    assert [f.message.split(", which")[0] for f in twice(check(cfg))] == [
+        "plugin 'p' from 'one' carries skill 'a' (from 'mine')"
+    ]
+
+
+def test_a_plugin_whose_clone_isnt_ok_carries_nothing(home: Path, standins: Standins) -> None:
+    """Until the clone is `ok`, the plugin has no files to read; once it is,
+    it carries what they hold."""
+    r = repo(home.parent / "r", {"skills/s/SKILL.md": "---\nname: s\n---\n"})
+    sha = git(r, "rev-parse", "HEAD").strip()
+    skill(home / "mine" / "skills", "s")
+    entry = {"name": "r", "source": {"source": "url", "url": r.as_uri(), "sha": sha}}
+    market(home / "one", entry)
+    (home / "one" / "skills").mkdir()
+    cfg = configure(home, "mine", "one:codex", one=["r"])
+    (sel,) = plugins.plan(cfg).sources[0].selected
+    assert sel.clone is not None
+    assert sel.directory is None
+
+    assert twice(check(cfg)) == []
+    sources.sync_clone(sel.clone)
+    assert [f.harness for f in twice(check(cfg))] == ["codex"]
+
+
+def test_a_plugin_whose_files_cant_be_read_carries_nothing(home: Path, standins: Standins) -> None:
+    """Its source's finding says so; it has no `duplicate-plugin-skill`."""
+    if os.geteuid() == 0:
+        pytest.skip("root reads any file")
+    skill(home / "mine" / "skills", "a")
+    p = home / "one" / "plugins" / "p"
+    skill(p / "skills", "a")
+    market(home / "one", "p")
+    cfg = configure(home, "mine", "one:codex", one=["p"])
+    assert len(twice(check(cfg))) == 1
+    (p / "secret").write_text("x")
+    (p / "secret").chmod(0)
+    try:
+        found = check(cfg)
+    finally:
+        (p / "secret").chmod(0o644)
+    assert any("can't be copied" in f.message for f in found)
+    assert twice(found) == []
+
+
+def test_projects_only_reads_no_plugin_skills(home: Path, standins: Standins) -> None:
+    _whole(home)
+    cfg = configure(home, "cf", cf=["cf"])
+    assert twice(check(cfg))
+
+    assert twice(doctor.run(cfg, global_checks=False).findings) == []
+
+
+def test_a_removed_cli_still_has_the_finding(home: Path, standins: Standins) -> None:
+    _whole(home)
+    cfg = configure(home, "cf", cf=["cf"])
+    standins.remove("codex")
+
+    found = check(cfg)
+    assert [f.harness for f in twice(found)] == ["claude-code", "codex"]
+    assert [f.id for f in found if f.harness == "codex"] == ["not-synced", twice(found)[1].id]
+
+
+def test_a_failing_list_still_has_the_finding(home: Path, standins: Standins) -> None:
+    _whole(home)
+    cfg = configure(home, "cf", cf=["cf"])
+    standins.fail("claude", ["plugin", "list", "--json"], "boom")
+
+    found = check(cfg)
+    assert [f.id for f in found if f.harness == "claude-code"] == [
+        "not-synced",
+        "duplicate-plugin-skill",
+    ]
+
+
+def test_a_foreign_tack_still_has_the_finding(home: Path, standins: Standins) -> None:
+    _whole(home)
+    cfg = configure(home, "cf", cf=["cf"])
+    standins.marketplace("codex", "tack", home / "elsewhere")
+
+    found = check(cfg)
+    assert [f.id for f in found if f.harness == "codex"] == [
+        "not-synced",
+        "duplicate-plugin-skill",
+    ]
+    assert "isn't tack's" in found[-2].message
+
+
+def test_duplicate_plugin_skill_comes_last_in_a_harness(home: Path, standins: Standins) -> None:
+    """After the states, the leftovers and the others' plugins, by plugin
+    name."""
+    for s in ("a", "b"):
+        skill(home / "mine" / "skills", s)
+    plugin_source(home, "one", "z", "y", "c")
+    for p, s in (("z", "a"), ("y", "b")):
+        skill(home / "one" / "plugins" / p / "skills", s)
+    run_sync(configure(home, "one", one=["z", "y", "c"]))
+    cfg = configure(home, "mine", "one", one=["z", "y"])
+    hand(standins, "claude", "x@hand")
+
+    assert [(f.id, f.harness, f.message.split(" ")[:2]) for f in check(cfg)] == [
+        ("not-synced", "claude-code", ["c@tack", "is"]),
+        ("unmanaged-plugin", "claude-code", ["x@hand", "is"]),
+        ("duplicate-plugin-skill", "claude-code", ["plugin", "'y'"]),
+        ("duplicate-plugin-skill", "claude-code", ["plugin", "'z'"]),
+        ("not-synced", "codex", ["c@tack", "is"]),
+        ("duplicate-plugin-skill", "codex", ["plugin", "'y'"]),
+        ("duplicate-plugin-skill", "codex", ["plugin", "'z'"]),
     ]
