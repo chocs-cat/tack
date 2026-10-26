@@ -207,6 +207,19 @@ foreign `tack` marketplace when a selected plugin targets the agent or tack
 has recorded installs there. Its finding names the plugins it stops that
 have no finding of their own, or says only what is wrong with the agent.
 
+One plugin finding is per project. `plugin-one-harness` (warn) compares the
+plugin settings a project commits: `enabledPlugins` in
+`.claude/settings.json` against `enabled` in each
+`[plugins."<name>@<marketplace>"]` table of `.codex/config.toml`, matching
+a plugin by its name whichever marketplace each agent calls it from. A
+plugin one file turns on or off and the other sets differently, or not at
+all, is reported at the file that turns it on (or off, against nothing),
+naming that agent, with what to add to the other file. It reads only those
+two files and runs no agent, so it runs under `--projects-only` too. There
+is no `scaffold` fix: only you know the other agent's name for the
+marketplace. A settings file that can't be parsed is `unreadable-file`, and
+the project's plugin settings go unchecked until it is fixed.
+
 Built-in harnesses need no table; `[harness.claude-code]` or
 `[harness.codex]` appears only to change a setting. Their
 `ignore_marketplaces` lists marketplaces whose plugins belong to the agent or
