@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from tack.config import Config
-from tack.doctor import hooks, instructions, plugins, project_skills, skills
+from tack.doctor import hooks, instructions, plugins, project_plugins, project_skills, skills
 from tack.doctor.findings import SEVERITIES, Finding, Severity
 from tack.doctor.projects import discover, is_clone
 from tack.status import Inventories
@@ -77,4 +77,5 @@ def check_project(cfg: Config, project: Path) -> list[Finding]:
         *instructions.check_project(cfg, project),
         *project_skills.check(cfg, project),
         *hooks.check_project(cfg, project),
+        *project_plugins.check(cfg, project),
     ]
