@@ -8,6 +8,11 @@ plugin's state is `status.plugin_states`, the function `status` uses; the
 leftovers are `sync`'s step 4 (design.md *Deploying*) seen from outside, and
 every plugin problem a `sync` dry run reports has a finding (DEC-19). Like
 `status`, these read each source as it is now (DEC-17).
+
+`duplicate-plugin-skill` (the bullet *Skills a plugin carries*, DEC-27)
+compares the manifest's plugins with its skills, from files alone, so it
+comes for each harness whatever its inventory is, a missing CLI or a
+foreign `tack` included.
 """
 
 from __future__ import annotations
@@ -18,6 +23,7 @@ from collections.abc import Iterator, Mapping, Sequence
 from tack import agents, catalog, config, deploy, plugins, status
 from tack.config import Config, Harness
 from tack.doctor.findings import Finding
+from tack.doctor.plugin_skills import carried
 from tack.plugins import Plan, Selected
 from tack.text import tilde
 
@@ -63,14 +69,18 @@ def check(cfg: Config, inventories: status.Inventories | None = None) -> Iterato
         and s.name not in unreadable
         and s.name not in blocked
     ]
+    links = deploy.plan(cfg).links
+    skills_of: dict[str, set[str]] = {}  # one reading serves every harness (DEC-27)
     for h, inv in inventories.items():
         here = [(sel, cells[sel.name, sel.source.name][h]) for sel in stated if h in sel.harnesses]
         targeted = any(h in sel.harnesses for sel in selected)
+        twice = _carried(h, plan, links.get(h, {}), unreadable, skills_of)
         if isinstance(inv, agents.Outcome):
             # Where `sync` reports it (DEC-19): a missing CLI where a selected
             # plugin targets the harness, a failing `list` wherever it runs it.
             if targeted if inv.missing else _involved(cfg, h, selected, record):
                 yield _unavailable(h, inv, [sel for sel, st in here if st == "unavailable"])
+            yield from twice
             continue
         market = inv.marketplace(plugins.NAME)
         foreign = market is not None and not agents.is_tack(h, market, cfg.paths)
@@ -99,6 +109,40 @@ def check(cfg: Config, inventories: status.Inventories | None = None) -> Iterato
             if _involved(cfg, h, selected, record):
                 yield from _leftovers(h, inv, plan, record, kept)
         yield from _others(cfg.harnesses[h], inv, plan, foreign=foreign)
+        yield from twice
+
+
+def _carried(
+    h: str,
+    plan: Plan,
+    links: Mapping[str, deploy.Selected],
+    unreadable: Mapping[str, str],
+    skills_of: dict[str, set[str]],
+) -> Iterator[Finding]:
+    """`duplicate-plugin-skill` for each plugin the manifest deploys to the
+    harness whose files can be read, by name: the skills it carries that the
+    manifest also links there (DEC-27), at the plugin's directory. No
+    `scaffold` fix: the fix is a manifest edit."""
+    for name, sel in sorted(plan.plugins.get(h, {}).items()):
+        if sel.directory is None or name in unreadable:
+            continue
+        if name not in skills_of:
+            skills_of[name] = carried(sel.directory, sel.plugin)
+        both = sorted(skills_of[name] & set(links))
+        if not both:
+            continue
+        named = [f"{s!r} (from {links[s].source.name!r})" for s in both]
+        listed = named[0] if len(named) == 1 else f"{', '.join(named[:-1])} and {named[-1]}"
+        one = len(both) == 1
+        yield Finding(
+            "duplicate-plugin-skill",
+            "warn",
+            f"plugin {name!r} from {sel.source.name!r} carries {'skill' if one else 'skills'} "
+            f"{listed}, which tack also links into {h}, so {h} loads {'it' if one else 'each'} "
+            f"twice; stop deploying {'it' if one else 'them'} there as a skill, or the plugin",
+            path=sel.directory,
+            harness=h,
+        )
 
 
 def _collisions(cfg: Config, plan: Plan) -> Iterator[Finding]:
