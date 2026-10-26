@@ -261,6 +261,12 @@ in its `message`, which says what fixes it:
 - `name-collision` (error): two sources select one plugin name.
 - `duplicate-plugin` (warn): a plugin tack deploys to an agent is also
   installed there from another marketplace, so the agent loads both.
+- `duplicate-plugin-skill` (warn): a plugin tack deploys to an agent carries
+  a skill tack also links there, so the agent loads it twice (`path` is the
+  plugin's directory, and the message names each skill and its source). It
+  reads only the manifest and files, so it comes even when the agent's CLI
+  isn't on `PATH`. There is no `scaffold` fix: edit the manifest, with
+  `skills = []` for the source or by deselecting the plugin or the skill.
 - `unmanaged-plugin` (info): a plugin installed from another marketplace;
   select it from its source, or add its marketplace to the harness's
   `ignore_marketplaces`.

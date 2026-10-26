@@ -190,6 +190,11 @@ A finding about an agent's plugins names the agent:
 - `name-collision` (error): two sources select the same plugin name.
 - `duplicate-plugin` (warn): a plugin tack deploys to an agent is also
   installed there from another marketplace, so the agent loads both.
+- `duplicate-plugin-skill` (warn): a plugin tack deploys to an agent carries
+  a skill tack also links there, so the agent loads it twice (`wrangler` and
+  `cf:wrangler`). It is located at the plugin's directory and reads only the
+  manifest and files, so it needs no agent CLI. The fix is a manifest edit:
+  `skills = []` for the source, or deselect the plugin or the skill.
 - `unmanaged-plugin` (info): a plugin installed from another marketplace, by
   hand or by another manager; selecting it from its source keeps it the same
   across agents and machines.
