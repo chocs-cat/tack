@@ -14,9 +14,20 @@ again (DEC-14), a second directory under a registered name (Claude Code
 repoints the name, Codex refuses), and Codex reading its own catalog before
 Claude Code's.
 
+It also verifies the project plugin facts `doctor`'s `plugin-one-harness`
+rests on: Claude Code's `plugin install --scope project` setting the plugin
+in the project's `.claude/settings.json` `enabledPlugins`, and `plugin list`
+showing it at `project` scope, `projectEnabled` in the project and not
+elsewhere; and Codex's `plugin add` recording the install in the user's
+`config.toml` from inside a project, and a trusted project's
+`[plugins."<id>"] enabled` overriding the user's either way, a table
+without `enabled` and an untrusted project's file changing nothing. Trust is
+granted as Codex records it, a `[projects."<path>"]` table in the user's
+`config.toml`.
+
 What it does not verify: anything about loading a plugin in a session, the
-plugin caches' layout, project scope, git marketplaces, or fields tack doesn't
-read (extra fields are fine; a missing one fails). It doesn't check the
+plugin caches' layout, project-scope marketplaces, git marketplaces, or
+fields tack doesn't read (extra fields are fine; a missing one fails). It doesn't check the
 stdin wait either (that takes a pipe held open); every command here runs with
 stdin closed and in a session of its own, as tack runs them (DEC-25).
 
@@ -25,7 +36,9 @@ and `--codex PATH` to check other executables. To check the test suite's
 stand-ins, write them with `python tests/standin.py bin <dir>` and set
 STANDIN_AGENTS_DIR to an empty directory for their state; they fail only the
 checks that read Codex's `config.toml`, which a stand-in doesn't write (its
-state file says the same, and `tests/test_agents.py` checks it there). It
+state file says the same, and `tests/test_agents.py` checks it there), and
+the project scope checks, which need real config files: a stand-in writes no
+`settings.json` and reads no project `config.toml`. It
 never touches the real HOME: it sets HOME to a temporary directory and
 removes it afterwards. Exit 0 when every fact holds, 1 when one doesn't, 2
 when a CLI is missing.
@@ -61,13 +74,13 @@ class Agent:
     def __init__(self, exe: str, home: Path, cwd: Path) -> None:
         self.exe, self.home, self.cwd = exe, home, cwd
 
-    def run(self, *args: str) -> tuple[int, str, str]:
+    def run(self, *args: str, cwd: Path | None = None) -> tuple[int, str, str]:
         env = {**os.environ, "HOME": str(self.home)}
         for var in ("CLAUDE_CONFIG_DIR", "CODEX_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME"):
             env.pop(var, None)
         r = subprocess.run(
             [self.exe, "plugin", *args, "--json"],
-            cwd=self.cwd,
+            cwd=cwd or self.cwd,
             env=env,
             stdin=subprocess.DEVNULL,
             start_new_session=True,  # DEC-25
@@ -77,8 +90,8 @@ class Agent:
         )
         return r.returncode, r.stdout, r.stderr
 
-    def json(self, label: str, *args: str, code: int = 0) -> Any:
-        rc, out, err = self.run(*args)
+    def json(self, label: str, *args: str, code: int = 0, cwd: Path | None = None) -> Any:
+        rc, out, err = self.run(*args, cwd=cwd)
         check(f"{label}: exits {code}", rc == code, f"exit {rc}, stderr {err.strip()!r}")
         try:
             return json.loads(out)
@@ -296,6 +309,77 @@ def codex_facts(a: Agent, mkt: Path) -> None:
     a.fails_with_error_line("marketplace remove again", "marketplace", "remove", "tack")
 
 
+def claude_project_facts(a: Agent, mkt: Path) -> None:
+    print("# claude, project scope")
+    project = a.cwd.parent / "project"
+    project.mkdir()
+    a.json("marketplace add", "marketplace", "add", str(mkt), "--scope", "user")
+    out = a.json("install at project scope", "install", "foo@tack", "--scope", "project",
+                 cwd=project)  # fmt: skip
+    has("install at project scope: outcome ok", out, {"outcome": lambda v: v == "ok"})
+    try:
+        settings = json.loads((project / ".claude" / "settings.json").read_text())
+    except (OSError, json.JSONDecodeError) as e:
+        settings = repr(e)
+    check(
+        "install at project scope sets enabledPlugins in the project's settings.json",
+        isinstance(settings, dict) and settings.get("enabledPlugins") == {"foo@tack": True},
+        settings,
+    )
+    for where, cwd, on in (("in the project", project, True), ("elsewhere", a.cwd, False)):
+        plugins = a.json(f"list {where}", "list", cwd=cwd)
+        by_id = {p.get("id"): p for p in plugins or [] if isinstance(p, dict)}
+        has(f"list {where}: foo@tack at project scope, enabled and projectEnabled "
+            f"{str(on).lower()}",
+            by_id.get("foo@tack"),
+            {"scope": lambda v: v == "project", "enabled": lambda v, e=on: v is e,
+             "projectEnabled": lambda v, e=on: v is e})  # fmt: skip
+
+
+def codex_project_facts(a: Agent, mkt: Path) -> None:
+    """A trusted project's `[plugins."<id>"] enabled` overrides the user's;
+    trust is granted the way Codex records it, in the user's config.toml."""
+    print("# codex, project scope")
+    trusted, untrusted = a.cwd.parent / "trusted", a.cwd.parent / "untrusted"
+    for d in (trusted, untrusted):
+        (d / ".codex").mkdir(parents=True)
+    a.json("marketplace add", "marketplace", "add", str(mkt))
+    a.json("add foo in a project", "add", "foo@tack", cwd=trusted)
+    on = '[plugins."foo@tack"]\nenabled = true\n'
+    off = on.replace("true", "false")
+    config = codex_config(a)
+    check("add records foo@tack in the user's config.toml", on in config, config)
+    check("add writes nothing in the project", not (trusted / ".codex" / "config.toml").exists())
+    # Edit the file Codex wrote, so the install it recorded stays.
+    path = a.home / ".codex" / "config.toml"
+    path.parent.mkdir(exist_ok=True)  # a stand-in writes none
+    path.write_text(f'{config}\n[projects.{json.dumps(str(trusted.resolve()))}]\n'
+                    'trust_level = "trusted"\n')  # fmt: skip
+
+    def enabled(cwd: Path) -> Any:
+        listed = a.json(f"list in {cwd.name}", "list", cwd=cwd)
+        installed = listed.get("installed") if isinstance(listed, dict) else None
+        by_id = {p.get("pluginId"): p for p in installed or [] if isinstance(p, dict)}
+        return by_id.get("foo@tack", {}).get("enabled")
+
+    for user, project, want in (
+        (True, "enabled = false\n", False),
+        (False, "enabled = true\n", True),
+        (True, "", True),
+        (False, "", False),
+    ):
+        path.write_text(path.read_text().replace(off if user else on, on if user else off))
+        for d in (trusted, untrusted):
+            (d / ".codex" / "config.toml").write_text(f'[plugins."foo@tack"]\n{project}')
+        what = f"`{project.strip()}`" if project else "table without `enabled`"
+        got = enabled(trusted)
+        check(f"a trusted project's {what} over the user's {str(user).lower()}: "
+              f"enabled {str(want).lower()}", got is want, got)  # fmt: skip
+        got = enabled(untrusted)
+        check(f"an untrusted project's {what} leaves the user's {str(user).lower()}",
+              got is user, got)  # fmt: skip
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--claude", default=shutil.which("claude"))
@@ -309,7 +393,9 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="tack-agent-facts-") as tmp:
         base = Path(tmp)
         for name, exe, facts in (("claude", args.claude, claude_facts),
-                                 ("codex", args.codex, codex_facts)):  # fmt: skip
+                                 ("claude-project", args.claude, claude_project_facts),
+                                 ("codex", args.codex, codex_facts),
+                                 ("codex-project", args.codex, codex_project_facts)):  # fmt: skip
             home, cwd, mkt = base / name / "home", base / name / "data", base / name / "mkt"
             for d in (home, cwd):
                 d.mkdir(parents=True)

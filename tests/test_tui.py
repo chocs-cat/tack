@@ -243,6 +243,21 @@ def test_stays_on_skills_and_applies_a_fix(home: Path, tmp_path: Path) -> None:
     drive(scenario)
 
 
+def test_lists_a_plugin_set_for_one_agent(home: Path, tmp_path: Path) -> None:
+    settings = json.dumps({"enabledPlugins": {"foo@mk": True}})
+    machine(home, tmp_path, project={".claude/settings.json": settings})
+
+    async def scenario(app: TackApp, pilot: Pilot[None]) -> None:
+        await pilot.press("4")
+        assert rows(app, "doctor") == [["warn", "plugin-one-harness", "~/Code/p", ""]]
+        shown = detail(app, "doctor")
+        assert "~/Code/p/.claude/settings.json" in shown
+        assert "plugin 'foo' is on for claude-code" in shown
+        assert "applies the" not in shown  # no scaffold fix
+
+    drive(scenario)
+
+
 def test_late_tab_events_do_not_swap_the_tabs(home: Path, tmp_path: Path) -> None:
     """On a slow machine the first tab's activation can arrive after you
     have moved to another tab. Acting on it would focus its table, which

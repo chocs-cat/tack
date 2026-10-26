@@ -283,7 +283,20 @@ The conventions it checks: `AGENTS.md` is the project's instructions and
 `CLAUDE.md` imports it (`@AGENTS.md`); `.agents/skills` is the one real
 skills directory and `.claude/skills` a symlink to it; every project hook is
 registered for both harnesses (`.claude/settings.json` and
-`.codex/hooks.json`).
+`.codex/hooks.json`); and a plugin the project turns on or off is turned on
+or off for both (`enabledPlugins` in `.claude/settings.json`,
+`[plugins."<name>@<marketplace>"] enabled` in `.codex/config.toml`, matched
+by the plugin's name whatever the marketplace).
+
+`plugin-one-harness` (warn) is the per-project plugin finding: a plugin one
+of those files turns on or off and the other sets differently or not at
+all. `path` is the file whose setting is on (or off, against an unset one),
+`harness` its agent, and `project` is set; the message names the entry it
+read and says what to add to the other file. It runs no agent, so it comes
+under `--projects-only` too. There is no `scaffold` fix: the user adds the
+entry, naming the marketplace the other agent knows the plugin from. A
+plugin settings file that can't be parsed is `unreadable-file`, and the
+project gets no `plugin-one-harness` finding until it is fixed.
 
 ```sh
 tack scaffold agents-md ~/Code/app --dry-run   # the diff the fix would make

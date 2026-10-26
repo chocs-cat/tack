@@ -74,18 +74,25 @@ class Hook:
         return frozenset({"*"} if not alts or "*" in alts else alts)
 
 
-def read(file: Path) -> list[Hook]:
-    """The hooks registered in one file; none if it doesn't exist."""
+def parse(file: Path) -> Any:
+    """A hook or settings file parsed, as TOML for a `.toml` file and JSON
+    otherwise; None if it doesn't exist. The project plugin check reads its
+    files with this too, so the two agree on what can't be parsed."""
     try:
         text = file.read_text(encoding="utf-8")
     except FileNotFoundError:
-        return []
+        return None
     except (OSError, UnicodeDecodeError) as e:
         raise HookFileError(str(e)) from e
     try:
-        data = tomllib.loads(text) if file.suffix == ".toml" else json.loads(text)
+        return tomllib.loads(text) if file.suffix == ".toml" else json.loads(text)
     except (tomllib.TOMLDecodeError, json.JSONDecodeError) as e:
         raise HookFileError(str(e)) from e
+
+
+def read(file: Path) -> list[Hook]:
+    """The hooks registered in one file; none if it doesn't exist."""
+    data = parse(file)
     hooks = data.get("hooks") if isinstance(data, dict) else None
     if not isinstance(hooks, dict):
         return []
