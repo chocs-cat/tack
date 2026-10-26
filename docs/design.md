@@ -947,7 +947,7 @@ read wrong), **warn** (will drift or break later), **info**.
 | `dirty-source` | info | A `path` source has uncommitted or unpushed skill edits. |
 | `instructions-split` | warn | The harnesses' user instruction files don't resolve to the same content: neither is an import of or symlink to the other, and their text differs. |
 | `hook-one-harness` | info | A user-level hook registered for one harness only. Installer-owned hooks are common here, so this is informational. |
-| `unreadable-file` | error | A hook file (user or project) that isn't valid JSON or TOML: the harness can't read it either. |
+| `unreadable-file` | error | A hook file (user or project), or a project's plugin settings file, that isn't valid JSON or TOML: the harness can't read it either. |
 
 The plugin checks read each agent's plugins through its CLI
 (`claude plugin list --json`, `codex plugin list --json`, and their
@@ -1096,10 +1096,12 @@ machine's.
   has none), so a plugin matches across the agents whichever marketplace
   each names (DEC-26).
 - Its *setting* in a file is `on` when an entry for its name is `true`,
-  else `off` when one is `false`, else `unset`. Any other value, an
-  `enabledPlugins` that isn't an object, a `plugins` that isn't a table, a
-  `[plugins]` entry that isn't a table, and a table without a boolean
-  `enabled` set nothing.
+  else `off` when one is `false`, else `unset`. Any other value, a file
+  that is missing or whose top level isn't an object, an `enabledPlugins`
+  that isn't an object, a `plugins` that isn't a table, a `[plugins]` entry
+  that isn't a table, and a table without a boolean `enabled` set nothing.
+  The entry the setting was *read from* is the first, in file order, whose
+  value decided it.
 - A plugin whose setting differs between the two files is one finding,
   located at the file whose setting is `on` (or `off`, against `unset`),
   with that harness, naming the entry it read (`foo@mk = true`), the other
@@ -1107,9 +1109,11 @@ machine's.
   {"<name>@<marketplace>": …}` or `[plugins."<name>@<marketplace>"]
   enabled = …`, the other agent's name for the marketplace left to the
   user. Findings come in name order.
-- A file that can't be parsed is `unreadable-file`, reported once: by the
-  hooks check when it is among the harness's `project_hooks`, otherwise by
-  this one. While either file is unreadable the project has no
+- A file that can't be parsed (it can't be read, isn't UTF-8, or isn't
+  valid JSON or TOML, exactly as the hooks check reads a hook file) is
+  `unreadable-file`, reported once: by the hooks check when any harness's
+  `project_hooks` lists it, otherwise by this one, with the harness whose
+  file it is. While either file is unreadable the project has no
   `plugin-one-harness` findings: one side's settings are unknown.
 - There is no `scaffold` fix (DEC-26).
 
