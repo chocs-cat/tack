@@ -947,7 +947,7 @@ read wrong), **warn** (will drift or break later), **info**.
 | `dirty-source` | info | A `path` source has uncommitted or unpushed skill edits. |
 | `instructions-split` | warn | The harnesses' user instruction files don't resolve to the same content: neither is an import of or symlink to the other, and their text differs. |
 | `hook-one-harness` | info | A user-level hook registered for one harness only. Installer-owned hooks are common here, so this is informational. |
-| `unreadable-file` | error | A hook file (user or project), or a project's plugin settings file, that isn't valid JSON or TOML: the harness can't read it either. |
+| `unreadable-file` | error | A hook file (user or project), or a project's plugin settings file, that isn't valid JSON or TOML: the harness can't read it either. Reported once per file, however many harnesses list it, with the first harness that does (DEC-28). |
 
 The plugin checks read each agent's plugins through its CLI
 (`claude plugin list --json`, `codex plugin list --json`, and their
@@ -1112,9 +1112,10 @@ machine's.
 - A file that can't be parsed (it can't be read, isn't UTF-8, or isn't
   valid JSON or TOML, exactly as the hooks check reads a hook file) is
   `unreadable-file`, reported once: by the hooks check when any harness's
-  `project_hooks` lists it, otherwise by this one, with the harness whose
-  file it is. While either file is unreadable the project has no
-  `plugin-one-harness` findings: one side's settings are unknown.
+  `project_hooks` lists it (with the first that does, DEC-28), otherwise by
+  this one, with the harness whose file it is. While either file is
+  unreadable the project has no `plugin-one-harness` findings: one side's
+  settings are unknown.
 - There is no `scaffold` fix (DEC-26).
 
 **Exit code.** `1` when there is an error or warn finding; info findings alone
