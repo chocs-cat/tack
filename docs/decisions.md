@@ -482,3 +482,21 @@ the field alike where their documentation says, and one reading for both
 keeps a plugin's finding the same in each.
 
 *Where:* design.md, *`doctor` checks* (*Global*) and *Selecting plugins*.
+
+## DEC-28: The hooks check reads each listed file once (2026-10)
+
+Added 2026-10-27, from #83. Nothing stops two harnesses' `hooks`, or two
+harnesses' `project_hooks`, from naming the same file (a manifest can point
+`[harness.codex] project_hooks` at `.claude/settings.json`), and one list
+can name a file twice. Each listed path is parsed once per check, and one
+that can't be parsed is one `unreadable-file`, with the first harness whose
+list names it: the built-in harnesses in their order (`claude-code`, then
+`codex`), then the manifest's own in the order it defines them. Paths are
+the same when they are equal as written, once `~` is expanded and a project
+path is joined to the project (a `.` part drops out); symlinks and `..` are
+not resolved, as the plugin settings check compares them. A file two
+harnesses list still gives its hooks to each of them, once. Naming every
+harness that lists the file was the alternative: a finding carries one
+harness, and the fix is the same file's whichever harness reads it.
+
+*Where:* design.md, *`doctor` checks* (*Global* and *Per project*).
