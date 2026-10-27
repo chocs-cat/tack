@@ -219,3 +219,69 @@ def test_project_unreadable_hook_file(home: Path) -> None:
     write(p / ".codex" / "config.toml", "[[hooks")
     (f,) = project_findings(home, p)
     assert (f.id, f.project, f.harness) == ("unreadable-file", p, "codex")
+
+
+# A file two harnesses list, or one list names twice, is parsed once and,
+# when it can't be, reported once, with the first harness to list it (DEC-28).
+SHARED_PROJECT_HOOKS = """
+[harness.codex]
+project_hooks = [".claude/settings.json", ".codex/hooks.json"]
+"""
+
+
+def test_global_file_two_harnesses_list_is_unreadable_once(home: Path) -> None:
+    bad = write(home / ".claude" / "settings.json", "not json")
+    manifest = '[harness.codex]\nhooks = ["~/.claude/settings.json"]\n'
+    (finding,) = hooks.check_global(load(home, manifest))
+    assert (finding.id, finding.harness, finding.path) == ("unreadable-file", "claude-code", bad)
+    assert finding.message.startswith("can't parse hook file: ")
+
+
+def test_project_file_two_harnesses_list_is_unreadable_once(home: Path) -> None:
+    p = home / "p"
+    bad = write(p / ".claude" / "settings.json", "{")
+    (finding,) = hooks.check_project(load(home, SHARED_PROJECT_HOOKS), p)
+    assert (finding.id, finding.severity, finding.harness) == (
+        "unreadable-file",
+        "error",
+        "claude-code",
+    )
+    assert (finding.path, finding.project) == (bad, p)
+
+
+def test_project_file_one_list_names_twice_is_unreadable_once(home: Path) -> None:
+    p = home / "p"
+    bad = write(p / ".codex" / "hooks.json", "{")
+    manifest = '[harness.codex]\nproject_hooks = [".codex/hooks.json", ".codex/hooks.json"]\n'
+    (finding,) = hooks.check_project(load(home, manifest), p)
+    assert (finding.id, finding.harness, finding.path) == ("unreadable-file", "codex", bad)
+
+
+def test_readable_file_two_harnesses_list_gives_each_its_hooks(home: Path) -> None:
+    p = home / "p"
+    shared = write(p / ".claude" / "settings.json", settings(("Stop", "", f"{home}/bin/notify")))
+    (finding,) = hooks.check_project(load(home, SHARED_PROJECT_HOOKS), p)
+    assert (finding.id, finding.path) == ("hook-hardcoded-home", shared)
+
+
+def test_each_listed_file_is_parsed_once(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    p = home / "p"
+    shared = write(p / ".claude" / "settings.json", settings(("Stop", "", "./notify")))
+    calls: list[Path] = []
+    real_read = hooks.read
+
+    def counting_read(file: Path) -> list[hooks.Hook]:
+        calls.append(file)
+        return real_read(file)
+
+    monkeypatch.setattr(hooks, "read", counting_read)
+    assert list(hooks.check_project(load(home, SHARED_PROJECT_HOOKS), p)) == []
+    assert calls.count(shared) == 1
+    # One list naming the file twice gets its hooks once; another list naming
+    # it gets them too.
+    calls.clear()
+    hook_lists, errors = hooks._read_all({"a": [shared], "b": [shared, shared]}, p)
+    assert calls == [shared]
+    assert errors == []
+    hook = hooks.Hook("Stop", "", "./notify", shared)
+    assert hook_lists == {"a": [hook], "b": [hook]}

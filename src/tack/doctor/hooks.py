@@ -131,24 +131,37 @@ def describe(hook: Hook) -> str:
 def _read_all(
     files: dict[str, list[Path]], project: Path | None
 ) -> tuple[dict[str, list[Hook]], list[Finding]]:
+    # Each path is parsed once, and one that can't be is reported once, with
+    # the first harness to list it; a file two harnesses list still gives
+    # its hooks to both (DEC-28, design.md *`doctor` checks*).
+    parsed: dict[Path, list[Hook] | HookFileError] = {}
     hooks: dict[str, list[Hook]] = {}
     errors: list[Finding] = []
     for name, paths in files.items():
         hooks[name] = []
+        seen: set[Path] = set()
         for f in paths:
-            try:
-                hooks[name].extend(read(f))
-            except HookFileError as e:
-                errors.append(
-                    Finding(
-                        "unreadable-file",
-                        "error",
-                        f"can't parse hook file: {e}",
-                        path=f,
-                        harness=name,
-                        project=project,
+            if f in seen:
+                continue
+            seen.add(f)
+            if f not in parsed:
+                try:
+                    parsed[f] = read(f)
+                except HookFileError as e:
+                    parsed[f] = e
+                    errors.append(
+                        Finding(
+                            "unreadable-file",
+                            "error",
+                            f"can't parse hook file: {e}",
+                            path=f,
+                            harness=name,
+                            project=project,
+                        )
                     )
-                )
+            result = parsed[f]
+            if not isinstance(result, HookFileError):
+                hooks[name].extend(result)
     return hooks, errors
 
 
