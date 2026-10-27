@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/chocs-cat/tack/compare/v0.6.0...v0.6.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* **doctor:** report a hook file two harnesses list as unreadable once ([#87](https://github.com/chocs-cat/tack/issues/87)) ([8a9c5f7](https://github.com/chocs-cat/tack/commit/8a9c5f7e9a4d7600df07cc2ca77fc13deff0ed8a)), closes [#83](https://github.com/chocs-cat/tack/issues/83)
+
 ## [0.6.0](https://github.com/chocs-cat/tack/compare/v0.5.2...v0.6.0) (2026-10-26)
 
 
