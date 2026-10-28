@@ -500,3 +500,30 @@ harness that lists the file was the alternative: a finding carries one
 harness, and the fix is the same file's whichever harness reads it.
 
 *Where:* design.md, *`doctor` checks* (*Global* and *Per project*).
+
+## DEC-29: Quitting the TUI stops its upstream fetch (2026-10)
+
+Added 2026-10-28, from #10. The TUI's fetch (`outdated --diff`) runs in a
+thread, and the app waited for it on the way out, so quitting right after
+opening could hang for the length of a slow fetch. Quitting now stops it:
+the fetch makes no further git call, and a git command it has running is
+ended with `SIGTERM`, on which git removes its own lock files. The fetch's
+git calls only fetch, read and compare: none moves a checkout or a clone, so
+a stopped one leaves at worst some fetched objects or a temporary pack, which
+git's own garbage collection removes, and the next fetch starts again.
+Nothing else stops this way: the CLI's `outdated` and every action run their
+git commands as before, since an action's `checkout` or `clone` cut short
+would leave a checkout half-moved. Quitting while an action runs waits for
+it; an action still waiting for the fetch to finish doesn't start, as no
+command of it has run yet.
+
+The alternatives: a daemon thread can't be had for a Textual thread worker
+(it runs on asyncio's default executor, which is joined at exit), and only
+checking a stop flag between sources still waits out the git command
+running, which is where the time goes on a slow network. Ending git's
+children (a remote helper, `ssh`) as a process group would have meant
+running git in a session or group of its own, which changes how it reaches
+the terminal; git ending is enough, as they lose their pipes to it and
+exit.
+
+*Where:* design.md, *The TUI*.

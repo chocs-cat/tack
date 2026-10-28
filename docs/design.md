@@ -1314,6 +1314,11 @@ its dry run, auto-commit included, and does nothing until you confirm. Then
 it runs, auto-commits as the CLI does, shows what it did in the same dialog,
 and refreshes the tabs. Opening the app commits nothing. An action waits for
 a running fetch to finish, so the two never work in one checkout at once.
+Quitting doesn't wait for the fetch: it stops, ending the git command it has
+running, and the app closes at once. A fetch moves no checkout, so a stopped
+one leaves nothing to undo, and the next one fetches again. An action is
+never cut short: quitting while one runs waits for it, but one still waiting
+for the fetch doesn't start (DEC-29).
 
 Diffs show colored in the detail pane and in an action's preview; `p`
 suspends the app and opens the diff in git's pager (`git var GIT_PAGER`).
