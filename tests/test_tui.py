@@ -5,6 +5,7 @@ import json
 import shutil
 import subprocess
 import sys
+import time
 from collections import Counter
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
@@ -30,6 +31,7 @@ from tack.tui.app import FixedHeader, TackApp
 from tack.tui.dialogs import ActionScreen, AddScreen
 from tests import standin
 from tests.helpers import (
+    alive,
     commit,
     configure,
     elsewhere,
@@ -38,6 +40,7 @@ from tests.helpers import (
     repo,
     skill,
     skill_md,
+    slow_git,
     upstream,
     write,
 )
@@ -404,6 +407,75 @@ def test_adds_a_source_of_plugins(
         )
 
     drive(scenario)
+
+
+# --- quitting during the fetch (design.md *The TUI*, DEC-29) ------------------------
+
+QUIT_BOUND = 5  # seconds; the stand-in git sleeps 30
+
+
+def quit_during_fetch(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, before: Scenario | None = None
+) -> tuple[float, int, list[str]]:
+    """Open the app with its fetch held up by a slow `ls-remote`, run
+    `before`, press `q`, and time from the key to the whole run ending (the
+    app's threads joined). Returns that time, the slow git's pid, and what
+    the app notified or showed of the fetch."""
+    slow = slow_git(tmp_path, monkeypatch, "ls-remote")
+    seen: list[str] = []
+    monkeypatch.setattr(TackApp, "notify", lambda self, message, **kw: seen.append(message))
+    monkeypatch.setattr(TackApp, "_show_upstream", lambda self, report: seen.append("upstream"))
+    pressed = 0.0
+
+    async def main() -> None:
+        nonlocal pressed
+        app = TackApp()
+        async with app.run_test(size=(160, 48)) as pilot:
+            await asyncio.to_thread(slow.wait_for, 1)
+            if before is not None:
+                await before(app, pilot)
+            pressed = time.monotonic()
+            await pilot.press("q")
+
+    asyncio.run(main())
+    [pid] = slow.started()
+    return time.monotonic() - pressed, pid, seen
+
+
+def test_quitting_stops_the_fetch(
+    home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    machine(home, tmp_path)
+    took, pid, seen = quit_during_fetch(monkeypatch, tmp_path)
+    assert took < QUIT_BOUND
+    assert not alive(pid)
+    assert seen == []
+
+
+def test_an_action_waiting_for_the_fetch_does_not_start_on_quitting(
+    home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    machine(home, tmp_path)
+    ran: list[bool] = []
+
+    def recording(cfg: config.Config, *, dry_run: bool = False) -> sync.Result:
+        ran.append(dry_run)
+        return sync.Result(dry_run=dry_run)
+
+    monkeypatch.setattr(sync, "sync", recording)
+
+    async def preview(app: TackApp, pilot: Pilot[None]) -> None:
+        await pilot.press("s")
+        for _ in range(100):
+            await pilot.pause(0.02)
+            if isinstance(app.screen, ActionScreen) and "waiting" in body(app):
+                break
+        assert body(app) == "waiting for the fetch to finish..."
+
+    took, pid, _ = quit_during_fetch(monkeypatch, tmp_path, preview)
+    assert took < QUIT_BOUND
+    assert not alive(pid)
+    assert ran == []
 
 
 # --- the Plugins tab (design.md *The TUI*) -----------------------------------------

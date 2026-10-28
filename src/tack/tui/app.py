@@ -4,7 +4,7 @@ operations.
 The local state (status and the audit) and the upstream fetch load in
 background threads. Actions run through ActionScreen, which previews them as
 a dry run first; an action and a fetch share a lock, so they never work in
-one checkout at once.
+one checkout at once. Quitting stops the fetch rather than waiting for it.
 """
 
 from __future__ import annotations
@@ -35,6 +35,7 @@ from tack import (
     deploy,
     doctor,
     edit,
+    git,
     outdated,
     plugins,
     scaffold,
@@ -194,6 +195,7 @@ class TackApp(App[None]):
         self.upstream: outdated.Report | None = None
         self.fetching = False
         self.checkouts = threading.Lock()  # held by an action or a fetch, never both
+        self.closing = threading.Event()  # set as the app closes: the fetch stops (DEC-29)
         self.views = {tab: _View() for tab in _KINDS}
         self._grouping_set = False
 
@@ -218,6 +220,10 @@ class TackApp(App[None]):
     def on_mount(self) -> None:
         self.title = f"tack {__version__}"
         self.action_refresh()
+
+    def on_unmount(self) -> None:
+        # Every way out passes here before the app waits for its threads.
+        self.closing.set()
 
     # --- loading --------------------------------------------------------------
 
@@ -260,7 +266,11 @@ class TackApp(App[None]):
     def _load_upstream(self, cfg: Config) -> None:
         with self.checkouts:
             try:
-                report: outdated.Report | None = outdated.outdated(cfg, diff=True)
+                # Quitting ends the fetch's git, not an action's (DEC-29).
+                with git.stopping(self.closing):
+                    report: outdated.Report | None = outdated.outdated(cfg, diff=True)
+            except git.Stopped:
+                return  # the app is closing
             except ConfigError as e:
                 self.call_from_thread(self.notify, str(e), severity="error")
                 report = None
@@ -615,7 +625,9 @@ class TackApp(App[None]):
             if then is not None:
                 then(bool(ran))
 
-        self.push_screen(ActionScreen(title, with_commit, self.checkouts, idle=idle), done)
+        self.push_screen(
+            ActionScreen(title, with_commit, self.checkouts, self.closing, idle=idle), done
+        )
 
     def action_sync(self) -> None:
         cfg = self.cfg
