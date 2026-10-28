@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.2](https://github.com/chocs-cat/tack/compare/v0.6.1...v0.6.2) (2026-10-28)
+
+
+### Bug Fixes
+
+* **tui:** quitting stops the upstream fetch ([#91](https://github.com/chocs-cat/tack/issues/91)) ([c8be0e7](https://github.com/chocs-cat/tack/commit/c8be0e7faacb80197903256237b6c021cd883bd0)), closes [#10](https://github.com/chocs-cat/tack/issues/10)
+
 ## [0.6.1](https://github.com/chocs-cat/tack/compare/v0.6.0...v0.6.1) (2026-10-27)
 
 
