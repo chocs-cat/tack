@@ -5,11 +5,40 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 _KINDS = (b"blob", b"tree", b"commit", b"tag")
 _SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://")
+_POLL = 0.1  # how often a git run under a stop looks at it, in seconds
+_GRACE = 2.0  # how long git has to exit on SIGTERM before SIGKILL
+
+
+class Stopped(Exception):
+    """A git call under a stop that was set: git didn't start, or was ended
+    (DEC-29). Neither a SourceError nor a ConfigError, so it unwinds whatever
+    made the call."""
+
+
+_stops = threading.local()
+
+
+@contextmanager
+def stopping(stop: threading.Event) -> Iterator[None]:
+    """Run the block under `stop`: once it is set, `run` and `cat` on this
+    thread start no git and end the one running, raising `Stopped`. Calls on
+    other threads, and outside the block, run as ever (design.md *The TUI*,
+    DEC-29)."""
+    outer = getattr(_stops, "stop", None)
+    _stops.stop = stop
+    try:
+        yield
+    finally:
+        _stops.stop = outer
 
 
 def is_url(spec: str) -> bool:
@@ -24,18 +53,53 @@ def is_url(spec: str) -> bool:
 
 
 def run(cwd: Path | None, *args: str) -> subprocess.CompletedProcess[str]:
-    """`git [-C cwd] args...`, never raising; a missing git binary exits 127."""
+    """`git [-C cwd] args...`, never raising but `Stopped` under a stop
+    (`stopping`); a missing git binary exits 127."""
     where = ["-C", str(cwd)] if cwd is not None else []
     try:
-        return subprocess.run(
-            ["git", *where, *args],
-            capture_output=True,
-            text=True,
-            check=False,
-            env=_env(),
-        )
+        return _call(["git", *where, *args], None, text=True)
     except FileNotFoundError:
         return subprocess.CompletedProcess(["git", *args], 127, "", "git: not found")
+
+
+def _call(args: list[str], input: Any, *, text: bool) -> subprocess.CompletedProcess[Any]:
+    """`subprocess.run(args)` capturing output, or, under a stop, git run so
+    the stop can end it (DEC-29)."""
+    stop: threading.Event | None = getattr(_stops, "stop", None)
+    if stop is None:
+        return subprocess.run(
+            args, input=input, capture_output=True, text=text, check=False, env=_env()
+        )
+    if stop.is_set():
+        raise Stopped
+    p = subprocess.Popen(
+        args,
+        stdin=subprocess.PIPE if input is not None else None,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=text,
+        env=_env(),
+    )
+    with p:
+        while True:
+            try:
+                # Retried after a timeout, communicate loses no output; the
+                # input goes with the first call only.
+                out, err = p.communicate(input, timeout=_POLL)
+                return subprocess.CompletedProcess(args, p.returncode, out, err)
+            except subprocess.TimeoutExpired:
+                input = None
+            if stop.is_set():
+                # git removes its lock files on SIGTERM. Its children
+                # (a remote helper, ssh) lose their pipes to it and exit;
+                # neither they nor the rest of the output are waited for.
+                p.terminate()
+                try:
+                    p.wait(_GRACE)
+                except subprocess.TimeoutExpired:
+                    p.kill()
+                    p.wait()
+                raise Stopped
 
 
 def _env() -> dict[str, str]:
@@ -104,14 +168,13 @@ def cat(repo: Path, commit: str, path: str) -> Object:
     """The object at `path` (relative to the repository's root) in `commit`,
     following symlinks inside its tree as reading the checked-out file would
     (`git cat-file --batch --follow-symlinks`). A path through a file, a
-    commit that isn't there and a repository git can't read are `missing`."""
+    commit that isn't there and a repository git can't read are `missing`.
+    Raises `Stopped` under a stop, as `run` does."""
     try:
-        r = subprocess.run(
+        r = _call(
             ["git", "-C", str(repo), "cat-file", "--batch", "--follow-symlinks"],
-            input=f"{commit}:{path}\n".encode(),
-            capture_output=True,
-            check=False,
-            env=_env(),
+            f"{commit}:{path}\n".encode(),
+            text=False,
         )
     except FileNotFoundError:
         return Object("missing")

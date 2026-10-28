@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import subprocess
+import time
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -180,3 +183,54 @@ def elsewhere(root: Path, name: str, path: str | None = None) -> Elsewhere:
     older = git(r, "rev-parse", "HEAD").strip()
     newer = commit(r, files("2.0"))
     return Elsewhere(r, name, path, older, newer)
+
+
+@dataclass(frozen=True)
+class SlowGit:
+    """A stand-in `git` first on PATH that, for one subcommand, records its
+    pid and sleeps far longer than any test waits; otherwise the real git."""
+
+    pids: Path
+
+    def started(self) -> list[int]:
+        """The pids of the slow commands started so far, in order."""
+        text = self.pids.read_text() if self.pids.exists() else ""
+        return [int(line) for line in text.split()]
+
+    def wait_for(self, n: int, timeout: float = 10) -> list[int]:
+        """The first `n` pids, once that many slow commands have started."""
+        deadline = time.monotonic() + timeout
+        while len(pids := self.started()) < n:
+            assert time.monotonic() < deadline, f"{len(pids)} of {n} slow git commands started"
+            time.sleep(0.02)
+        return pids[:n]
+
+
+def slow_git(
+    root: Path, monkeypatch: Any, subcommand: str, *, ignore_term: bool = False
+) -> SlowGit:
+    """Put a `SlowGit` sleeping on `subcommand` first on PATH. `exec sleep`
+    keeps the recorded pid the sleeping process, so a test can see it end.
+    With `ignore_term`, once it has recorded its pid only SIGKILL ends it."""
+    real = shutil.which("git")
+    assert real is not None
+    bin_dir = root / "slow-git"
+    pids = root / "slow-git.pids"
+    write(
+        bin_dir / "git",
+        "#!/bin/sh\n"
+        + ("trap '' TERM\n" if ignore_term else "")
+        + f'for a; do [ "$a" = {subcommand} ] && echo $$ >> "{pids}" && exec sleep 30; done\n'
+        f'exec "{real}" "$@"\n',
+    ).chmod(0o755)
+    monkeypatch.setenv("PATH", os.pathsep.join([str(bin_dir), os.environ["PATH"]]))
+    return SlowGit(pids)
+
+
+def alive(pid: int) -> bool:
+    """Whether process `pid` still exists (a zombie counts)."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
