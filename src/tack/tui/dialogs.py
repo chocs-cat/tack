@@ -37,12 +37,19 @@ class ActionScreen(ModalScreen[bool]):
     ]
 
     def __init__(
-        self, title: str, run: Action, lock: threading.Lock, *, idle: str = "nothing to do"
+        self,
+        title: str,
+        run: Action,
+        lock: threading.Lock,
+        closing: threading.Event,
+        *,
+        idle: str = "nothing to do",
     ) -> None:
         super().__init__()
         self.heading = title
         self.action = run
         self.checkouts = lock
+        self.closing = closing  # set as the app closes
         self.idle = idle
         # previewing -> ready (to confirm) or idle (nothing to do); ready -> running -> done
         self.state = "previewing"
@@ -65,6 +72,9 @@ class ActionScreen(ModalScreen[bool]):
         if not self.checkouts.acquire(blocking=False):
             self.app.call_from_thread(self._show, Text("waiting for the fetch to finish..."))
             self.checkouts.acquire()
+        if self.closing.is_set():  # the app closed while it waited: it never starts (DEC-29)
+            self.checkouts.release()
+            return
         try:
             result: Result | str = self.action(dry_run)
         except (UsageError, ConfigError) as e:
