@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/chocs-cat/tack/compare/v0.6.2...v0.7.0) (2026-10-31)
+
+
+### Features
+
+* **instructions-setup:** leave decision logs to the workflow that uses one ([#93](https://github.com/chocs-cat/tack/issues/93)) ([4be767f](https://github.com/chocs-cat/tack/commit/4be767f3cc53a876095bff4a6082081e13addfd3))
+
 ## [0.6.2](https://github.com/chocs-cat/tack/compare/v0.6.1...v0.6.2) (2026-10-28)
 
 
