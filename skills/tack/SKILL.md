@@ -312,5 +312,5 @@ project commits. A fix it can't apply safely changes nothing and says why
 the new hooks (`/hooks`).
 
 `scaffold` fixes the layout; to write a project's instructions themselves
-(what goes in `AGENTS.md`, folding in other agents' files, a decision log),
+(what goes in `AGENTS.md`, folding in other agents' files),
 use the `instructions-setup` skill.

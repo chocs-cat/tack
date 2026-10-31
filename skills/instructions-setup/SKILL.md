@@ -1,6 +1,6 @@
 ---
 name: instructions-setup
-description: Set up, or reorganize, a project's agent instructions so every coding agent reads the same ones. Makes AGENTS.md the one instructions file (what the project is, its commands, workflow, conventions and rules), with a CLAUDE.md that imports it, project skills in .agents/skills behind a .claude/skills symlink, a git-ignored CLAUDE.local.md for one machine's notes, and a decision log (docs/decisions.md). Folds .cursorrules, Copilot and Gemini instructions into AGENTS.md, and applies the layout with `tack scaffold` and checks it with `tack doctor` when tack is installed. Use when a project has no AGENTS.md or its instructions are scattered or duplicated, and whenever the user asks to "set up instructions", "write an AGENTS.md", "set up CLAUDE.md", "merge CLAUDE.md into AGENTS.md", "add a decision log", or tidy a project's agent setup.
+description: Set up, or reorganize, a project's agent instructions so every coding agent reads the same ones. Makes AGENTS.md the one instructions file (what the project is, its commands, workflow, conventions and rules), with a CLAUDE.md that imports it, project skills in .agents/skills behind a .claude/skills symlink, and a git-ignored CLAUDE.local.md for one machine's notes. Folds .cursorrules, Copilot and Gemini instructions into AGENTS.md, and applies the layout with `tack scaffold` and checks it with `tack doctor` when tack is installed. Use when a project has no AGENTS.md or its instructions are scattered or duplicated, and whenever the user asks to "set up instructions", "write an AGENTS.md", "set up CLAUDE.md", "merge CLAUDE.md into AGENTS.md", or tidy a project's agent setup.
 ---
 
 # Set up a project's agent instructions
@@ -40,7 +40,8 @@ CONTRIBUTING.md, and any docs index. Then detect:
 - **Skills and local notes:** project skills in `.agents/skills/`,
   `.claude/skills/` or `.codex/skills/`, and whether `CLAUDE.local.md` is
   ignored (`git check-ignore -q CLAUDE.local.md`).
-- **Decisions:** a decision log, ADRs, or settled questions recorded anywhere.
+- **Decisions:** a decision log or ADRs the project keeps, which AGENTS.md
+  points to, and settled questions recorded in instruction files.
 
 With tack installed, its audit lists what the layout lacks:
 
@@ -137,11 +138,11 @@ templates.
    specific to one machine or maintainer (local install paths, tools
    installed by hand, chores done by hand). Make sure it is git-ignored: if
    `git check-ignore` says it is not, add it to `.gitignore`.
-6. **Decision log.** Create `docs/decisions.md` from `templates/decisions.md`
-   unless the project has one. An existing log whose entries have no IDs gets
-   them once (`DEC-1`, `DEC-2`, … in file order), so docs and code can cite
-   them; say so in the summary. Move settled questions found in other
-   instruction files into it.
+6. **Settled questions.** This skill does not create a decision log: a
+   workflow that uses one sets it up. When the project keeps one (or ADRs),
+   AGENTS.md's *Before you start* points to it, and settled questions found
+   in other instruction files move into it. Otherwise they stay in AGENTS.md,
+   each as a rule with its reason.
 
 ## 4. Check and land it
 

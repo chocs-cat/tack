@@ -7,10 +7,10 @@ through `CLAUDE.md`'s `@AGENTS.md` import.<Humans: see CONTRIBUTING.md.>
 look: README.md for usage, CONTRIBUTING.md for the layout and contribution
 process, docs/ for design.>
 
-## Before you start
+<## Before you start — only when the project keeps a decision log or ADRs:
 
-- Read `docs/decisions.md`. Those questions are settled: don't reopen one
-  unless the user asks. When the user settles a new one, add an entry.
+- Read `<docs/decisions.md>`. Those questions are settled: don't reopen one
+  unless the user asks. When the user settles a new one, add an entry.>
 
 ## Commands
 
