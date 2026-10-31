@@ -26,10 +26,13 @@ either gives you the `tack` command.
 ### Homebrew
 
 ```sh
+brew tap chocs-cat/tap
+brew trust chocs-cat/tap
 brew install chocs-cat/tap/tack
 ```
 
 The formula lives in the `chocs-cat/tap` tap and brings its own Python.
+Homebrew loads formulae from a third-party tap only once you trust it.
 
 ### PyPI
 
