@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/chocs-cat/tack/compare/v0.7.0...v0.7.1) (2026-10-31)
+
+
+### Bug Fixes
+
+* trust the chocs-cat tap before installing from it ([#96](https://github.com/chocs-cat/tack/issues/96)) ([e001e81](https://github.com/chocs-cat/tack/commit/e001e81272a2bf8ddc0099b6598c8048583888ba))
+
 ## [0.7.0](https://github.com/chocs-cat/tack/compare/v0.6.2...v0.7.0) (2026-10-31)
 
 
