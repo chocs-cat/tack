@@ -1337,9 +1337,10 @@ versioned with the code (DEC-24):
   ones: `AGENTS.md` as the one instructions file, written for any agent (what
   the project is, its commands, workflow, conventions and rules, each line
   something an agent could not infer), `CLAUDE.md` importing it, project skills
-  in `.agents/skills` behind a `.claude/skills` link, a git-ignored
-  `CLAUDE.local.md` for one machine's notes, and a decision log
-  (`docs/decisions.md`, entries `DEC-n`). It writes the content; the layout is
+  in `.agents/skills` behind a `.claude/skills` link, and a git-ignored
+  `CLAUDE.local.md` for one machine's notes. It creates no decision log: a
+  workflow that uses one sets it up, and when the project keeps one,
+  `AGENTS.md` points to it (DEC-30). It writes the content; the layout is
   what `doctor` audits, so when `tack` is on `PATH` the skill applies the
   layout with `tack scaffold agents-md` and `tack scaffold skills-dir` and
   checks the result with `tack doctor` on the project, and without tack it

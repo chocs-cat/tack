@@ -242,7 +242,7 @@ tack ships two skills for coding agents:
 - [`instructions-setup`](skills/instructions-setup/SKILL.md) sets up, or
   reorganizes, a project's agent instructions: `AGENTS.md` as the one
   instructions file, `CLAUDE.md` importing it, project skills in
-  `.agents/skills`, and a decision log. It applies that layout with
+  `.agents/skills`. It applies that layout with
   `tack scaffold` and checks it with `tack doctor`.
 
 Deploy them with tack itself:

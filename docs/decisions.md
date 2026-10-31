@@ -527,3 +527,20 @@ the terminal; git ending is enough, as they lose their pipes to it and
 exit.
 
 *Where:* design.md, *The TUI*.
+
+## DEC-30: instructions-setup creates no decision log (2026-10)
+
+Added 2026-10-31. `instructions-setup` sets up `AGENTS.md`, `CLAUDE.md`
+importing it, `.agents/skills`, and `CLAUDE.local.md`, the layout `doctor`
+audits, and no longer creates `docs/decisions.md`. A decision log belongs to
+a workflow that uses one: the relay workflow's setup creates its own when a
+repository adopts it. When a project keeps a log, `AGENTS.md` still points
+to it, and settled questions from other instruction files move into it;
+otherwise they stay in `AGENTS.md` as rules with their reasons.
+
+The alternatives: keeping the log here, where it was the one part of the
+skill `doctor` does not check, and moving it to a repository-setup skill as
+an optional piece, which would have repeated what the relay's setup already
+does.
+
+*Where:* design.md, *The agent skills*; `skills/instructions-setup/SKILL.md`.
