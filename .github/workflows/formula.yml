@@ -80,6 +80,8 @@ jobs:
         run: |
           set -euo pipefail
           brew tap chocs-cat/tap
+          # Homebrew refuses to load formulae from a tap nobody has trusted.
+          brew trust chocs-cat/tap
           brew audit --strict chocs-cat/tap/tack
           brew install chocs-cat/tap/tack
           test "$(tack --version)" = "tack $VERSION"
