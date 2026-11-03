@@ -106,24 +106,27 @@ jobs:
 
   ok:
     # The one check branch protection requires, so the matrix can change
-    # without editing the protection rule. A docs-only pull request skips the
-    # checks and passes; anything else must pass all of them.
-    # Its script exits explicitly: bash ignores -e inside an && list (#84).
+    # without editing the protection rule. Rename it only together with the
+    # protection rule.
     name: CI passed
+    # Without always(), a failed check skips this job, and a skipped job
+    # reports success.
     if: always()
+    # Every job that must pass, plus `changes`. Leave out jobs that run on
+    # some events only: one skipped on a push would fail this.
     needs: [changes, lint, test, package]
     runs-on: ubuntu-latest
     steps:
+      # Passes only if every job in `needs` but `changes` succeeded, or was
+      # skipped on a pull request `changes` found docs-only. jq judges all
+      # the results in one expression and `-e` turns false into exit 1, so a
+      # job added to `needs` is covered with no other edit. Don't rewrite it
+      # as a shell loop of `test … || …`: under `bash -e` only the last
+      # iteration's status counts, so an earlier failure passes (#84).
       - env:
-          CODE: ${{ needs.changes.outputs.code }}
-          LINT: ${{ needs.lint.result }}
-          TEST: ${{ needs.test.result }}
-          PACKAGE: ${{ needs.package.result }}
+          NEEDS: ${{ toJSON(needs) }}
         run: |
-          for result in "$LINT" "$TEST" "$PACKAGE"; do
-            case "$result" in
-              success) ;;
-              skipped) test "$CODE" = false || exit 1 ;;
-              *) exit 1 ;;
-            esac
-          done
+          jq -e '(.changes.outputs.code == "false") as $docs
+            | del(.changes)
+            | all(.[]; .result == "success" or ($docs and .result == "skipped"))' \
+            <<<"$NEEDS" >/dev/null

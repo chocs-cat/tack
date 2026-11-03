@@ -10,7 +10,7 @@ level = 5
 
 # Entries (by number) at or below `level` the owner put off. Later runs offer
 # them again.
-deferred = [4]
+deferred = []
 
 # Entries (keyed by number, as 2 = "…") the owner turned down, with the
 # reason. Ask for one by name to apply it after all.
