@@ -112,8 +112,8 @@ said it, and cite the entry at the code site.
 - **CI:** `.github/workflows/ci.yml` runs the gate on pull requests, including
   drafts, on Linux and macOS across Python 3.11–3.14, and smoke-tests the
   built wheel and sdist; pushes to `master` run it too. A pull request that
-  touches only `docs/`, and not `docs/design.md` (a test reads it), skips
-  the checks and passes. `pr-title.yml` checks
+  touches only paths nothing in the checks or the build reads (the `SKIP`
+  pattern in `ci.yml`) skips the checks and passes. `pr-title.yml` checks
   that the pull request title is a Conventional Commit. Branch protection on
   `master` requires both (`CI passed`, `conventional commit title`).
 - **Releases:** release-please, as *Releases* describes: a chunk pull
